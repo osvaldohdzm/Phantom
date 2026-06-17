@@ -4,17 +4,24 @@ import { getBackendApiV1Url } from '@/lib/secops-backend-url';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const ALLOWED_ENDPOINTS = new Set(['nessus-csv', 'acunetix-html', 'nmap', 'universal-csv']);
+const ALLOWED_PATHS = new Set([
+  'nessus-csv',
+  'nessus-csv/rescan',
+  'acunetix-html',
+  'nmap',
+  'universal-csv',
+]);
 
-type RouteContext = { params: Promise<{ endpoint: string }> };
+type RouteContext = { params: Promise<{ path: string[] }> };
 
 /**
  * Proxy server-side de ingest multipart → FastAPI.
  * Evita el límite de 10 MB del rewrite/proxy de Next.js en el navegador.
  */
 export async function POST(request: NextRequest, context: RouteContext) {
-  const { endpoint } = await context.params;
-  if (!ALLOWED_ENDPOINTS.has(endpoint)) {
+  const { path } = await context.params;
+  const endpointPath = (path ?? []).join('/');
+  if (!endpointPath || !ALLOWED_PATHS.has(endpointPath)) {
     return NextResponse.json({ detail: 'Endpoint de ingesta no permitido' }, { status: 404 });
   }
 
@@ -27,7 +34,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const body = await request.arrayBuffer();
-  const target = `${getBackendApiV1Url()}/ingest/${endpoint}`;
+  const target = `${getBackendApiV1Url()}/ingest/${endpointPath}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 290_000);
 

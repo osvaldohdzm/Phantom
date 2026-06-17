@@ -10,6 +10,8 @@ import { resolveIngestApiUrl } from '@/lib/api-base';
 import { authHeaders } from '@/lib/auth-storage';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
+import { appendNessusFileToCache } from '@/lib/exposure-report';
+import Link from 'next/link';
 
 type RescanResult = {
   scan_run_id: string;
@@ -23,9 +25,18 @@ type RescanResult = {
   message?: string | null;
 };
 
-export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
-  const { engagements, engagementId, setEngagementId, loading: loadingProjects } =
+export function VulRescanPanel({
+  onComplete,
+  engagementId: engagementIdProp,
+  hideProjectPicker,
+}: {
+  onComplete?: () => void;
+  engagementId?: string;
+  hideProjectPicker?: boolean;
+}) {
+  const { engagements, engagementId: selectedId, setEngagementId, loading: loadingProjects } =
     useProjectSelection();
+  const engagementId = engagementIdProp?.trim() || selectedId;
   const [scope, setScope] = useState<'tenant' | 'engagement'>('tenant');
   const [absentPolicy, setAbsentPolicy] = useState<'atendido' | 'remediado'>('atendido');
   const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
@@ -56,6 +67,11 @@ export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
         });
         const data = (await res.json()) as RescanResult & { detail?: string };
         if (!res.ok) throw new Error(data.detail ?? res.statusText);
+        try {
+          await appendNessusFileToCache(file, { engagementId, title: file.name });
+        } catch {
+          /* mapa opcional */
+        }
         setResult(data);
         setStatus('done');
         onComplete?.();
@@ -92,6 +108,7 @@ export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2 items-end">
+          {!hideProjectPicker && !engagementIdProp ? (
           <label className="text-xs space-y-1">
             <span className="text-muted-foreground">Proyecto / campaña</span>
             <select
@@ -109,6 +126,7 @@ export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
               ))}
             </select>
           </label>
+          ) : null}
 
           <label className="text-xs space-y-1">
             <span className="text-muted-foreground">Alcance comparación</span>
@@ -151,7 +169,7 @@ export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
           )}
           <p className="text-sm mt-2 font-medium">Soltar CSV Nessus de re-escaneo</p>
           <p className="text-[11px] text-muted-foreground mt-1">
-            No duplica hallazgos: usa huella plugin+activo / CVE+activo
+            No duplica hallazgos: usa huella plugin+activo / CVE+activo · hasta 150 MB
           </p>
         </div>
 
@@ -164,6 +182,11 @@ export function VulRescanPanel({ onComplete }: { onComplete?: () => void }) {
                 Scan: {result.total_in_scan} filas · nuevas {result.new_count} · actualizadas{' '}
                 {result.updated_count} · reaparecidas {result.reaparecido_count} · ausentes{' '}
                 {result.absent_count}
+              </p>
+              <p className="mt-1">
+                <Link href="/vul-mgmt/mapa" className="underline font-medium">
+                  Ver mapa de exposición
+                </Link>
               </p>
             </div>
           </div>

@@ -18,6 +18,8 @@ import { authHeaders } from '@/lib/auth-storage';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
 import { UniversalCsvIngestPanel } from '@/components/universal-csv-ingest-panel';
+import { appendNessusFileToCache } from '@/lib/exposure-report';
+import Link from 'next/link';
 
 type SourceKey = 'nessus-csv' | 'acunetix-html' | 'nmap';
 
@@ -141,6 +143,13 @@ function IngestDropCard({
             ok: true,
             created_count: data.created_count ?? 0,
           });
+          if (source === 'nessus-csv') {
+            try {
+              await appendNessusFileToCache(file, { engagementId: eg, title: file.name });
+            } catch {
+              /* mapa opcional */
+            }
+          }
         } catch (e) {
           outcomes.push({
             name: file.name,
@@ -211,7 +220,7 @@ function IngestDropCard({
           {cfg.label}
         </CardTitle>
         <CardDescription className="text-xs text-muted-foreground">
-          {cfg.hint} Puedes arrastrar varios archivos de esta misma herramienta a la vez.
+          {cfg.hint} Puedes arrastrar varios archivos (hasta 150 MB cada uno).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -270,6 +279,15 @@ function IngestDropCard({
             <span>
               Total creados: <strong>{lastResult.created_count}</strong> hallazgos
               {msg ? ` — ${msg}` : ''}
+              {source === 'nessus-csv' ? (
+                <>
+                  {' '}
+                  ·{' '}
+                  <Link href="/vul-mgmt/mapa" className="underline font-medium">
+                    Ver mapa de exposición
+                  </Link>
+                </>
+              ) : null}
             </span>
           </p>
         )}

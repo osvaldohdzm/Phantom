@@ -13,22 +13,17 @@ export function getApiBaseUrl(): string {
   return `${backend}${API_V1}`;
 }
 
-/** Rutas de ingesta multipart (usan route handler server-side, no rewrite). */
-const INGEST_PATHS = new Set([
-  '/api/v1/ingest/nessus-csv',
-  '/api/v1/ingest/acunetix-html',
-  '/api/v1/ingest/nmap',
-  '/api/v1/ingest/universal-csv',
-]);
+/** Prefijo de rutas de ingesta multipart (route handler server-side, sin límite 10 MB). */
+const INGEST_API_PREFIX = '/api/v1/ingest/';
 
 /**
- * Resuelve URL de ingesta: mismo origen vía `/api/secops/ingest/*` (route handler sin límite 10 MB).
+ * Resuelve URL de ingesta: mismo origen vía `/api/secops/ingest/*`.
  */
 export function resolveIngestApiUrl(path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  if (typeof window !== 'undefined' && INGEST_PATHS.has(normalized)) {
-    const suffix = normalized.slice(API_V1.length + '/ingest'.length);
-    return `${window.location.origin}/api/secops/ingest${suffix}`;
+  if (typeof window !== 'undefined' && normalized.startsWith(INGEST_API_PREFIX)) {
+    const rest = normalized.slice(INGEST_API_PREFIX.length);
+    return `${window.location.origin}/api/secops/ingest/${rest}`;
   }
   return resolveApiUrl(path);
 }

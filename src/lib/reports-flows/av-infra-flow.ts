@@ -18,7 +18,7 @@ export const AV_INFRA_REPORT_FLOW: ReportFlow = {
   ingest: {
     cardTitle: 'Re-escaneo Nessus (modo comparación)',
     cardDescription:
-      'Compara con el repositorio de vulnerabilidades: ausentes → Atendido o Remediado; reaparecidas → sin fila nueva.',
+      'CSV Nessus en modo diff (atendido / remediado / reaparecido). Tras importar, abre el mapa en Repositorio → Mapa.',
     optionalBadge: false,
     onCompleteGotoStep: 4,
   },

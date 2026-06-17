@@ -7,9 +7,9 @@ const nextConfig: NextConfig = {
   // Turbopack blocks cross-origin dev/RSC fetches unless the browser host is listed.
   // @ts-ignore - Next.js 16 root config
   allowedDevOrigins: collectDevOrigins(),
-  // Nessus CSV puede superar 10 MB; el backend acepta hasta 50 MB (ingest.py).
+  // Nessus CSV puede superar 50 MB; el backend acepta hasta 150 MB (ingest.py).
   experimental: {
-    proxyClientMaxBodySize: "55mb",
+    proxyClientMaxBodySize: "160mb",
     // Ingesta grande (parseo + catálogo + BD) puede tardar >30 s.
     proxyTimeout: 300_000,
   },

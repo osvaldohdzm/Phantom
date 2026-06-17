@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Download, Upload } from 'lucide-react';
+import { BarChart3, Download, Map, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { href: '/vul-mgmt/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/vul-mgmt/hallazgos', label: 'Hallazgos', icon: Download },
   { href: '/vul-mgmt/ingesta', label: 'Ingesta', icon: Upload },
+  { href: '/vul-mgmt/mapa', label: 'Mapa', icon: Map },
 ] as const;
 
 export function VulnMgmtNav() {

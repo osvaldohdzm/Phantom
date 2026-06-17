@@ -38,6 +38,26 @@ cleanup() {
 # Set up trap to execute cleanup on Ctrl+C (SIGINT), SIGTERM, and normal script exit
 trap cleanup EXIT INT TERM
 
+ensure_port_free() {
+  local port="$1"
+  local label="$2"
+  local pids
+  pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+  echo "[!] Puerto $port en uso ($label)."
+  if ps -p $pids -o command= 2>/dev/null | grep -qE "spectre.*(uvicorn|next dev)"; then
+    echo "[*] Liberando proceso Phantom anterior en $port..."
+    kill $pids 2>/dev/null || kill -9 $pids 2>/dev/null || true
+    sleep 1
+    return 0
+  fi
+  echo "    Otro proceso ocupa el puerto. Deténlo y vuelve a ejecutar ./start-dev.sh"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+  exit 1
+}
+
 # 1. Ensure Local Services Are Active
 echo "[+] Verifying local database service..."
 echo "    Assumes PostgreSQL (5432) is running locally."
@@ -56,6 +76,7 @@ else
 fi
 
 echo "[*] Launching Uvicorn FastAPI server on port 8000..."
+ensure_port_free 8000 "backend"
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 cd ..
@@ -69,6 +90,7 @@ fi
 
 echo "[*] Launching Next.js server on port 3000..."
 echo "    Allowed dev origins: ${DEV_ALLOWED_ORIGINS}"
+ensure_port_free 3000 "frontend"
 npm run dev -- -H 0.0.0.0 &
 FRONTEND_PID=$!
 

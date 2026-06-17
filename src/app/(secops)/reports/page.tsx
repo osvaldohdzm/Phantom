@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FindingsManager } from '@/components/findings-manager';
 import { DocxReportsPanel } from '@/components/docx-reports-panel';
 import { VulIngestPanel } from '@/components/vul-ingest-panel';
+import { VulRescanPanel } from '@/components/vul-rescan-panel';
 import { EngagementsManager } from '@/components/engagements-manager';
 import { AutomatedFindingsReviewPanel } from '@/components/automated-findings-review-panel';
 import { VulnerabilityTypesReviewPanel } from '@/components/vulnerability-types-review-panel';
@@ -18,6 +19,7 @@ import { ApiUrlBadge } from '@/components/api-url-badge';
 import { ReportsOverviewPanel } from '@/components/reports-overview-panel';
 import { ReportsStepper } from '@/components/reports-stepper';
 import { ReportsStepShell } from '@/components/reports-step-shell';
+import { AvInfraQuickNav } from '@/components/av-infra-quick-nav';
 import { getEngagement, listEngagements } from '@/lib/secops-api';
 import { pickDefaultEngagement } from '@/lib/default-engagement';
 import {
@@ -171,6 +173,8 @@ export default function ReportsPage() {
         <ApiUrlBadge className="type-small text-muted-foreground font-mono shrink-0" />
       </header>
 
+      {flow.id === 'av-infra' ? <AvInfraQuickNav /> : null}
+
       {needsProject ? (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-2.5 type-small text-amber-800 dark:text-amber-200">
           Selecciona o crea un proyecto en el paso 1 para continuar.
@@ -218,6 +222,12 @@ export default function ReportsPage() {
                 <p className="type-small text-amber-600 dark:text-amber-400">
                   Selecciona o crea un proyecto en el paso 1 primero.
                 </p>
+              ) : flow.id === 'av-infra' ? (
+                <VulRescanPanel
+                  engagementId={engagementId}
+                  hideProjectPicker
+                  onComplete={onIngestComplete}
+                />
               ) : (
                 <VulIngestPanel engagementId={engagementId} onIngestComplete={onIngestComplete} />
               )}

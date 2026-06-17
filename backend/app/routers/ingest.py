@@ -29,7 +29,7 @@ from app.deps.auth import actor_email
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
-MAX_FILE_MB = 50
+MAX_FILE_MB = 150
 
 
 async def _read_upload(file: UploadFile) -> bytes:
