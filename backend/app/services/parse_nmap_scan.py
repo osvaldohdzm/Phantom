@@ -42,6 +42,8 @@ def _parse_gnmap(text: str, filename: str) -> list[dict[str, Any]]:
                     "cve": None,
                     "cwe": None,
                     "raw_tool_output": raw,
+                    "tool_source": "Nmap",
+                    "tool_vuln_id": f"{servicio}/{port_id}"[:512],
                 }
             )
     return rows
@@ -92,6 +94,8 @@ def _parse_nmap_xml(text: str, filename: str) -> list[dict[str, Any]]:
                     "cve": None,
                     "cwe": None,
                     "raw_tool_output": raw[:32000],
+                    "tool_source": "Nmap",
+                    "tool_vuln_id": f"{name}/{port_id}"[:512],
                 }
             )
     return rows
@@ -122,6 +126,8 @@ def _parse_normal_nmap(text: str, filename: str) -> list[dict[str, Any]]:
                 "cve": None,
                 "cwe": None,
                 "raw_tool_output": f"[Nmap texto] {line.strip()[:8000]}",
+                "tool_source": "Nmap",
+                "tool_vuln_id": f"{svc}/{m_port.group(1)}"[:512],
             }
         )
     return rows

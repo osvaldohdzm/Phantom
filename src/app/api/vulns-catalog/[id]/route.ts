@@ -5,6 +5,7 @@ import {
   VULNS_CATALOG_SELECT_COLUMNS,
   type VulnsCatalogEditableColumn,
 } from "@/lib/vulns-catalog-columns";
+import { fixTextEncoding } from "@/lib/text-encoding";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +31,35 @@ function getUpdatesFromBody(body: unknown) {
     }
 
     if (typeof value === "string") {
-      validEntries.push([key as VulnsCatalogEditableColumn, value.trim() === "" ? null : value]);
+      const trimmed = value.trim();
+      validEntries.push([
+        key as VulnsCatalogEditableColumn,
+        trimmed === "" ? null : fixTextEncoding(trimmed),
+      ]);
     }
   }
 
   return validEntries;
+}
+
+export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params;
+    const result = await dbQuery<Record<string, unknown>>(
+      `SELECT ${selectColumnsSql} FROM core.vulns_catalog WHERE "Id" = $1 LIMIT 1`,
+      [id],
+    );
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: 'Registro no encontrado.' }, { status: 404 });
+    }
+    return NextResponse.json({ row: result.rows[0] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'No se pudo consultar el registro.', details: message },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {

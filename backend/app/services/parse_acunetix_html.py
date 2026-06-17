@@ -120,6 +120,8 @@ def parse_acunetix_html_bytes(data: bytes) -> list[dict[str, Any]]:
                     "cve": (cve[:32] if cve else None),
                     "cwe": None,
                     "raw_tool_output": raw[:32000],
+                    "tool_source": "Acunetix",
+                    "tool_vuln_id": title[:512] if title else None,
                 }
             )
 

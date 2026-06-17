@@ -92,8 +92,8 @@ export async function GET(request: NextRequest) {
       page,
       pageSize,
       filters: {
-        severity: severityResult.rows.map((row) => row.value).filter(Boolean),
-        source: sourceResult.rows.map((row) => row.value).filter(Boolean),
+        severity: severityResult.rows.map((row: { value: string | null }) => row.value).filter(Boolean),
+        source: sourceResult.rows.map((row: { value: string | null }) => row.value).filter(Boolean),
       },
       columns: VULNERABILITY_SELECT_COLUMNS,
     });

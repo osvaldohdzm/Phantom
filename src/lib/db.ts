@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
 
@@ -28,7 +28,7 @@ function getPool() {
   return pool;
 }
 
-export async function dbQuery<T>(text: string, values: unknown[] = []) {
+export async function dbQuery<T extends QueryResultRow>(text: string, values: unknown[] = []) {
   const activePool = getPool();
   return activePool.query<T>(text, values);
 }

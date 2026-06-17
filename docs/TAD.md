@@ -1,8 +1,8 @@
-# Documento de Arquitectura Técnica (TAD) — Spectra SecOps
+# Documento de Arquitectura Técnica (TAD) — Phantom SecOps
 
 ## 1. Objetivo
 
-Plataforma para **gestión de vulnerabilidades**, **ciclo de vida de pentest** y **servicios de ciberseguridad**, con **IA asistida** (LangChain) bajo revisión humana, auditable y escalable por microservicios.
+Plataforma para **gestión de vulnerabilidades**, **ciclo de vida de pentest** y **servicios de ciberseguridad**, con **Gemini Engine (IA asistida)** bajo revisión humana, auditable y escalable por microservicios.
 
 ## 2. Vista lógica (microservicios)
 
@@ -11,7 +11,7 @@ Plataforma para **gestión de vulnerabilidades**, **ciclo de vida de pentest** y
 | **Web / BFF** | Tablero, flujos UX, exportaciones cliente | Next.js (App Router) |
 | **API Core** | CRUD hallazgos, activos, engagements, planes | FastAPI + SQLAlchemy |
 | **Ingesta** | Parsers Nessus/Acunetix/Sonar, normalización | Workers Python + colas |
-| **IA** | Enriquecimiento, deduplicación, CVSS asistido | LangChain + proveedores LLM |
+| **IA** | Enriquecimiento, deduplicación, CVSS asistido | Gemini Engine (`langchain-core` + proveedores LLM) |
 | **Caché / colas** | Rate limits, jobs async, sesiones | Redis |
 
 Los servicios se despliegan de forma independiente; el repositorio actual agrupa **frontend** y **API** como monorepo de arranque, listo para dividir en imágenes Docker por servicio.
@@ -33,8 +33,8 @@ flowchart LR
     API[FastAPI]
     PG[(PostgreSQL)]
   end
-  subgraph ai [IA]
-    LC[LangChain]
+  subgraph ai [Gemini Engine]
+    GE[Gemini Engine]
     LLM[LLM Cloud / Local]
   end
   subgraph ui [Cliente]
@@ -44,8 +44,8 @@ flowchart LR
   Parsers --> Queue
   Queue --> API
   API --> PG
-  API --> LC
-  LC --> LLM
+  API --> GE
+  GE --> LLM
   Dash --> API
 ```
 
@@ -54,7 +54,7 @@ flowchart LR
 - **Frontend:** Next.js 16, React 19, Tailwind, componentes UI existentes.
 - **Backend:** Python 3.12+, FastAPI, Uvicorn.
 - **Datos:** PostgreSQL 16 (hallazgos, inventario, engagements), Redis 7 (caché/colas).
-- **IA:** `langchain-core`, `langchain-openai`, `langchain-anthropic` (extensible a Ollama/Llama).
+- **IA:** Gemini Engine sobre `langchain-core`, `langchain-openai`, `langchain-anthropic` (extensible a Ollama/Llama). Sin API key activa, modo determinista local.
 
 ## 5. Seguridad y cumplimiento
 

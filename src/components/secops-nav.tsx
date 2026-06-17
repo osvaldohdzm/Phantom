@@ -8,27 +8,54 @@ import {
   ShieldAlert,
   Database,
   Crosshair,
-  Briefcase,
   Wrench,
-  ChevronRight,
   FileSpreadsheet,
   BookOpen,
   Activity,
+  FileText,
+  GitBranch,
+  Server,
+  Scale,
+  Layers,
+  ExternalLink,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/auth-context';
+import { canAdminTenant, type UserRole } from '@/lib/auth-api';
 
-const nav = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles?: UserRole[];
+  adminOnly?: boolean;
+};
+
+const nav: NavItem[] = [
   { href: '/', label: 'Tablero', icon: LayoutDashboard },
+  { href: '/assets', label: 'Activos', icon: Server },
+  { href: '/vul-mgmt', label: 'Vulnerabilidades', icon: ShieldAlert },
+
+  { href: '/reports', label: 'Servicios', icon: FileText },
+  { href: '/vulns-catalog', label: 'Catálogo Operativo', icon: BookOpen },
+  { href: '/compliance', label: 'Compliance', icon: Scale },
+  { href: '/sec-services', label: 'Módulos M1–M17', icon: Layers },
   { href: '/canvas', label: 'Evidence Canvas', icon: Layout },
   { href: '/vul-catalog', label: 'Catálogo Base', icon: Database },
-  { href: '/vulns-catalog', label: 'Catálogo Operativo', icon: BookOpen },
   { href: '/ingesta-excel', label: 'Ingesta Excel', icon: FileSpreadsheet },
-  { href: '/vul-mgmt', label: 'VUL-Mgmt', icon: ShieldAlert },
+  { href: '/tools/phantom', label: 'Phantom Engine', icon: GitBranch },
   { href: '/pent-lifecycle', label: 'PENT-Lifecycle', icon: Crosshair },
-  { href: '/sec-services', label: 'SEC-Services', icon: Briefcase },
   { href: '/tools/nmap', label: 'Herramientas · Nmap', icon: Wrench },
   { href: '/tools/exposure', label: 'Network Exposure Live Report', icon: Activity },
+  { href: '/portal', label: 'Portal cliente', icon: ExternalLink },
+  { href: '/admin', label: 'Administración', icon: Settings, adminOnly: true },
 ];
+
+function visibleNav(role: UserRole | null) {
+  if (!role || role === 'client_viewer') return nav.filter((n) => n.href === '/portal');
+  return nav.filter((n) => !n.adminOnly || canAdminTenant(role));
+}
 
 function isActive(pathname: string | null, href: string) {
   if (!pathname) return false;
@@ -38,24 +65,25 @@ function isActive(pathname: string | null, href: string) {
 
 export function SecOpsSidebarNav() {
   const pathname = usePathname();
+  const { role } = useAuth();
+  const items = visibleNav(role);
   return (
-    <nav className="flex-1 p-3 space-y-0.5">
-      {nav.map(({ href, label, icon: Icon }) => {
+    <nav className="flex-1 px-4 py-6 space-y-1">
+      {items.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (
           <Link
             key={href}
             href={href}
             className={cn(
-              'group flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors',
+              'flex items-center gap-3 rounded-xl px-4 min-h-11 text-sm font-medium transition-colors',
               active
-                ? 'bg-violet-500/15 text-violet-100 border border-violet-500/25'
-                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
             )}
           >
-            <Icon className={cn('size-4', active ? 'text-violet-300' : 'opacity-80')} />
-            <span className="flex-1">{label}</span>
-            <ChevronRight className={cn('size-3', active ? 'opacity-60' : 'opacity-0 group-hover:opacity-50')} />
+            <Icon className={cn('size-[1.125rem] shrink-0', active ? 'text-primary' : '')} />
+            <span className="flex-1 leading-snug">{label}</span>
           </Link>
         );
       })}
@@ -70,22 +98,30 @@ function shortMobileLabel(label: string) {
   if (label === 'Network Exposure Live Report') return 'Exposure';
   if (label === 'PENT-Lifecycle') return 'PENT';
   if (label === 'SEC-Services') return 'SEC';
-  if (label === 'VUL-Mgmt') return 'VUL';
+  if (label === 'Módulos M1–M17') return 'Módulos';
+  if (label === 'Activos') return 'Activos';
+  if (label === 'Compliance') return 'Comp.';
+  if (label === 'Servicio de vulnes') return 'Vulnes';
+  if (label === 'Reportes Word') return 'Reportes';
+  if (label === 'Phantom Engine') return 'Phantom';
   return label;
 }
 
 export function SecOpsMobileNav() {
   const pathname = usePathname();
+  const { role } = useAuth();
+  const items = visibleNav(role);
   return (
-    <nav className="flex flex-wrap gap-x-2.5 gap-y-1 justify-end text-[11px]">
-      {nav.map(({ href, label }) => {
+    <nav className="flex flex-wrap gap-2 justify-end type-small">
+      {items.map(({ href, label }) => {
         const active = isActive(pathname, href);
         return (
           <Link
             key={href}
             href={href}
             className={cn(
-              active ? 'text-violet-300 font-medium' : 'text-slate-400 hover:text-slate-200'
+              'inline-flex items-center min-h-11 px-2 rounded-lg',
+              active ? 'text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
             )}
           >
             {shortMobileLabel(label)}

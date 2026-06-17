@@ -539,69 +539,24 @@ export function generateHTML(data: any, metadata: ReportMetadata, visJsSource: s
             filtered.forEach((h, i) => {
                 const ipVulns = vulnsByHost[h.ip] || [];
                 const nameVulns = h.hostname && vulnsByHost[h.hostname] ? vulnsByHost[h.hostname] : [];
-                let hostVulns = [...ipVulns, ...nameVulns];
+                const totalVulns = ipVulns.length + nameVulns.length;
                 
-                // Deduplicate by name
-                const uniqueVulns = new Map();
-                hostVulns.forEach(v => {
-                    if(!uniqueVulns.has(v.name)) uniqueVulns.set(v.name, v);
-                });
-                hostVulns = Array.from(uniqueVulns.values());
-                
-                // Sort vulns by risk
-                const riskWeights = { 'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'none': 1 };
-                hostVulns.sort((a, b) => {
-                    const rA = riskWeights[a.risk ? a.risk.toLowerCase() : 'none'] || 1;
-                    const rB = riskWeights[b.risk ? b.risk.toLowerCase() : 'none'] || 1;
-                    return rB - rA;
-                });
-                
-                const maxRisk = hostVulns.some(v => v.risk.toLowerCase() === 'critical') ? 'crit' : 
-                                hostVulns.some(v => v.risk.toLowerCase() === 'high') ? 'high' : 
-                                hostVulns.some(v => v.risk.toLowerCase() === 'medium') ? 'med' : 
-                                hostVulns.some(v => v.risk.toLowerCase() === 'low') ? 'low' : 'none';
+                let maxRisk = 'none';
+                if (ipVulns.some(v => v.risk.toLowerCase() === 'critical') || nameVulns.some(v => v.risk.toLowerCase() === 'critical')) maxRisk = 'crit';
+                else if (ipVulns.some(v => v.risk.toLowerCase() === 'high') || nameVulns.some(v => v.risk.toLowerCase() === 'high')) maxRisk = 'high';
+                else if (ipVulns.some(v => v.risk.toLowerCase() === 'medium') || nameVulns.some(v => v.risk.toLowerCase() === 'medium')) maxRisk = 'med';
+                else if (ipVulns.some(v => v.risk.toLowerCase() === 'low') || nameVulns.some(v => v.risk.toLowerCase() === 'low')) maxRisk = 'low';
 
-                let portsHtml = '';
-                if(h.ports) {
-                    h.ports.forEach(p => {
-                        portsHtml += \`<span class="port-tag">\${p.port}/\${p.protocol} \${p.service}</span>\`;
-                    });
-                }
-
-                let vulnsHtml = '';
-                if(hostVulns.length > 0) {
-                    vulnsHtml = \`<div class="vuln-detail" style="margin-top: 10px;">
-                        <strong>Findings (\${hostVulns.length})</strong>
-                        \`;
-                    hostVulns.forEach(v => {
-                        vulnsHtml += \`<div>
-                            <div class="vuln-item-row" onclick="toggleVulnDetails(this, \${v._id})">
-                                <span class="badge \${getRiskClass(v.risk)}">\${escapeHtml(v.risk)}</span> 
-                                <span style="flex:1; line-height:1.4;">\${escapeHtml(v.name)}</span>
-                            </div>
-                            <div class="vuln-expanded-content" style="display:none; padding-left:10px; border-left:2px solid var(--border); font-size:11px; margin-bottom:10px; color:var(--text-main);"></div>
-                        </div>\`;
-                    });
-                    vulnsHtml += \`</div>\`;
-                }
-
-                html += \`
-                <div class="list-item" id="host-item-\${i}">
-                    <div class="list-header" onclick="toggleItem(this); focusNode('\${h.ip}')">
-                        <div>
-                            <div class="list-title">\${escapeHtml(h.ip)} \${h.hostname ? \`(\${escapeHtml(h.hostname)})\` : ''}</div>
-                            <div class="list-subtitle">\${escapeHtml(h.os || 'OS Unknown')}</div>
-                        </div>
-                        <span class="badge \${maxRisk}">\${hostVulns.length} Vulns</span>
-                    </div>
-                    <div class="list-body">
-                        <div class="vuln-detail">
-                            <strong>Ports</strong>
-                            <div>\${portsHtml || 'No open ports'}</div>
-                        </div>
-                        \${vulnsHtml}
-                    </div>
-                </div>\`;
+                html += '<div class="list-item" data-ip="' + escapeHtml(h.ip) + '" data-hostname="' + escapeHtml(h.hostname || '') + '">' +
+                    '<div class="list-header" onclick="toggleHostDetails(this); focusNode(\\\'' + escapeHtml(h.ip) + '\\\')">' +
+                        '<div>' +
+                            '<div class="list-title">' + escapeHtml(h.ip) + (h.hostname ? ' (' + escapeHtml(h.hostname) + ')' : '') + '</div>' +
+                            '<div class="list-subtitle">' + escapeHtml(h.os || 'OS Unknown') + '</div>' +
+                        '</div>' +
+                        '<span class="badge ' + maxRisk + '">' + totalVulns + ' Vulns</span>' +
+                    '</div>' +
+                    '<div class="list-body"></div>' +
+                '</div>';
             });
         } else {
             const filtered = vulns.filter(v => 
@@ -615,34 +570,21 @@ export function generateHTML(data: any, metadata: ReportMetadata, visJsSource: s
             const grouped = {};
             filtered.forEach(v => {
                 if(!grouped[v.name]) grouped[v.name] = { ...v, affectedHosts: new Set() };
-                grouped[v.name].affectedHosts.add(v.host + (v.port && v.port !== 0 ? \`:\${v.port}\` : ''));
+                grouped[v.name].affectedHosts.add(v.host + (v.port && v.port !== 0 ? ':' + v.port : ''));
             });
 
             Object.values(grouped).forEach((v, i) => {
                 const hostsArr = Array.from(v.affectedHosts);
-                html += \`
-                <div class="list-item">
-                    <div class="list-header" onclick="toggleItem(this)">
-                        <div style="flex:1; padding-right: 10px;">
-                            <div class="list-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${escapeHtml(v.name)}</div>
-                            <div class="list-subtitle">\${hostsArr.length} affected host(s)</div>
-                        </div>
-                        <span class="badge \${getRiskClass(v.risk)}">\${v.risk} \${v.cvss ? v.cvss : ''}</span>
-                    </div>
-                    <div class="list-body">
-                        <div class="vuln-detail"><strong>Plugin ID / CVE</strong> \${escapeHtml(v.pluginId)} \${v.cve ? ' | ' + escapeHtml(v.cve) : ''}</div>
-                        \${v.synopsis ? \`<div class="vuln-detail"><strong>Synopsis</strong>\${escapeHtml(v.synopsis)}</div>\` : ''}
-                        \${v.description ? \`<div class="vuln-detail"><strong>Description</strong>\${escapeHtml(v.description)}</div>\` : ''}
-                        \${v.solution ? \`<div class="vuln-detail"><strong>Solution</strong>\${escapeHtml(v.solution)}</div>\` : ''}
-                        \${v.pluginOutput ? \`<div class="vuln-detail"><strong>Output Evidence</strong><pre>\${escapeHtml(v.pluginOutput)}</pre></div>\` : ''}
-                        <div class="vuln-detail">
-                            <strong>Affected Hosts/Ports</strong>
-                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                                \${hostsArr.map(h => \`<span class="port-tag" onclick="focusNode('\${h.split(':')[0]}')">\${h}</span>\`).join('')}
-                            </div>
-                        </div>
-                    </div>
-                </div>\`;
+                html += '<div class="list-item" data-vulnname="' + escapeHtml(btoa(unescape(encodeURIComponent(v.name)))) + '">' +
+                    '<div class="list-header" onclick="toggleVulnTabDetails(this)">' +
+                        '<div style="flex:1; padding-right: 10px;">' +
+                            '<div class="list-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(v.name) + '</div>' +
+                            '<div class="list-subtitle">' + hostsArr.length + ' affected host(s)</div>' +
+                        '</div>' +
+                        '<span class="badge ' + getRiskClass(v.risk) + '">' + v.risk + (v.cvss ? ' ' + v.cvss : '') + '</span>' +
+                    '</div>' +
+                    '<div class="list-body"></div>' +
+                '</div>';
             });
         }
 
@@ -918,7 +860,103 @@ export function generateHTML(data: any, metadata: ReportMetadata, visJsSource: s
 
     window.reportVulns = vulns;
 
-    function toggleVulnDetails(el, vulnId) {
+    window.toggleHostDetails = function(headerEl) {
+        const item = headerEl.parentElement;
+        const bodyEl = item.querySelector('.list-body');
+        
+        if (bodyEl.innerHTML === '') {
+            const ip = item.getAttribute('data-ip');
+            const hostname = item.getAttribute('data-hostname');
+            
+            const h = hosts.find(x => x.ip === ip);
+            if (!h) return;
+
+            const ipVulns = vulnsByHost[ip] || [];
+            const nameVulns = hostname && vulnsByHost[hostname] ? vulnsByHost[hostname] : [];
+            let hostVulns = [...ipVulns, ...nameVulns];
+            
+            const uniqueVulns = new Map();
+            hostVulns.forEach(v => {
+                if(!uniqueVulns.has(v.name)) uniqueVulns.set(v.name, v);
+            });
+            hostVulns = Array.from(uniqueVulns.values());
+            
+            const riskWeights = { 'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'none': 1 };
+            hostVulns.sort((a, b) => {
+                const rA = riskWeights[a.risk ? a.risk.toLowerCase() : 'none'] || 1;
+                const rB = riskWeights[b.risk ? b.risk.toLowerCase() : 'none'] || 1;
+                return rB - rA;
+            });
+            
+            let portsHtml = '';
+            if(h.ports) {
+                h.ports.forEach(p => {
+                    portsHtml += '<span class="port-tag">' + p.port + '/' + p.protocol + ' ' + p.service + '</span>';
+                });
+            }
+
+            let vulnsHtml = '';
+            if(hostVulns.length > 0) {
+                vulnsHtml = '<div class="vuln-detail" style="margin-top: 10px;"><strong>Findings (' + hostVulns.length + ')</strong>';
+                hostVulns.forEach(v => {
+                    vulnsHtml += '<div>' +
+                        '<div class="vuln-item-row" onclick="toggleVulnDetails(this, ' + v._id + ')">' +
+                            '<span class="badge ' + getRiskClass(v.risk) + '">' + escapeHtml(v.risk) + '</span> ' +
+                            '<span style="flex:1; line-height:1.4;">' + escapeHtml(v.name) + '</span>' +
+                        '</div>' +
+                        '<div class="vuln-expanded-content" style="display:none; padding-left:10px; border-left:2px solid var(--border); font-size:11px; margin-bottom:10px; color:var(--text-main);"></div>' +
+                    '</div>';
+                });
+                vulnsHtml += '</div>';
+            }
+
+            let portsSection = '';
+            if (portsHtml) {
+                portsSection = '<div class="vuln-detail"><strong>Ports</strong><div>' + portsHtml + '</div></div>';
+            }
+            bodyEl.innerHTML = portsSection + vulnsHtml;
+        }
+        item.classList.toggle('open');
+    };
+
+    window.toggleVulnTabDetails = function(headerEl) {
+        const item = headerEl.parentElement;
+        const bodyEl = item.querySelector('.list-body');
+        
+        if (bodyEl.innerHTML === '') {
+            const encodedName = item.getAttribute('data-vulnname');
+            const vulnName = decodeURIComponent(escape(atob(encodedName)));
+            
+            const v = window.reportVulns.find(x => x.name === vulnName);
+            if(v) {
+                const affectedHosts = new Set();
+                window.reportVulns.forEach(x => {
+                    if (x.name === vulnName) affectedHosts.add(x.host + (x.port && x.port !== 0 ? ':' + x.port : ''));
+                });
+                const hostsArr = Array.from(affectedHosts);
+                
+                let hHtml = '';
+                hostsArr.forEach(h => {
+                    hHtml += '<span class="port-tag" onclick="focusNode(\\\'' + h.split(':')[0] + '\\\')">' + h + '</span>';
+                });
+                
+                bodyEl.innerHTML = '<div class="vuln-detail"><strong>Plugin ID / CVE</strong> ' + escapeHtml(v.pluginId) + (v.cve ? ' | ' + escapeHtml(v.cve) : '') + '</div>' +
+                    (v.synopsis ? '<div class="vuln-detail"><strong>Synopsis</strong><br>' + escapeHtml(v.synopsis) + '</div>' : '') +
+                    (v.description ? '<div class="vuln-detail"><strong>Description</strong><br>' + escapeHtml(v.description) + '</div>' : '') +
+                    (v.solution ? '<div class="vuln-detail"><strong>Solution</strong><br>' + escapeHtml(v.solution) + '</div>' : '') +
+                    (v.pluginOutput ? '<div class="vuln-detail"><strong>Output Evidence</strong><div class="terminal-output">' + escapeHtml(v.pluginOutput) + '</div></div>' : '') +
+                    '<div class="vuln-detail">' +
+                        '<strong>Affected Hosts/Ports</strong>' +
+                        '<div style="display:flex; flex-wrap:wrap; gap:4px;">' +
+                            hHtml +
+                        '</div>' +
+                    '</div>';
+            }
+        }
+        item.classList.toggle('open');
+    };
+
+    window.toggleVulnDetails = function(el, vulnId) {
         const contentDiv = el.nextElementSibling;
         if(contentDiv.style.display === 'block') {
             contentDiv.style.display = 'none';
@@ -937,7 +975,7 @@ export function generateHTML(data: any, metadata: ReportMetadata, visJsSource: s
                 if(baseV.solution) html += '<div style="margin-bottom:8px;"><strong>Solution</strong><br>' + escapeHtml(baseV.solution) + '</div>';
                 
                 if(outputs.length > 0) {
-                    html += '<div style="margin-bottom:8px;"><strong>Plugin Output</strong><div class="terminal-output">' + escapeHtml(outputs.join('\n\n')) + '</div></div>';
+                    html += '<div style="margin-bottom:8px;"><strong>Plugin Output</strong><div class="terminal-output">' + escapeHtml(outputs.join('\\n\\n')) + '</div></div>';
                 }
                 
                 contentDiv.innerHTML = html || '<i>No additional details provided.</i>';

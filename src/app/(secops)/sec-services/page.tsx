@@ -1,40 +1,69 @@
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PlatformModulesGrid } from '@/components/platform-modules-grid';
+import { buttonVariants } from '@/components/ui/button';
 
 const catalog = [
-  { name: 'Análisis de código estático / SAST', note: 'Integración CI (Jenkins, GitLab).' },
-  { name: 'Hardening e infraestructura', note: 'Runbooks y evidencias en plataforma.' },
-  { name: 'Auditoría de cumplimiento', note: 'Controles mapeados a hallazgos y planes.' },
-  { name: 'Red team / purple team', note: 'Engagement tipo extendido en PENT-Lifecycle.' },
+  {
+    name: 'Pentest infra / red / aplicación',
+    note: 'Flujo 7 pasos · M10 + M14',
+    href: '/reports',
+  },
+  {
+    name: 'Análisis estático (SAST)',
+    note: 'Flujo dedicado · parsers en Fase 3',
+    href: '/reports',
+  },
+  {
+    name: 'DAST web (Acunetix, Burp)',
+    note: 'Ingesta Acunetix + flujo DAST',
+    href: '/reports',
+  },
+  {
+    name: 'Auditoría de cumplimiento',
+    note: 'M17 · controles y mapeo a hallazgos',
+    href: '/compliance',
+  },
+  {
+    name: 'Gestión de activos',
+    note: 'M2 · inventario antes del alcance',
+    href: '/assets',
+  },
 ] as const;
 
 export default function SecServicesPage() {
   return (
-    <div className="p-6 md:p-10 max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-50">SEC-Services</h1>
-        <p className="text-slate-400 mt-2">
-          Catálogo de servicios de ciberseguridad, asignación de consultores y seguimiento de tiempos alineado a la hoja{' '}
-          <span className="text-slate-300">Reportes</span>.
+    <div className="p-6 md:p-10 max-w-6xl mx-auto space-y-10">
+      <div className="space-y-3">
+        <h1 className="text-3xl font-bold">SEC-Services · Plataforma</h1>
+        <p className="text-muted-foreground max-w-3xl">
+          Mapa de módulos M1–M17 según la especificación del sistema. Lo marcado como{' '}
+          <span className="text-emerald-600 dark:text-emerald-400">Operativo</span> o{' '}
+          <span className="text-amber-600 dark:text-amber-400">Parcial</span> ya tiene código en
+          Spectre; el pentest de 7 pasos permanece en Reportes Word.
         </p>
+        <Link href="/reports" className={buttonVariants({ variant: 'outline' })}>
+          Ir a Reportes Word (pentest)
+        </Link>
       </div>
 
-      <Card className="bg-slate-900/80 border-slate-800">
+      <PlatformModulesGrid />
+
+      <Card>
         <CardHeader>
-          <CardTitle className="text-slate-100">Catálogo (plantilla)</CardTitle>
-          <CardDescription className="text-slate-500">
-            En implementación completa: tabla <code className="text-slate-400">security_services</code> + asignaciones y
-            partes de horas.
-          </CardDescription>
+          <CardTitle>Catálogo de servicios</CardTitle>
+          <CardDescription>Enlaces a los flujos implementados hoy</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {catalog.map((c) => (
-            <div
+            <Link
               key={c.name}
-              className="rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+              href={c.href}
+              className="rounded-lg border border-border bg-muted/20 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 hover:border-primary/30 transition-colors"
             >
-              <span className="text-slate-200 text-sm font-medium">{c.name}</span>
-              <span className="text-xs text-slate-500">{c.note}</span>
-            </div>
+              <span className="text-sm font-medium">{c.name}</span>
+              <span className="text-xs text-muted-foreground">{c.note}</span>
+            </Link>
           ))}
         </CardContent>
       </Card>

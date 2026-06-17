@@ -130,7 +130,7 @@ export function NmapToExcel() {
             </motion.h1>
             <p className="text-slate-400 mt-2">
               Herramienta de reconocimiento: exporta superficie de ataque a hojas compatibles con el flujo
-              Spectra.
+              Phantom.
             </p>
           </div>
           <Button

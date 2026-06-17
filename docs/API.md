@@ -1,4 +1,4 @@
-# Manual de API — Spectra SecOps (v0.1)
+# Manual de API — Phantom SecOps (v0.1)
 
 Base URL local: `http://127.0.0.1:8000`
 
@@ -38,9 +38,15 @@ Base URL local: `http://127.0.0.1:8000`
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/v1/findings` | Lista hallazgos (`skip`, `limit`). |
+| GET | `/api/v1/findings` | Lista hallazgos (`skip`, `limit`, `engagement_id`, filtros). |
 | POST | `/api/v1/findings` | Crea hallazgo normalizado. |
-| POST | `/api/v1/findings/{finding_id}/ai-enrich` | Enriquecimiento IA (LangChain). Cuerpo opcional para sobreescribir `raw_tool_output` / contexto. |
+| PATCH | `/api/v1/findings/{finding_id}` | Actualiza campos del hallazgo. |
+| PATCH | `/api/v1/findings/{finding_id}/status` | Cambia estado del ciclo de vida. |
+| POST | `/api/v1/findings/{finding_id}/ai-enrich` | Enriquecimiento **Gemini Engine (IA)**. Cuerpo opcional para sobreescribir `raw_tool_output` / contexto. |
+| POST | `/api/v1/findings/deduplicate` | Deduplicación batch por `engagement_id` (query param). Elimina duplicados detectados. |
+| POST | `/api/v1/findings/consolidate-master-catalog` | Consolida hallazgos en el catálogo maestro operativo (metadatos globales, fingerprint, `ai_group_id`). |
+| POST | `/api/v1/findings/assign-ai-groups` | Asigna `ai_group_id` por título normalizado dentro de un engagement (heurística local, sin LLM). |
+| POST | `/api/v1/findings/sync-from-catalog` | Sincroniza campos Esp* desde catálogo operativo. |
 
 ### Ejemplo `POST /api/v1/findings`
 
@@ -71,10 +77,52 @@ Base URL local: `http://127.0.0.1:8000`
 
 Respuesta incluye `explicacion_tecnica`, `amenaza_ampliada`, `owasp_top10`, `mitre_attack`, `sugerencia_remediacion` y `disclaimer`.
 
+### Ejemplo `POST /api/v1/findings/deduplicate`
+
+Query: `?engagement_id=<uuid>`
+
+Respuesta: `{ "deleted_count": 3, "group_count": 2 }`
+
+### Ejemplo `POST /api/v1/findings/consolidate-master-catalog`
+
+```json
+{
+  "engagement_id": "uuid-del-proyecto"
+}
+```
+
+O bien `{ "finding_ids": ["uuid-1", "uuid-2"] }`.
+
+Respuesta: `{ "synced", "skipped", "total", "groups", "errors", "details" }`
+
+### Ejemplo `POST /api/v1/findings/assign-ai-groups`
+
+Query: `?engagement_id=<uuid>`
+
+Respuesta: `{ "assigned": 12, "groups_created": 4 }`
+
+## Ingesta
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/v1/ingest/universal-csv` | Importa hallazgos desde CSV genérico (`file`, `engagement_id`, `column_map` opcional JSON). |
+| POST | `/api/v1/ingest/nessus-csv` | Importa export CSV de Nessus. |
+| POST | `/api/v1/ingest/acunetix-html` | Importa informe HTML de Acunetix. |
+| POST | `/api/v1/ingest/nmap` | Importa salida Nmap. |
+
+### Ejemplo `POST /api/v1/ingest/universal-csv`
+
+`multipart/form-data`:
+
+- `file`: archivo CSV
+- `engagement_id`: UUID del proyecto (obligatorio)
+- `column_map` (opcional): JSON `{"Título": "titulo", "Severidad": "severidad", ...}`
+
+Respuesta: `{ "source": "universal-csv", "created_count", "finding_ids", "message", "column_map" }`
+
 ## Próximos endpoints
 
 - `POST /api/v1/ingest/nessus` — subida XML y job async.
-- `POST /api/v1/dedupe` — deduplicación batch.
 - `GET /api/v1/exports/vulnerability-tracker.xlsx` — matriz cliente.
 
 Documentación interactiva: `http://127.0.0.1:8000/docs` (OpenAPI).

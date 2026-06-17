@@ -1,4 +1,4 @@
-# Diccionario de datos — Spectra SecOps
+# Diccionario de datos — Phantom SecOps
 
 Definiciones alineadas a las hojas Excel de referencia y al esquema implementado en PostgreSQL (tablas en snake_case).
 

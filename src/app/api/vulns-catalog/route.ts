@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
          ORDER BY "${getDistinct}" ASC
          LIMIT 500`
       );
-      return NextResponse.json({ values: distinctResult.rows.map(r => r.value).filter(Boolean) });
+      return NextResponse.json({ values: distinctResult.rows.map((r: { value: string | null }) => r.value).filter(Boolean) });
     }
 
     const whereClauses: string[] = [];
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       `SELECT ${selectColumnsSql}
        FROM core.vulns_catalog
        ${whereSql}
-       ORDER BY "Id"::int DESC
+       ORDER BY "Id"::int DESC NULLS LAST
        LIMIT $${values.length + 1}
        OFFSET $${values.length + 2}`,
       [...values, pageSize, offset],
@@ -110,8 +110,8 @@ export async function GET(request: NextRequest) {
       page,
       pageSize,
       filters: {
-        severity: severityResult.rows.map((row) => row.value).filter(Boolean),
-        availableColumns: columnsResult.rows.map(r => r.column_name),
+        severity: severityResult.rows.map((row: { value: string | null }) => row.value).filter(Boolean),
+        availableColumns: columnsResult.rows.map((r: { column_name: string }) => r.column_name),
       },
     });
   } catch (error) {

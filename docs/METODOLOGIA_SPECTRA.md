@@ -1,4 +1,4 @@
-# Guía de metodología Spectra (pentester)
+# Guía de metodología Phantom (pentester)
 
 ## 1. Alcance y compromiso
 
@@ -27,7 +27,7 @@
 
 1. **Técnico:** descripción, impacto, remediación verificable, referencias CVE/CWE/CVSS.
 2. **Ejecutivo:** riesgo de negocio, priorización, dependencias.
-3. Exportar **Matriz de seguimiento** para el cliente y cerrar ciclo en VUL-Mgmt.
+3. Exportar **Matriz de seguimiento** para el cliente y cerrar ciclo en Vulnerabilities.
 
 ## 6. Calidad y ética
 

@@ -80,6 +80,13 @@ export default function ExposureReportPage() {
       );
       allVulns = allVulns.filter(v => !deadNessusHosts.has(v.host));
 
+      // Filter out specific unwanted SSL vulnerabilities
+      const unwantedVulns = new Set([
+        'SSL Certificate Cannot Be Trusted',
+        'SSL Self-Signed Certificate'
+      ]);
+      allVulns = allVulns.filter(v => !unwantedVulns.has(v.name));
+
       // Extract unmapped hosts from Nessus if they weren't in Nmap
       const uniqueNessusHosts = Array.from(new Set(allVulns.map(v => v.host)));
       for (const hostIp of uniqueNessusHosts) {
@@ -142,12 +149,12 @@ export default function ExposureReportPage() {
         <Activity className="size-6 text-violet-400" />
         <h1 className="text-2xl font-bold tracking-tight">Network Exposure Live Report</h1>
       </div>
-      <p className="text-slate-400 text-sm">
+      <p className="text-muted-foreground text-sm">
         Genera un reporte HTML interactivo y standalone a partir de resultados de Nmap y Nessus.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card>
           <CardHeader>
             <CardTitle className="text-lg">Metadata del Reporte</CardTitle>
             <CardDescription>Información contextual para la cabecera del reporte.</CardDescription>
@@ -158,7 +165,6 @@ export default function ExposureReportPage() {
               <Input
                 value={metadata.title}
                 onChange={(e) => setMetadata({ ...metadata, title: e.target.value })}
-                className="bg-slate-950 border-slate-800"
               />
             </div>
             <div className="space-y-2">
@@ -167,26 +173,25 @@ export default function ExposureReportPage() {
                 type="date"
                 value={metadata.date}
                 onChange={(e) => setMetadata({ ...metadata, date: e.target.value })}
-                className="bg-slate-950 border-slate-800"
               />
             </div>
           </CardContent>
         </Card>
 
         <div className="space-y-6">
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card>
             <CardHeader>
               <CardTitle className="text-lg">Archivos de Origen</CardTitle>
               <CardDescription>Sube resultados de Nmap (XML/Grepable) y Nessus (CSV/XML).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div
-                className="border-2 border-dashed border-slate-700 hover:border-violet-500 rounded-lg p-8 text-center transition-colors cursor-pointer bg-slate-950/50"
+                className="border-2 border-dashed border-border hover:border-violet-500 rounded-lg p-8 text-center transition-colors cursor-pointer bg-muted/30"
                 onClick={() => document.getElementById('file-upload')?.click()}
               >
-                <UploadCloud className="size-10 text-slate-400 mx-auto mb-3" />
+                <UploadCloud className="size-10 text-muted-foreground mx-auto mb-3" />
                 <p className="text-sm font-medium">Haz clic para subir archivos</p>
-                <p className="text-xs text-slate-500 mt-1">.xml, .csv, .nessus, .nmap, .gnmap</p>
+                <p className="text-xs text-muted-foreground mt-1">.xml, .csv, .nessus, .nmap, .gnmap</p>
                 <input
                   id="file-upload"
                   type="file"
@@ -199,17 +204,17 @@ export default function ExposureReportPage() {
 
               {files.length > 0 && (
                 <div className="space-y-2">
-                  <label className="text-xs text-slate-400 uppercase tracking-wider font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Archivos Cargados</label>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Archivos Cargados</label>
                   <div className="space-y-2 max-h-[160px] overflow-y-auto pr-2">
                     {files.map((f, i) => (
-                      <div key={i} className="flex items-center justify-between bg-slate-950 p-2 rounded-md border border-slate-800">
+                      <div key={i} className="flex items-center justify-between bg-muted/50 p-2 rounded-md border border-border">
                         <div className="flex items-center gap-2 overflow-hidden">
-                          <FileType2 className="size-4 text-violet-400 flex-shrink-0" />
+                          <FileType2 className="size-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
                           <span className="text-sm truncate">{f.name}</span>
                         </div>
                         <button
                           onClick={() => removeFile(i)}
-                          className="text-slate-500 hover:text-red-400 px-2"
+                          className="text-muted-foreground hover:text-destructive px-2"
                         >
                           &times;
                         </button>
