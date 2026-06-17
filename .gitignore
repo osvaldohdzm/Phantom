@@ -41,4 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 certificates
-Spectra-Tool/
+Phantom-Tool/
+backend/.venv/
+backend/storage/branding/
+backend/storage/reports/
