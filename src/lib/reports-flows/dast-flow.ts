@@ -10,11 +10,12 @@ import {
 } from 'lucide-react';
 import type { ReportFlow } from '@/lib/reports-flows/types';
 
-/** Flujo DAST / aplicación web — variante propia (evoluciona aparte de pentest). */
+/** Servicio DAST — aplicación web y API expuesta. */
 export const DAST_REPORT_FLOW: ReportFlow = {
   id: 'dast',
   label: 'DAST',
-  subtitle: 'Aplicación web y API expuesta — URLs, auth y scanners dinámicos.',
+  subtitle:
+    'Servicio DAST en aplicación web y API expuesta — URLs, autenticación y scanners dinámicos.',
   serviceTypes: ['DAST', 'API', 'Mobile'],
   ingest: {
     cardTitle: 'Importar hallazgos DAST',
@@ -27,8 +28,8 @@ export const DAST_REPORT_FLOW: ReportFlow = {
     {
       n: 1,
       key: 'project',
-      label: 'Proyecto',
-      shortLabel: 'Proyecto',
+      label: 'Servicio',
+      shortLabel: 'Servicio',
       description: 'URLs objetivo, login, headers y reglas del escaneo dinámico.',
       icon: FolderKanban,
     },

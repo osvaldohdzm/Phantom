@@ -13,17 +13,18 @@ import {
   type VulnsCatalogEditableColumn,
 } from '@/lib/vulns-catalog-columns';
 import {
-  CATALOG_SPANISH_AI_FIELDS,
-  suggestCatalogSpanishField,
-  type CatalogSpanishAiField,
+  isCatalogAiColumn,
+  suggestCatalogLocaleField,
 } from '@/lib/catalog-ai-fields';
+import { catalogLocaleAiColumns, shouldHideCatalogColumnInEditor } from '@/lib/tenant-locale';
 import {
   catalogRowCompleteness,
   getAiPromptForField,
-  mandatorySpanishAiFields,
+  mandatoryLocaleAiFields,
   saveCatalogFieldAiPrompt,
   type CatalogFieldConfig,
 } from '@/lib/catalog-field-config';
+import { useAuth } from '@/contexts/auth-context';
 import { syncFindingsFromCatalogApi, getFinding } from '@/lib/secops-api';
 import { charCountTone } from '@/lib/finding-spreadsheet-columns';
 import { cn } from '@/lib/utils';
@@ -51,8 +52,8 @@ function rowToFormValues(row: CatalogRow): Partial<Record<VulnsCatalogEditableCo
   return next;
 }
 
-function isSpanishAiField(col: string): col is CatalogSpanishAiField {
-  return (CATALOG_SPANISH_AI_FIELDS as readonly string[]).includes(col);
+function isLocaleAiField(col: string, language: 'es' | 'en'): boolean {
+  return isCatalogAiColumn(col, language);
 }
 
 type CatalogFieldLayout = 'default' | 'compact' | 'hero';
@@ -119,10 +120,11 @@ export function CatalogRecordEditor({
   engagementId,
   fromFindingId,
 }: CatalogRecordEditorProps) {
+  const { tenantLanguage } = useAuth();
   const [formValues, setFormValues] = useState(() => rowToFormValues(row));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestingField, setSuggestingField] = useState<CatalogSpanishAiField | 'all' | 'mandatory' | null>(
+  const [suggestingField, setSuggestingField] = useState<string | 'all' | 'mandatory' | null>(
     null
   );
   const [aiSuggested, setAiSuggested] = useState<Set<string>>(new Set());
@@ -150,6 +152,7 @@ export function CatalogRecordEditor({
 
     for (const col of VULNS_CATALOG_EDITABLE_COLUMNS) {
       if (topIdentity.has(col)) continue;
+      if (shouldHideCatalogColumnInEditor(col, tenantLanguage)) continue;
       if (mandatorySet.has(col)) mandatory.push(col);
       else optional.push(col);
     }
@@ -159,7 +162,7 @@ export function CatalogRecordEditor({
     );
 
     return { mandatoryColumns: mandatory, optionalColumns: optional, identityToolColumns };
-  }, [fieldConfig.mandatoryCatalogColumns, formValues, row]);
+  }, [fieldConfig.mandatoryCatalogColumns, formValues, row, tenantLanguage]);
 
   useEffect(() => {
     setFormValues(rowToFormValues(row));
@@ -176,12 +179,12 @@ export function CatalogRecordEditor({
   }, []);
 
   const resolveFieldHint = useCallback(
-    (field: CatalogSpanishAiField) => {
+    (field: string) => {
       const draft = promptOverrides[field]?.trim();
       if (draft) return draft;
-      return getAiPromptForField(field, fieldConfig);
+      return getAiPromptForField(field, fieldConfig, tenantLanguage);
     },
-    [fieldConfig, promptOverrides]
+    [fieldConfig, promptOverrides, tenantLanguage]
   );
 
   const persistFieldPrompt = useCallback(
@@ -229,19 +232,19 @@ export function CatalogRecordEditor({
   );
 
   const mergedRow = { ...row, ...formValues };
-  const completeness = catalogRowCompleteness(mergedRow, fieldConfig);
+  const completeness = catalogRowCompleteness(mergedRow, fieldConfig, tenantLanguage);
 
   const suggestOne = useCallback(
-    async (field: CatalogSpanishAiField) => {
+    async (field: string) => {
       setSuggestingField(field);
       setError(null);
       try {
         const hint = resolveFieldHint(field);
-        // Estado más reciente del formulario (incluye otros Esp* ya llenos manualmente o por IA)
         const latestRow = { ...row, ...formValues };
-        const value = await suggestCatalogSpanishField(field, latestRow, {
+        const value = await suggestCatalogLocaleField(field, latestRow, {
           fieldHint: hint,
           config: fieldConfig,
+          language: tenantLanguage,
         });
         setFormValues((prev) => ({ ...prev, [field]: value }));
         setAiSuggested((prev) => new Set([...prev, field]));
@@ -251,22 +254,22 @@ export function CatalogRecordEditor({
         setSuggestingField(null);
       }
     },
-    [row, formValues, fieldConfig, resolveFieldHint]
+    [row, formValues, fieldConfig, resolveFieldHint, tenantLanguage]
   );
 
   const suggestFields = useCallback(
-    async (fields: CatalogSpanishAiField[], mode: 'all' | 'mandatory') => {
+    async (fields: string[], mode: 'all' | 'mandatory') => {
       setSuggestingField(mode);
       setError(null);
       try {
-        // Acumula cada campo generado para que el siguiente vea los ya completados
         let current: Record<string, unknown> = { ...row, ...formValues };
         for (const field of fields) {
           setSuggestingField(field);
           const hint = resolveFieldHint(field);
-          const value = await suggestCatalogSpanishField(field, current, {
+          const value = await suggestCatalogLocaleField(field, current, {
             fieldHint: hint,
             config: fieldConfig,
+            language: tenantLanguage,
           });
           current = { ...current, [field]: value };
           setFormValues((prev) => ({ ...prev, [field]: value }));
@@ -278,13 +281,13 @@ export function CatalogRecordEditor({
         setSuggestingField(null);
       }
     },
-    [row, formValues, fieldConfig, resolveFieldHint]
+    [row, formValues, fieldConfig, resolveFieldHint, tenantLanguage]
   );
 
-  const suggestAll = () => void suggestFields([...CATALOG_SPANISH_AI_FIELDS], 'all');
+  const suggestAll = () => void suggestFields([...catalogLocaleAiColumns(tenantLanguage)], 'all');
 
   const suggestMandatory = () => {
-    const mandatory = mandatorySpanishAiFields(fieldConfig);
+    const mandatory = mandatoryLocaleAiFields(fieldConfig, tenantLanguage);
     void suggestFields(mandatory, 'mandatory');
   };
 
@@ -293,7 +296,7 @@ export function CatalogRecordEditor({
     mandatory: boolean,
     layout: CatalogFieldLayout = 'default'
   ) => {
-    const isEsp = isSpanishAiField(column);
+    const isAiField = isLocaleAiField(column, tenantLanguage);
     const isBusy = suggestingField === column;
     const wasSuggested = aiSuggested.has(column);
     const rawValue = String(formValues[column] ?? '');
@@ -324,13 +327,13 @@ export function CatalogRecordEditor({
       >
         <div className="flex items-center justify-between gap-2">
           <span className={cn(labelClass, layout !== 'compact' && 'flex items-center gap-1.5')}>
-            {catalogColumnLabel(column)}
+            {catalogColumnLabel(column, tenantLanguage)}
             {mandatory ? <span className="text-rose-500">*</span> : null}
             {wasSuggested ? (
               <span className="text-violet-600 dark:text-violet-400 normal-case font-semibold">· IA</span>
             ) : null}
           </span>
-          {isEsp ? (
+          {isAiField ? (
             <div className="flex items-center gap-1">
               <Button
                 type="button"
@@ -360,7 +363,7 @@ export function CatalogRecordEditor({
             </div>
           ) : null}
         </div>
-        {isEsp && expandedPrompt === column ? (
+        {isAiField && expandedPrompt === column ? (
           <div className="space-y-1">
             <textarea
               className="min-h-[88px] w-full rounded-md border border-violet-500/25 bg-muted/30 px-2.5 py-2 text-[11px] leading-relaxed text-foreground"
@@ -549,14 +552,14 @@ export function CatalogRecordEditor({
             ) : (
               <Sparkles className="size-3.5 mr-1.5" />
             )}
-            Rellenar todos (ES) con IA
+            Rellenar todos con IA
           </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
             className="h-8 text-xs border-violet-500/40 text-violet-700 dark:text-violet-300"
-            disabled={suggestingField !== null || saving || mandatorySpanishAiFields(fieldConfig).length === 0}
+            disabled={suggestingField !== null || saving || mandatoryLocaleAiFields(fieldConfig, tenantLanguage).length === 0}
             onClick={suggestMandatory}
           >
             {suggestingField === 'mandatory' ? (
@@ -564,7 +567,7 @@ export function CatalogRecordEditor({
             ) : (
               <Sparkles className="size-3.5 mr-1.5" />
             )}
-            Solo obligatorios (ES)
+            Solo obligatorios
           </Button>
         </div>
       </CardHeader>
@@ -600,7 +603,10 @@ export function CatalogRecordEditor({
                   Campos obligatorios
                 </h3>
                 <p className="text-xs text-muted-foreground max-w-xl">
-                  Español para informe Word · deben estar completos ({completeness.percent}%)
+                  {tenantLanguage === 'en'
+                    ? 'Report fields · must be complete'
+                    : 'Campos para informe Word · deben estar completos'}{' '}
+                  ({completeness.percent}%)
                 </p>
               </div>
               <span className="shrink-0 rounded-full border border-rose-500/30 bg-rose-500/5 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">

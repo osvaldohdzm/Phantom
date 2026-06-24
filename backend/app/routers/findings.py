@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import case, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.deps.auth import (
@@ -30,6 +30,8 @@ from app.schemas import (
     FindingRead,
     FindingStatusUpdate,
     FindingUpdate,
+    PublishToRepositoryRequest,
+    PublishToRepositoryResponse,
     SyncFromCatalogRequest,
     SyncFromCatalogResponse,
 )
@@ -41,8 +43,10 @@ from app.services.finding_duplicates import find_duplicate_groups
 from app.services.finding_history import append_finding_history
 from app.services.master_catalog_consolidate import consolidate_findings_batch
 from app.services.finding_project_summary import build_project_summary
+from app.services.finding_type_groups import build_type_groups
 from app.services.finding_catalog_sync import (
     findings_matching_catalog_entry,
+    operational_catalog_finding_overlay,
     sync_findings_from_operational_catalog,
 )
 from app.services.finding_text_repair import (
@@ -50,6 +54,15 @@ from app.services.finding_text_repair import (
     repair_finding_text,
     repair_findings_text,
 )
+from app.services.tenant_locale import tenant_language_for_id
+from app.services.vulns_catalog_lookup import resolve_operational_catalog_for_finding
+from app.services.finding_matrix_list import serialize_finding_matrix
+from app.services.finding_repository_scope import (
+    REPOSITORY_STATUS,
+    SERVICE_DRAFT_STATUS,
+    apply_repository_list_filter,
+)
+from app.services.default_engagement import is_default_engagement
 
 router = APIRouter(prefix="/findings", tags=["findings"])
 
@@ -57,7 +70,7 @@ router = APIRouter(prefix="/findings", tags=["findings"])
 def _touch_updated(finding: Finding, when: Optional[datetime] = None) -> None:
     finding.updated_at = when or datetime.now(timezone.utc)
 
-MAX_FINDINGS_LIMIT = 50_000
+MAX_FINDINGS_LIMIT = 100_000
 DEFAULT_FINDINGS_LIMIT = 10_000
 
 CLOSED_FINDING_STATUSES = (
@@ -114,6 +127,7 @@ def _findings_query(
         )
     if tool_source and tool_source.strip():
         query = query.filter(Finding.tool_source.ilike(tool_source.strip()))
+    query = apply_repository_list_filter(query, engagement_id)
     return query
 
 
@@ -180,6 +194,45 @@ def count_findings(
     return {"total": query.count()}
 
 
+@router.get("/severity-breakdown")
+def findings_severity_breakdown(
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(get_auth_context),
+    engagement_id: Optional[UUID] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    tool_source: Optional[str] = None,
+) -> dict:
+    """Conteo por severidad en una sola consulta agregada (GROUP BY).
+
+    Evita descargar las ~50k filas solo para pintar las insignias de severidad y el
+    total. Respeta exactamente los mismos filtros que el listado del repositorio.
+    """
+    query = _findings_query(
+        db,
+        engagement_id,
+        status,
+        None,
+        q,
+        tool_source=tool_source,
+        require_engagement=False,
+        tenant_id=ctx.tenant_id,
+    )
+    rows = (
+        query.with_entities(Finding.severidad, func.count(Finding.id))
+        .group_by(Finding.severidad)
+        .all()
+    )
+    by_severity: dict[str, int] = {sev.value: 0 for sev in Severity}
+    total = 0
+    for sev, cnt in rows:
+        key = sev.value if hasattr(sev, "value") else str(sev)
+        count = int(cnt or 0)
+        by_severity[key] = count
+        total += count
+    return {"total": total, "by_severity": by_severity}
+
+
 @router.get("/stats/platform")
 def platform_stats(
     db: Session = Depends(get_db),
@@ -187,17 +240,21 @@ def platform_stats(
 ) -> dict:
     """KPIs agregados para el tablero (sin romper filtros por proyecto)."""
     base = tenant_findings_filter(db.query(Finding), ctx.tenant_id)
+    base = apply_repository_list_filter(base, None)
     open_q = base.filter(~Finding.status.in_(CLOSED_FINDING_STATUSES))
 
     by_severity: dict[str, int] = {}
     for sev in Severity:
         by_severity[sev.value] = base.filter(Finding.severidad == sev).count()
 
+    tenant_engagements = db.query(Engagement).filter(Engagement.tenant_id == ctx.tenant_id).all()
+    engagements_total = sum(1 for eg in tenant_engagements if not is_default_engagement(eg))
+
     return {
         "findings_total": base.count(),
         "findings_open": open_q.count(),
         "findings_critical_open": open_q.filter(Finding.severidad == Severity.critical).count(),
-        "engagements_total": db.query(Engagement).filter(Engagement.tenant_id == ctx.tenant_id).count(),
+        "engagements_total": engagements_total,
         "assets_total": db.query(Asset).filter(Asset.tenant_id == ctx.tenant_id).count(),
         "by_severity": by_severity,
     }
@@ -237,7 +294,7 @@ def deduplicate_findings(
     return {"deleted_count": deleted, "group_count": len(groups)}
 
 
-@router.get("", response_model=list[FindingRead])
+@router.get("")
 def list_findings(
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(get_auth_context),
@@ -250,7 +307,9 @@ def list_findings(
     q: Optional[str] = None,
     tool_source: Optional[str] = None,
     order_by: Optional[str] = "created_at_desc",
-) -> list[Finding]:
+    projection: Optional[str] = None,
+):
+    """Lista hallazgos. Con ``projection=matrix`` devuelve payload ligero (matriz CYB001)."""
     if skip < 0:
         raise HTTPException(status_code=400, detail="skip debe ser >= 0")
     safe_limit = min(max(limit, 1), MAX_FINDINGS_LIMIT)
@@ -269,7 +328,81 @@ def list_findings(
         query = query.filter(Finding.severidad.in_(multi))
     query = _apply_findings_order(query, order_by)
     findings = query.offset(skip).limit(safe_limit).all()
+    if projection == "matrix":
+        return [serialize_finding_matrix(f) for f in findings]
     return repair_findings_text(findings, db)
+
+
+@router.get("/grouped-by-type")
+def list_findings_grouped_by_type(
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(get_auth_context),
+    engagement_id: Optional[UUID] = None,
+    status: Optional[str] = None,
+    severidad: Optional[str] = None,
+    severidades: Optional[str] = None,
+    q: Optional[str] = None,
+    tool_source: Optional[str] = None,
+    include_member_ids: bool = True,
+) -> dict:
+    """Hallazgos agregados por tipo de vulnerabilidad (un representante por tipo).
+
+    Sustituye la descarga completa de decenas de miles de hallazgos en la fase de
+    "Revisión por tipo": el agrupamiento ocurre en el servidor y solo viajan los
+    representantes + conteos (+ ids de miembros opcionales para acciones masivas).
+    """
+    query = _findings_query(
+        db,
+        engagement_id,
+        status,
+        severidad,
+        q,
+        tool_source=tool_source,
+        require_engagement=False,
+        tenant_id=ctx.tenant_id,
+    )
+    multi = _parse_severidades(severidades)
+    if multi:
+        query = query.filter(Finding.severidad.in_(multi))
+
+    result = build_type_groups(db, query)
+    reps_by_id = result["reps_by_id"]
+    repair_findings_text(list(reps_by_id.values()), db)
+    tenant_lang = tenant_language_for_id(db, ctx.tenant_id)
+
+    groups_out: list[dict] = []
+    for key in result["order"]:
+        g = result["groups"][key]
+        rep = reps_by_id.get(g["rep_id"])
+        if rep is None:
+            continue
+        rep_payload = FindingRead.model_validate(rep).model_dump()
+        cat = resolve_operational_catalog_for_finding(db, rep)
+        if cat:
+            overlay = operational_catalog_finding_overlay(
+                rep, cat, language=tenant_lang, force=True
+            )
+            if overlay:
+                if "severidad" in overlay:
+                    overlay["severidad"] = overlay["severidad"].value
+                rep_payload.update(overlay)
+        groups_out.append(
+            {
+                "key": g["key"],
+                "titulo": g["titulo"],
+                "severidad": g["severidad"].value,
+                "tool_label": g["tool_label"],
+                "instance_count": len(g["member_ids"]),
+                "member_ids": g["member_ids"] if include_member_ids else [],
+                "representative": rep_payload,
+            }
+        )
+
+    return {
+        "groups": groups_out,
+        "total_findings": result["total_findings"],
+        "total_types": result["total_types"],
+    }
 
 
 @router.post("/sync-from-catalog", response_model=SyncFromCatalogResponse)
@@ -514,10 +647,10 @@ def bulk_delete_findings_by_query(
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> dict:
-    if payload.engagement_id is None:
+    if payload.engagement_id is None and not payload.repository:
         raise HTTPException(
             status_code=400,
-            detail="engagement_id es obligatorio para borrar por consulta",
+            detail="Indique engagement_id o repository=true para borrar por consulta",
         )
     query = _findings_query(
         db,
@@ -525,7 +658,8 @@ def bulk_delete_findings_by_query(
         None,
         payload.severidad,
         payload.q,
-        require_engagement=True,
+        tool_source=payload.tool_source,
+        require_engagement=payload.engagement_id is not None,
         tenant_id=ctx.tenant_id,
     )
     multi = _parse_severidades(payload.severidades)
@@ -535,6 +669,45 @@ def bulk_delete_findings_by_query(
     deleted = delete_findings_by_ids(db, finding_ids)
     db.commit()
     return {"deleted_count": deleted}
+
+
+@router.post("/publish-to-repository", response_model=PublishToRepositoryResponse)
+def publish_findings_to_repository(
+    payload: PublishToRepositoryRequest,
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(require_write),
+) -> PublishToRepositoryResponse:
+    """Publica todos los hallazgos del servicio en gestión de vulnerabilidades (repositorio global)."""
+    require_engagement_tenant(db, payload.engagement_id, ctx.tenant_id)
+    now = datetime.now(timezone.utc)
+    findings = (
+        db.query(Finding)
+        .filter(Finding.engagement_id == payload.engagement_id)
+        .filter(
+            or_(
+                Finding.global_status.is_(None),
+                Finding.global_status != REPOSITORY_STATUS,
+            )
+        )
+        .all()
+    )
+    if not findings:
+        return {"published_count": 0, "message": "No hay hallazgos pendientes de publicar."}
+    for f in findings:
+        f.global_status = REPOSITORY_STATUS
+        f.updated_at = now
+        append_finding_history(
+            db,
+            f,
+            "publish_repository",
+            {"engagement_id": str(payload.engagement_id)},
+            actor=actor_email(ctx),
+        )
+    db.commit()
+    return {
+        "published_count": len(findings),
+        "message": f"{len(findings)} hallazgo(s) cargados en gestión de vulnerabilidades.",
+    }
 
 
 @router.get("/{finding_id}", response_model=FindingRead)

@@ -121,6 +121,7 @@ echo "   Backend:   ${API_PROXY_URL} (proxied via /api/secops)"
 echo "   Workers:   ${UVICORN_WORKERS}"
 echo "============================================================"
 echo "[*] Ctrl+C to stop."
+echo "[*] Cambiar contraseña admin: ./change.sh"
 echo ""
 
 wait

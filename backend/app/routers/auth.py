@@ -16,13 +16,29 @@ from app.schemas import (
     AuthTenantInfo,
     AuthUserInfo,
     TenantBrandingRead,
+    UserPreferencesUpdate,
 )
 from app.services.audit import log_audit_event
 from app.services.jwt_tokens import create_access_token
 from app.services.passwords import verify_password
 from app.services.tenant_branding import normalize_branding
+from app.services.tenant_locale import resolve_tenant_language
+from app.services.user_preferences import normalize_user_preferences, resolve_ui_language
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _user_info(user: User, tenant: Tenant | None) -> AuthUserInfo:
+    tenant_lang = resolve_tenant_language(tenant.branding if tenant else None)
+    prefs = normalize_user_preferences(user.preferences)
+    pref = prefs["ui_language"]
+    return AuthUserInfo(
+        id=user.id,
+        email=user.email,
+        nombre=user.nombre,
+        ui_language_preference=pref,
+        ui_language=resolve_ui_language(user.preferences, tenant_lang),
+    )
 
 
 def _branding_for_tenant(tenant: Tenant) -> TenantBrandingRead:
@@ -108,7 +124,7 @@ def login(payload: AuthLoginRequest, request: Request, db: Session = Depends(get
     return AuthLoginResponse(
         access_token=token,
         token_type="bearer",
-        user=AuthUserInfo(id=user.id, email=user.email, nombre=user.nombre),
+        user=_user_info(user, db.get(Tenant, preferred)),
         active_tenant_id=preferred,
         role=role.value,
         tenants=tenants,
@@ -118,8 +134,9 @@ def login(payload: AuthLoginRequest, request: Request, db: Session = Depends(get
 
 @router.get("/me", response_model=AuthMeResponse)
 def me(ctx: AuthContext = Depends(get_auth_context), db: Session = Depends(get_db)) -> AuthMeResponse:
+    tenant = db.get(Tenant, ctx.tenant_id)
     return AuthMeResponse(
-        user=AuthUserInfo(id=ctx.user.id, email=ctx.user.email, nombre=ctx.user.nombre),
+        user=_user_info(ctx.user, tenant),
         active_tenant_id=ctx.tenant_id,
         role=ctx.role.value,
         tenants=_tenant_infos(db, ctx.user.id),
@@ -150,9 +167,32 @@ def switch_tenant(
     return AuthLoginResponse(
         access_token=token,
         token_type="bearer",
-        user=AuthUserInfo(id=ctx.user.id, email=ctx.user.email, nombre=ctx.user.nombre),
+        user=_user_info(ctx.user, db.get(Tenant, payload.tenant_id)),
         active_tenant_id=payload.tenant_id,
         role=role.value,
         tenants=tenants,
         branding=_active_branding(db, payload.tenant_id),
+    )
+
+
+@router.patch("/me/preferences", response_model=AuthMeResponse)
+def update_my_preferences(
+    payload: UserPreferencesUpdate,
+    ctx: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> AuthMeResponse:
+    prefs = normalize_user_preferences(ctx.user.preferences)
+    if payload.ui_language is not None:
+        prefs["ui_language"] = payload.ui_language
+    ctx.user.preferences = prefs
+    db.add(ctx.user)
+    db.commit()
+    db.refresh(ctx.user)
+    tenant = db.get(Tenant, ctx.tenant_id)
+    return AuthMeResponse(
+        user=_user_info(ctx.user, tenant),
+        active_tenant_id=ctx.tenant_id,
+        role=ctx.role.value,
+        tenants=_tenant_infos(db, ctx.user.id),
+        branding=_active_branding(db, ctx.tenant_id),
     )

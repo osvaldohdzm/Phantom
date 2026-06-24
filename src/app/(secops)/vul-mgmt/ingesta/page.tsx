@@ -18,8 +18,8 @@ export default function VulnMgmtIngestaPage() {
         <CardHeader>
           <CardTitle>Carga al repositorio de hallazgos</CardTitle>
           <CardDescription>
-            Primera importación vinculada al servicio activo. Para re-escaneos AV usa el panel de
-            re-scan.
+            Primera importación vinculada al servicio activo (borrador hasta «Cargar a gestión»). Grupo y
+            subgrupo de activos opcionales en cada carga. Para re-escaneos AV usa el panel de re-scan.
           </CardDescription>
         </CardHeader>
         <CardContent>

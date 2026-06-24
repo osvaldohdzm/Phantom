@@ -1,19 +1,40 @@
 import {
-  CATALOG_SPANISH_AI_FIELDS,
-  type CatalogSpanishAiField,
-} from '@/lib/catalog-spanish-field-ids';
+  catalogColumnForLocale,
+  catalogColumnToFindingField,
+  catalogLocaleAiColumns,
+  catalogLocaleMandatoryColumns,
+  LOCALE_DEFAULT_AI_HINTS,
+  LOCALE_DEFAULT_MIN_LENGTHS,
+  LOCALE_FIELD_SOURCE_HINTS,
+  localeFieldKeyFromColumn,
+  shouldHideCatalogColumnInEditor,
+  type CatalogLocaleFieldKey,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
 import type { ReviewFieldKey } from '@/lib/review-fields';
 import { REVIEW_FIELDS } from '@/lib/review-fields';
+import { VULNS_CATALOG_TOOL_ID_COLUMNS } from '@/lib/catalog-tool-index';
 import {
   VULNS_CATALOG_EDITABLE_COLUMNS,
   catalogColumnLabel,
+  defaultDisplayColumnsForLanguage,
   type VulnsCatalogEditableColumn,
 } from '@/lib/vulns-catalog-columns';
+import { updateTenantBranding } from '@/lib/branding-api';
+
+/** @deprecated Usar CatalogLocaleColumn desde tenant-locale */
+export {
+  CATALOG_SPANISH_AI_FIELDS,
+  CATALOG_SPANISH_CONTEXT_FIELDS,
+  type CatalogSpanishAiField,
+} from '@/lib/catalog-spanish-field-ids';
+
+export type CatalogLocaleAiColumn = string;
 
 export const CATALOG_FIELD_CONFIG_VERSION = 1;
 export const CATALOG_FIELD_CONFIG_STORAGE_KEY = 'spectre.vulns-catalog.field-config';
 
-/** Catálogo → hallazgo para evaluar completitud en vulnerabilidades importadas/manuales. */
+/** Catálogo → hallazgo para evaluar completitud (es + en). */
 export const CATALOG_COLUMN_TO_FINDING: Partial<
   Record<VulnsCatalogEditableColumn, ReviewFieldKey>
 > = {
@@ -26,30 +47,115 @@ export const CATALOG_COLUMN_TO_FINDING: Partial<
   EspPropuestaRemediacionUnificada: 'propuesta_remediacion',
   EspPropuestaRemediacionUnificadaEnRedPrivada: 'propuesta_remediacion',
   EspMetodoDeteccion: 'metodo_deteccion',
+  SourceDetection: 'metodo_deteccion',
   EspExplicacionTecnica: 'explicacion_tecnica',
 };
 
 export type CatalogFieldConfig = {
   v: typeof CATALOG_FIELD_CONFIG_VERSION;
-  /** Columnas del catálogo operativo que deben estar llenas. */
   mandatoryCatalogColumns: VulnsCatalogEditableColumn[];
-  /** Campos de hallazgo obligatorios (además de los derivados del catálogo). */
   mandatoryFindingFields: ReviewFieldKey[];
   minLengthsCatalog: Partial<Record<VulnsCatalogEditableColumn, number>>;
   minLengthsFinding: Partial<Record<ReviewFieldKey, number>>;
-  /** Contexto/reglas opcionales por campo para IA (clave = columna catálogo o Esp*). */
   aiPrompts: Partial<Record<string, string>>;
+  /** Columnas visibles en la tabla del catálogo operativo (orden). */
+  displayColumns?: string[];
 };
 
-export const DEFAULT_MANDATORY_CATALOG_COLUMNS: VulnsCatalogEditableColumn[] = [
-  'EspNombreVulnerabilidadUnificado',
-  'EspSeveridadUnificada',
-  'EspDescripcionUnificada',
-  'EspAmenazaUnificadaGeneral',
-  'EspPropuestaRemediacionUnificada',
-  'EspMetodoDeteccion',
-  'EspExplicacionTecnica',
+export type OfficialFieldsByLocale = Partial<Record<TenantLanguage, CatalogFieldConfig>>;
+
+export type BrandingWithOfficialFields = {
+  official_fields?: OfficialFieldsByLocale | null;
+};
+
+export function buildDefaultCatalogFieldConfig(
+  language: TenantLanguage = 'es'
+): CatalogFieldConfig {
+  const mandatoryCatalogColumns = catalogLocaleMandatoryColumns(
+    language
+  ) as VulnsCatalogEditableColumn[];
+
+  const minLengthsCatalog: Partial<Record<VulnsCatalogEditableColumn, number>> = {};
+  for (const [key, minLen] of Object.entries(LOCALE_DEFAULT_MIN_LENGTHS[language])) {
+    const col = catalogColumnForLocale(key as CatalogLocaleFieldKey, language);
+    minLengthsCatalog[col as VulnsCatalogEditableColumn] = minLen;
+  }
+
+  return {
+    v: CATALOG_FIELD_CONFIG_VERSION,
+    mandatoryCatalogColumns,
+    mandatoryFindingFields: [
+      'descripcion',
+      'amenaza_ampliada',
+      'propuesta_remediacion',
+      'componente_afectado',
+      'metodo_deteccion',
+      'explicacion_tecnica',
+    ],
+    minLengthsCatalog,
+    minLengthsFinding: Object.fromEntries(
+      REVIEW_FIELDS.map((r) => [r.key, r.minLen])
+    ) as Partial<Record<ReviewFieldKey, number>>,
+    aiPrompts: {},
+    displayColumns: [...defaultDisplayColumnsForLanguage(language)],
+  };
+}
+
+const SHARED_OFFICIAL_COLUMNS: VulnsCatalogEditableColumn[] = [
+  'CVE',
+  'CWE',
+  'NessusPluginId',
 ];
+
+/** Columnas que el admin puede marcar como oficiales según idioma operativo. */
+export function officialSelectableColumns(
+  language: TenantLanguage = 'es'
+): VulnsCatalogEditableColumn[] {
+  const localeSet = new Set<string>([
+    ...catalogLocaleMandatoryColumns(language),
+    ...catalogLocaleAiColumns(language),
+    catalogColumnForLocale('title', language),
+  ]);
+  if (language === 'es') {
+    localeSet.add('StandardVulnerabilityName');
+    localeSet.add('Description');
+    localeSet.add('Danger');
+    localeSet.add('Solution');
+    localeSet.add('Severity');
+  } else {
+    localeSet.add('Vulnerability');
+  }
+  for (const col of VULNS_CATALOG_TOOL_ID_COLUMNS) {
+    if (col !== 'NessusPluginId') localeSet.add(col);
+  }
+  return VULNS_CATALOG_EDITABLE_COLUMNS.filter((col) => {
+    if (shouldHideCatalogColumnInEditor(col, language)) return false;
+    if (localeSet.has(col) || SHARED_OFFICIAL_COLUMNS.includes(col)) return true;
+    return false;
+  });
+}
+
+export function resolveDisplayColumns(
+  config: CatalogFieldConfig,
+  language: TenantLanguage = 'es'
+): string[] {
+  const cols = config.displayColumns?.filter((c) => c.trim());
+  if (cols?.length) return cols.includes('Id') ? cols : ['Id', ...cols];
+  return [...defaultDisplayColumnsForLanguage(language)];
+}
+
+export function officialConfigFromBranding(
+  branding: BrandingWithOfficialFields | null | undefined,
+  language: TenantLanguage = 'es'
+): CatalogFieldConfig | null {
+  const raw = branding?.official_fields?.[language];
+  if (!raw) return null;
+  return normalizeConfig(raw, language);
+}
+
+/** Compatibilidad español (sin cambios). */
+export const DEFAULT_MANDATORY_CATALOG_COLUMNS: VulnsCatalogEditableColumn[] =
+  buildDefaultCatalogFieldConfig('es').mandatoryCatalogColumns;
 
 export const DEFAULT_MANDATORY_FINDING_FIELDS: ReviewFieldKey[] = [
   'descripcion',
@@ -60,52 +166,17 @@ export const DEFAULT_MANDATORY_FINDING_FIELDS: ReviewFieldKey[] = [
   'explicacion_tecnica',
 ];
 
-export const DEFAULT_CATALOG_AI_HINTS: Record<CatalogSpanishAiField, string> = {
-  EspSeveridadUnificada:
-    'Usa exactamente uno de: Crítica, Alta, Media, Baja, Informativa (según la severidad en inglés).',
-  EspDescripcionUnificada:
-    'Descripción clara de la vulnerabilidad en español, orientada a informe ejecutivo y técnico. Si enumeras CVE o fallos concretos, un CVE o fallo por línea con prefijo " - " (salto de línea antes de cada uno; nunca varios en la misma línea).',
-  EspAmenazaUnificadaGeneral:
-    'Amenaza/impacto en español: párrafo inicial y, si aplica, escenarios por actor en líneas con prefijo " - " (espacio-guion-espacio), por ejemplo: " - Actor interno: ...". Sin viñetas ni numeración.',
-  EspAmenazaUnificadaDesdeInternet:
-    'Amenaza si el activo es expuesto a Internet; párrafo narrativo y escenarios en líneas " - " si hay varios puntos. Sin viñetas.',
-  EspPropuestaRemediacionUnificada:
-    'Remediación general en español: párrafo introductorio y cada paso en una línea con prefijo " - " (espacio-guion-espacio). Sin viñetas ni numeración.',
-  EspPropuestaRemediacionUnificadaEnRedPrivada:
-    'Remediación en red privada en español: párrafo y acciones en líneas " - " (una acción por línea). Sin listas markdown.',
-  EspMetodoDeteccion:
-    'Breve descripción del método de detección (escáner Nessus, prueba manual, etc.).',
-  EspExplicacionTecnica:
-    'Explicación técnica en español: causa raíz, protocolo o configuración involucrada. Detalles técnicos o CVE en líneas separadas con prefijo " - " (uno por línea).',
-};
-
-const DEFAULT_MIN_CATALOG: Partial<Record<VulnsCatalogEditableColumn, number>> = {
-  EspNombreVulnerabilidadUnificado: 5,
-  EspSeveridadUnificada: 3,
-  EspDescripcionUnificada: 30,
-  EspAmenazaUnificadaGeneral: 30,
-  EspAmenazaUnificadaDesdeInternet: 20,
-  EspPropuestaRemediacionUnificada: 15,
-  EspPropuestaRemediacionUnificadaEnRedPrivada: 15,
-  EspMetodoDeteccion: 5,
-  EspExplicacionTecnica: 10,
-};
-
-export const DEFAULT_CATALOG_FIELD_CONFIG: CatalogFieldConfig = {
-  v: CATALOG_FIELD_CONFIG_VERSION,
-  mandatoryCatalogColumns: [...DEFAULT_MANDATORY_CATALOG_COLUMNS],
-  mandatoryFindingFields: [...DEFAULT_MANDATORY_FINDING_FIELDS],
-  minLengthsCatalog: { ...DEFAULT_MIN_CATALOG },
-  minLengthsFinding: Object.fromEntries(
-    REVIEW_FIELDS.map((r) => [r.key, r.minLen])
-  ) as Partial<Record<ReviewFieldKey, number>>,
-  aiPrompts: {},
-};
+export const DEFAULT_CATALOG_FIELD_CONFIG: CatalogFieldConfig =
+  buildDefaultCatalogFieldConfig('es');
 
 let cachedConfig: CatalogFieldConfig | null = null;
+let cachedLanguage: TenantLanguage = 'es';
 
-function normalizeConfig(raw: unknown): CatalogFieldConfig {
-  const base = DEFAULT_CATALOG_FIELD_CONFIG;
+function normalizeConfig(
+  raw: unknown,
+  language: TenantLanguage = 'es'
+): CatalogFieldConfig {
+  const base = buildDefaultCatalogFieldConfig(language);
   if (!raw || typeof raw !== 'object') return { ...base };
 
   const o = raw as Partial<CatalogFieldConfig>;
@@ -124,6 +195,10 @@ function normalizeConfig(raw: unknown): CatalogFieldConfig {
       )
     : [...base.mandatoryFindingFields];
 
+  const displayColumns = Array.isArray(o.displayColumns)
+    ? o.displayColumns.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+    : [...base.displayColumns!];
+
   return {
     v: CATALOG_FIELD_CONFIG_VERSION,
     mandatoryCatalogColumns,
@@ -131,65 +206,91 @@ function normalizeConfig(raw: unknown): CatalogFieldConfig {
     minLengthsCatalog: { ...base.minLengthsCatalog, ...(o.minLengthsCatalog ?? {}) },
     minLengthsFinding: { ...base.minLengthsFinding, ...(o.minLengthsFinding ?? {}) },
     aiPrompts: typeof o.aiPrompts === 'object' && o.aiPrompts ? { ...o.aiPrompts } : {},
+    displayColumns,
   };
 }
 
-export function getCatalogFieldConfigSync(): CatalogFieldConfig {
-  return cachedConfig ?? DEFAULT_CATALOG_FIELD_CONFIG;
+export function getCatalogFieldConfigSync(
+  language: TenantLanguage = cachedLanguage
+): CatalogFieldConfig {
+  if (cachedConfig && cachedLanguage === language) return cachedConfig;
+  return buildDefaultCatalogFieldConfig(language);
 }
 
-export function setCatalogFieldConfigCache(config: CatalogFieldConfig): void {
+export function setCatalogFieldConfigCache(
+  config: CatalogFieldConfig,
+  language: TenantLanguage = cachedLanguage
+): void {
   cachedConfig = config;
+  cachedLanguage = language;
 }
 
-function loadFromLocalStorage(): CatalogFieldConfig | null {
+function loadFromLocalStorage(language: TenantLanguage): CatalogFieldConfig | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(CATALOG_FIELD_CONFIG_STORAGE_KEY);
+    const raw = localStorage.getItem(`${CATALOG_FIELD_CONFIG_STORAGE_KEY}.${language}`);
     if (!raw) return null;
-    return normalizeConfig(JSON.parse(raw));
+    return normalizeConfig(JSON.parse(raw), language);
   } catch {
     return null;
   }
 }
 
-function saveToLocalStorage(config: CatalogFieldConfig): void {
+function saveToLocalStorage(config: CatalogFieldConfig, language: TenantLanguage): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(CATALOG_FIELD_CONFIG_STORAGE_KEY, JSON.stringify(config));
+    localStorage.setItem(
+      `${CATALOG_FIELD_CONFIG_STORAGE_KEY}.${language}`,
+      JSON.stringify(config)
+    );
   } catch {
     /* quota */
   }
 }
 
-export async function loadCatalogFieldConfig(): Promise<CatalogFieldConfig> {
-  try {
-    const res = await fetch('/api/vulns-catalog/field-config', { cache: 'no-store' });
-    if (res.ok) {
-      const data = (await res.json()) as { config?: unknown };
-      const config = normalizeConfig(data.config);
-      cachedConfig = config;
-      saveToLocalStorage(config);
-      return config;
-    }
-  } catch {
-    /* offline */
+export async function loadCatalogFieldConfig(
+  language: TenantLanguage = 'es',
+  options?: { branding?: BrandingWithOfficialFields | null }
+): Promise<CatalogFieldConfig> {
+  const fromBranding = officialConfigFromBranding(options?.branding, language);
+  if (fromBranding) {
+    cachedConfig = fromBranding;
+    cachedLanguage = language;
+    saveToLocalStorage(fromBranding, language);
+    return fromBranding;
   }
 
-  const local = loadFromLocalStorage();
+  const local = loadFromLocalStorage(language);
   if (local) {
     cachedConfig = local;
+    cachedLanguage = language;
     return local;
   }
 
-  cachedConfig = DEFAULT_CATALOG_FIELD_CONFIG;
-  return DEFAULT_CATALOG_FIELD_CONFIG;
+  const defaults = buildDefaultCatalogFieldConfig(language);
+  cachedConfig = defaults;
+  cachedLanguage = language;
+  return defaults;
 }
 
-export async function saveCatalogFieldConfig(config: CatalogFieldConfig): Promise<void> {
-  const normalized = normalizeConfig(config);
+export async function saveCatalogFieldConfig(
+  config: CatalogFieldConfig,
+  language: TenantLanguage = cachedLanguage,
+  options?: { tenantId: string; branding?: BrandingWithOfficialFields | null }
+): Promise<void> {
+  const normalized = normalizeConfig(config, language);
   cachedConfig = normalized;
-  saveToLocalStorage(normalized);
+  cachedLanguage = language;
+  saveToLocalStorage(normalized, language);
+
+  if (options?.tenantId) {
+    const official_fields: OfficialFieldsByLocale = {
+      ...(options.branding?.official_fields ?? {}),
+      [language]: normalized,
+    };
+    await updateTenantBranding(options.tenantId, { official_fields });
+    return;
+  }
 
   const res = await fetch('/api/vulns-catalog/field-config', {
     method: 'PUT',
@@ -202,12 +303,12 @@ export async function saveCatalogFieldConfig(config: CatalogFieldConfig): Promis
   }
 }
 
-/** Persiste el prompt IA de un campo Esp* (compartido en todas las ediciones del catálogo). */
 export async function saveCatalogFieldAiPrompt(
   field: string,
-  value: string
+  value: string,
+  language: TenantLanguage = cachedLanguage
 ): Promise<CatalogFieldConfig> {
-  const base = getCatalogFieldConfigSync();
+  const base = getCatalogFieldConfigSync(language);
   const trimmed = value.trim();
   const aiPrompts = { ...base.aiPrompts };
   if (trimmed) {
@@ -215,8 +316,8 @@ export async function saveCatalogFieldAiPrompt(
   } else {
     delete aiPrompts[field];
   }
-  const next = normalizeConfig({ ...base, aiPrompts });
-  await saveCatalogFieldConfig(next);
+  const next = normalizeConfig({ ...base, aiPrompts }, language);
+  await saveCatalogFieldConfig(next, language);
   return next;
 }
 
@@ -229,16 +330,17 @@ export function isMandatoryCatalogColumn(
 
 export function catalogRowCompleteness(
   row: Record<string, unknown>,
-  config: CatalogFieldConfig = getCatalogFieldConfigSync()
+  config: CatalogFieldConfig = getCatalogFieldConfigSync(),
+  language: TenantLanguage = cachedLanguage
 ): { missing: string[]; missingColumns: VulnsCatalogEditableColumn[]; percent: number } {
   const missing: string[] = [];
   const missingColumns: VulnsCatalogEditableColumn[] = [];
 
   for (const col of config.mandatoryCatalogColumns) {
-    const minLen = config.minLengthsCatalog[col] ?? DEFAULT_MIN_CATALOG[col] ?? 3;
+    const minLen = config.minLengthsCatalog[col] ?? 3;
     const val = String(row[col] ?? '').trim();
     if (val.length < minLen) {
-      missing.push(catalogColumnLabel(col));
+      missing.push(catalogColumnLabel(col, language));
       missingColumns.push(col);
     }
   }
@@ -258,8 +360,8 @@ export function getActiveReviewFields(
   const keys = new Set<ReviewFieldKey>(config.mandatoryFindingFields);
 
   for (const col of config.mandatoryCatalogColumns) {
-    const fk = CATALOG_COLUMN_TO_FINDING[col];
-    if (fk) keys.add(fk);
+    const fk = CATALOG_COLUMN_TO_FINDING[col] ?? catalogColumnToFindingField(col);
+    if (fk) keys.add(fk as ReviewFieldKey);
   }
 
   if (keys.size === 0) return [...REVIEW_FIELDS];
@@ -272,20 +374,42 @@ export function getActiveReviewFields(
 
 export function getAiPromptForField(
   field: string,
-  config: CatalogFieldConfig = getCatalogFieldConfigSync()
+  config: CatalogFieldConfig = getCatalogFieldConfigSync(),
+  language: TenantLanguage = cachedLanguage
 ): string {
   const custom = config.aiPrompts[field]?.trim();
   if (custom) return custom;
-  if ((CATALOG_SPANISH_AI_FIELDS as readonly string[]).includes(field)) {
-    return DEFAULT_CATALOG_AI_HINTS[field as CatalogSpanishAiField];
+
+  const fieldKey = localeFieldKeyFromColumn(field, language);
+  if (fieldKey) {
+    return LOCALE_DEFAULT_AI_HINTS[language][fieldKey] ?? '';
   }
-  return `Redacta el campo "${catalogColumnLabel(field)}" en español profesional para informes de ciberseguridad en México/LATAM.`;
+
+  return language === 'en'
+    ? `Write the "${catalogColumnLabel(field, language)}" field in professional English for security reports.`
+    : `Redacta el campo "${catalogColumnLabel(field, language)}" en español profesional para informes de ciberseguridad en México/LATAM.`;
 }
 
+export function mandatoryLocaleAiFields(
+  config: CatalogFieldConfig = getCatalogFieldConfigSync(),
+  language: TenantLanguage = cachedLanguage
+): CatalogLocaleAiColumn[] {
+  const aiCols = new Set(catalogLocaleAiColumns(language));
+  return config.mandatoryCatalogColumns.filter((f) => aiCols.has(f));
+}
+
+/** @deprecated Usar mandatoryLocaleAiFields */
 export function mandatorySpanishAiFields(
   config: CatalogFieldConfig = getCatalogFieldConfigSync()
-): CatalogSpanishAiField[] {
-  return CATALOG_SPANISH_AI_FIELDS.filter((f) =>
-    config.mandatoryCatalogColumns.includes(f)
-  );
+): CatalogLocaleAiColumn[] {
+  return mandatoryLocaleAiFields(config, 'es');
+}
+
+export function localeFieldSourceHint(
+  field: string,
+  language: TenantLanguage = cachedLanguage
+): string {
+  const key = localeFieldKeyFromColumn(field, language);
+  if (!key) return '';
+  return LOCALE_FIELD_SOURCE_HINTS[language][key] ?? '';
 }

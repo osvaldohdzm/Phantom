@@ -41,8 +41,9 @@ def list_engagements(
     ctx: AuthContext = Depends(get_auth_context),
     skip: int = 0,
     limit: int = 100,
+    include_internal: bool = False,
 ) -> List[Engagement]:
-    return (
+    rows = (
         db.query(Engagement)
         .filter(Engagement.tenant_id == ctx.tenant_id)
         .order_by(Engagement.fecha_inicio.desc())
@@ -50,6 +51,9 @@ def list_engagements(
         .limit(limit)
         .all()
     )
+    if include_internal:
+        return rows
+    return [eg for eg in rows if not is_default_engagement(eg)]
 
 
 @router.post("", response_model=EngagementRead)
@@ -125,7 +129,7 @@ def delete_engagement(
     if is_default_engagement(eg):
         raise HTTPException(
             status_code=400,
-            detail="No se puede eliminar el Proyecto Default del tenant",
+            detail="El espacio interno del tenant no se puede eliminar desde servicios",
         )
     delete_engagement_record(db, eg)
     db.commit()

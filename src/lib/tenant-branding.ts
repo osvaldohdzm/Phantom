@@ -1,7 +1,11 @@
 import { resolveApiUrl } from '@/lib/api-base';
 
+import type { OfficialFieldsByLocale } from '@/lib/catalog-field-config';
+
 /** White-label / tenant branding (mirror backend TenantBrandingRead). */
 export type TenantBranding = {
+  /** Idioma operativo del tenant: catálogo, hallazgos e informes. */
+  language?: 'es' | 'en' | null;
   product_name?: string | null;
   workspace_name?: string | null;
   tagline?: string | null;
@@ -27,6 +31,8 @@ export type TenantBranding = {
   report_classification?: string | null;
   email_from_name?: string | null;
   email_footer_html?: string | null;
+  /** Campos oficiales por idioma operativo (tabla vulns, revisión, Word). */
+  official_fields?: OfficialFieldsByLocale | null;
 };
 
 export type TenantBrandingPublic = {
@@ -37,6 +43,7 @@ export type TenantBrandingPublic = {
 };
 
 export const DEFAULT_TENANT_BRANDING: TenantBranding = {
+  language: 'es',
   product_name: 'Phantom',
   tagline: 'Security Operations Platform',
   login_headline: 'Iniciar sesión',

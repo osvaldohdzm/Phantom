@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   FileSpreadsheet,
@@ -13,13 +13,19 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { resolveIngestApiUrl } from '@/lib/api-base';
-import { authHeaders } from '@/lib/auth-storage';
+import { postIngestMultipart, shouldCacheNessusForMap, LARGE_INGEST_BYTES } from '@/lib/ingest-upload';
+import { estimateIngestSeconds } from '@/lib/eta-progress';
+import { LongTaskProgress } from '@/components/long-task-progress';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
 import { UniversalCsvIngestPanel } from '@/components/universal-csv-ingest-panel';
 import { appendNessusFileToCache } from '@/lib/exposure-report';
 import Link from 'next/link';
+import {
+  appendAssetScopeToFormData,
+  IngestAssetScopeFields,
+  type IngestAssetScope,
+} from '@/components/ingest-asset-scope-fields';
 
 type SourceKey = 'nessus-csv' | 'acunetix-html' | 'nmap';
 
@@ -69,11 +75,13 @@ function IngestDropCard({
   source,
   icon: Icon,
   engagementId,
+  importScope,
   onComplete,
 }: {
   source: SourceKey;
   icon: React.ComponentType<{ className?: string }>;
   engagementId: string;
+  importScope: IngestAssetScope;
   onComplete?: (result: IngestResult) => void;
 }) {
   const cfg = endpoints[source];
@@ -82,6 +90,19 @@ function IngestDropCard({
   const [lastResult, setLastResult] = useState<IngestResult | null>(null);
   const [fileOutcomes, setFileOutcomes] = useState<FileIngestOutcome[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [uploadStartedAt, setUploadStartedAt] = useState<number | null>(null);
+  const [uploadElapsedSec, setUploadElapsedSec] = useState(0);
+  const [largeUpload, setLargeUpload] = useState(false);
+  const [activeFile, setActiveFile] = useState<{ name: string; size: number } | null>(null);
+  const [ingestEstimateSec, setIngestEstimateSec] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (status !== 'uploading' || uploadStartedAt === null) return;
+    const tick = () => setUploadElapsedSec(Math.floor((Date.now() - uploadStartedAt) / 1000));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [status, uploadStartedAt]);
 
   const upload = useCallback(
     async (files: File[]) => {
@@ -90,6 +111,13 @@ function IngestDropCard({
       setMsg(null);
       setLastResult(null);
       setFileOutcomes([]);
+      setUploadStartedAt(Date.now());
+      setUploadElapsedSec(0);
+      const isLarge = files.some((f) => f.size >= LARGE_INGEST_BYTES);
+      setLargeUpload(isLarge);
+      setIngestEstimateSec(
+        isLarge ? Math.max(...files.map((f) => estimateIngestSeconds(f.size))) : undefined
+      );
       setUploadProgress({ current: 0, total: files.length });
 
       const eg = engagementId.trim();
@@ -107,18 +135,16 @@ function IngestDropCard({
 
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
+        setActiveFile({ name: file.name, size: file.size });
         setUploadProgress({ current: i + 1, total: files.length });
 
         const fd = new FormData();
         fd.append('file', file);
         fd.append('engagement_id', eg);
+        appendAssetScopeToFormData(fd, importScope);
 
         try {
-          const res = await fetch(resolveIngestApiUrl(cfg.path), {
-            method: 'POST',
-            headers: authHeaders(),
-            body: fd,
-          });
+          const res = await postIngestMultipart(cfg.path, fd);
           const data = (await res.json().catch(() => ({}))) as IngestResult & { detail?: unknown };
           if (!res.ok) {
             const detail =
@@ -143,9 +169,9 @@ function IngestDropCard({
             ok: true,
             created_count: data.created_count ?? 0,
           });
-          if (source === 'nessus-csv') {
+          if (source === 'nessus-csv' && shouldCacheNessusForMap(file)) {
             try {
-              await appendNessusFileToCache(file, { engagementId: eg, title: file.name });
+              void appendNessusFileToCache(file, { engagementId: eg, title: file.name });
             } catch {
               /* mapa opcional */
             }
@@ -167,6 +193,9 @@ function IngestDropCard({
 
       setFileOutcomes(outcomes);
       setUploadProgress(null);
+      setUploadStartedAt(null);
+      setActiveFile(null);
+      setIngestEstimateSec(undefined);
 
       const okCount = outcomes.filter((o) => o.ok).length;
       const failCount = outcomes.length - okCount;
@@ -202,7 +231,7 @@ function IngestDropCard({
       );
       onComplete?.(aggregated);
     },
-    [cfg.path, engagementId, onComplete]
+    [cfg.path, engagementId, importScope, onComplete, source]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -229,23 +258,37 @@ function IngestDropCard({
           className={cn(
             'rounded-lg border border-dashed px-4 py-8 text-center text-xs cursor-pointer transition-colors',
             isDragActive ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40 bg-muted/30',
-            status === 'uploading' && 'opacity-60 pointer-events-none'
+            status === 'uploading' && 'pointer-events-none border-violet-500/40'
           )}
         >
           <input {...getInputProps()} />
           {status === 'uploading' ? (
-            <span className="inline-flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              {uploadProgress && uploadProgress.total > 1
-                ? `Importando ${uploadProgress.current}/${uploadProgress.total}…`
-                : 'Subiendo…'}
-            </span>
+            <span className="text-muted-foreground">Procesando en servidor…</span>
           ) : (
             <span className="text-muted-foreground">
               Arrastra uno o varios archivos, o haz clic para elegir.
             </span>
           )}
         </div>
+        {status === 'uploading' ? (
+          <LongTaskProgress
+            title={largeUpload ? 'Ingesta CSV grande' : 'Importando archivo'}
+            phase={
+              activeFile
+                ? `${activeFile.name}${uploadProgress && uploadProgress.total > 1 ? ` (${uploadProgress.current}/${uploadProgress.total})` : ''}`
+                : cfg.label
+            }
+            loaded={uploadProgress?.current}
+            total={uploadProgress && uploadProgress.total > 1 ? uploadProgress.total : 0}
+            elapsedSec={uploadElapsedSec}
+            estimatedTotalSec={ingestEstimateSec}
+            hint={
+              largeUpload
+                ? 'Parseo, catálogo y persistencia en backend (:8000). CSV 50k+ filas puede tardar varios minutos.'
+                : 'Subida y procesamiento en el servidor FastAPI.'
+            }
+          />
+        ) : null}
         {fileOutcomes.length > 0 && (
           <ul className="text-[11px] space-y-1 max-h-32 overflow-y-auto rounded border border-border bg-muted/40 p-2">
             {fileOutcomes.map((outcome) => (
@@ -322,9 +365,14 @@ function IngestDropCard({
 export function VulIngestPanel({
   engagementId: externalEngagementId,
   onIngestComplete,
+  onlySource,
+  importScope: externalImportScope,
 }: {
   engagementId?: string;
   onIngestComplete?: (result: IngestResult) => void;
+  /** Solo muestra un tipo de ingesta (p. ej. AV Infra primer escaneo). */
+  onlySource?: SourceKey;
+  importScope?: IngestAssetScope;
 } = {}) {
   const {
     engagements,
@@ -334,6 +382,11 @@ export function VulIngestPanel({
   } = useProjectSelection(externalEngagementId ?? '');
   const engagementId = externalEngagementId ?? selectedId;
   const activeProject = engagements.find((e) => e.id === engagementId);
+  const [localImportScope, setLocalImportScope] = useState<IngestAssetScope>({
+    assetGroup: '',
+    assetSubgroup: '',
+  });
+  const importScope = externalImportScope ?? localImportScope;
 
   return (
     <div className="space-y-4">
@@ -371,26 +424,53 @@ export function VulIngestPanel({
           ) : null}
         </label>
       )}
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {!externalImportScope ? (
+        <IngestAssetScopeFields value={localImportScope} onChange={setLocalImportScope} compact />
+      ) : null}
+      <p className="text-[10px] text-muted-foreground -mt-2">
+        Los hallazgos quedan en borrador del servicio hasta confirmar en{' '}
+        <strong className="font-medium text-foreground">Revisión por tipo → Cargar a gestión</strong>.
+      </p>
+      <div
+        className={cn(
+          'grid gap-4',
+          onlySource ? 'max-w-xl' : 'md:grid-cols-2 lg:grid-cols-4'
+        )}
+      >
+        {(!onlySource || onlySource === 'nessus-csv') && (
         <IngestDropCard
           source="nessus-csv"
           icon={FileSpreadsheet}
           engagementId={engagementId}
+          importScope={importScope}
           onComplete={onIngestComplete}
         />
+        )}
+        {(!onlySource || onlySource === 'acunetix-html') && (
         <IngestDropCard
           source="acunetix-html"
           icon={FileCode2}
           engagementId={engagementId}
+          importScope={importScope}
           onComplete={onIngestComplete}
         />
+        )}
+        {(!onlySource || onlySource === 'nmap') && (
         <IngestDropCard
           source="nmap"
           icon={Network}
           engagementId={engagementId}
+          importScope={importScope}
           onComplete={onIngestComplete}
         />
-        <UniversalCsvIngestPanel engagementId={engagementId} onComplete={onIngestComplete} />
+        )}
+        {!onlySource && (
+        <UniversalCsvIngestPanel
+          engagementId={engagementId}
+          importScope={importScope}
+          onComplete={onIngestComplete}
+        />
+        )}
       </div>
     </div>
   );

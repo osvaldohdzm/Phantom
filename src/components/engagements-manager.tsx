@@ -9,13 +9,14 @@ import {
   Save,
   Trash2,
   AlertCircle,
-  FilePlus2,
+  Search,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { pickDefaultEngagement } from '@/lib/default-engagement';
+import { isDefaultEngagement, filterUserEngagements, engagementLabel } from '@/lib/default-engagement';
 import {
   createEngagement,
   deleteEngagement,
@@ -26,25 +27,34 @@ import {
   type EngagementCreateBody,
 } from '@/lib/secops-api';
 import {
-  ALCANCE_RED,
-  ESTADOS_PROYECTO,
   HERRAMIENTAS,
-  INTRUSIVIDAD,
-  METODOS_ANALISIS,
-  REPORTING_OPTIONS,
   SCM_OPTIONS,
   TIPOS_ANALISIS,
-  TIPOS_SERVICIO,
   defaultEngagementForm,
   mergeEngagementProfile,
   resolveClienteForSave,
   sectionsForTipoServicio,
-  validateEngagementForm,
   type EngagementFormState,
   type EngagementProfile,
   type EngagementSectionId,
   type TipoAnalisis,
 } from '@/lib/engagement-profile';
+import { useUiT } from '@/lib/use-ui-locale';
+import {
+  analysisMethodOptions,
+  analysisTypeOptions,
+  formatEngagementDate,
+  intrusivenessOptions,
+  labelEngagementStatus,
+  labelPentestInfraField,
+  labelScopeField,
+  labelServiceType,
+  networkScopeOptions,
+  reportingOptions,
+  serviceTypeOptions,
+  statusOptions,
+  validateEngagementFormI18n,
+} from '@/lib/engagement-i18n';
 
 const selectClass =
   'h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 scheme-light dark:scheme-dark';
@@ -156,6 +166,20 @@ function fieldErrorClass(invalid: boolean) {
   return cn(invalid && 'border-destructive ring-1 ring-destructive/40');
 }
 
+function estadoTone(estado?: string | null) {
+  const e = (estado ?? '').toLowerCase();
+  if (e.includes('curso') || e.includes('activo')) {
+    return 'border-sky-500/35 bg-sky-500/10 text-sky-800 dark:text-sky-200';
+  }
+  if (e.includes('complet') || e.includes('cerrad') || e.includes('finaliz')) {
+    return 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200';
+  }
+  if (e.includes('paus') || e.includes('hold')) {
+    return 'border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200';
+  }
+  return 'border-border bg-muted/40 text-muted-foreground';
+}
+
 export function EngagementsManager({
   selectedId,
   onSelect,
@@ -165,6 +189,7 @@ export function EngagementsManager({
   onSelect: (id: string, meta?: { cliente?: string; tipo_servicio?: string }) => void;
   onSaved?: (id: string, meta?: { cliente?: string; tipo_servicio?: string }) => void;
 }) {
+  const { t, format, uiLanguage } = useUiT();
   const [items, setItems] = useState<Engagement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,8 +198,32 @@ export function EngagementsManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<EngagementFormState>(defaultEngagementForm);
   const [showValidation, setShowValidation] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const validation = useMemo(() => validateEngagementForm(form), [form]);
+  const userItems = useMemo(() => filterUserEngagements(items), [items]);
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return userItems;
+    return userItems.filter((eg) => {
+      const haystack = [
+        eg.nombre_proyecto,
+        eg.cliente,
+        eg.tipo_servicio,
+        eg.estado,
+        eg.responsable,
+        eg.tipo,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [userItems, searchQuery]);
+
+  const showForm = isCreating || Boolean(editingId);
+
+  const validation = useMemo(() => validateEngagementFormI18n(form, uiLanguage), [form, uiLanguage]);
   const visibleSections = useMemo(
     () => new Set(sectionsForTipoServicio(form.tipo_servicio)),
     [form.tipo_servicio]
@@ -192,17 +241,8 @@ export function EngagementsManager({
     try {
       const data = await listEngagements();
       setItems(data);
-      if (!selectedId) {
-        const def = pickDefaultEngagement(data);
-        if (def) {
-          onSelect(def.id, {
-            cliente: def.nombre_proyecto || def.cliente,
-            tipo_servicio: def.tipo_servicio ?? undefined,
-          });
-        }
-      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar proyectos');
+      setError(e instanceof Error ? e.message : t('engErrLoadProjects'));
     } finally {
       setLoading(false);
     }
@@ -220,9 +260,20 @@ export function EngagementsManager({
 
   const resetForm = () => {
     setEditingId(null);
+    setIsCreating(false);
     setForm(defaultEngagementForm());
     setShowValidation(false);
     setSuccess(null);
+    onSelect('');
+  };
+
+  const startCreate = () => {
+    setEditingId(null);
+    setIsCreating(true);
+    setForm(defaultEngagementForm());
+    setShowValidation(false);
+    setSuccess(null);
+    setError(null);
     onSelect('');
   };
 
@@ -233,13 +284,14 @@ export function EngagementsManager({
     try {
       const eg = await getEngagement(id);
       setEditingId(id);
+      setIsCreating(false);
       setForm(engagementToForm(eg));
       onSelect(id, {
         cliente: eg.nombre_proyecto || eg.cliente,
         tipo_servicio: eg.tipo_servicio ?? undefined,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar proyecto');
+      setError(e instanceof Error ? e.message : t('engErrLoadProject'));
     } finally {
       setBusy(false);
     }
@@ -248,8 +300,9 @@ export function EngagementsManager({
   const afterSave = (eg: Engagement) => {
     const label = eg.nombre_proyecto || eg.cliente;
     setEditingId(eg.id);
+    setIsCreating(false);
     setForm(engagementToForm(eg));
-    setSuccess(`Proyecto guardado: ${label}`);
+    setSuccess(format('engSaved', { name: label }));
     setShowValidation(false);
     onSelect(eg.id, { cliente: label, tipo_servicio: eg.tipo_servicio ?? undefined });
     onSaved?.(eg.id, { cliente: label, tipo_servicio: eg.tipo_servicio ?? undefined });
@@ -273,14 +326,19 @@ export function EngagementsManager({
       }
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar proyecto');
+      setError(e instanceof Error ? e.message : t('engErrSave'));
     } finally {
       setBusy(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar este proyecto/engagement? Los hallazgos quedarán sin agrupar.')) return;
+    const target = items.find((eg) => eg.id === id);
+    if (target && isDefaultEngagement(target)) {
+      setError(t('engErrDeleteDefault'));
+      return;
+    }
+    if (!confirm(t('engConfirmDelete'))) return;
     setBusy(true);
     try {
       await deleteEngagement(id);
@@ -288,7 +346,7 @@ export function EngagementsManager({
       if (editingId === id) resetForm();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al eliminar');
+      setError(e instanceof Error ? e.message : t('engErrDelete'));
     } finally {
       setBusy(false);
     }
@@ -303,17 +361,14 @@ export function EngagementsManager({
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Briefcase className="size-4 text-violet-500 dark:text-violet-400" />
-          Proyectos / Engagements / Servicios
+          {t('engTitle')}
         </CardTitle>
         <CardDescription className="text-xs">
-          Define alcance, accesos y reglas del engagement.{' '}
-          <span className="text-foreground/90">
-            Obligatorio para guardar: cliente o nombre de proyecto, tipo de servicio y fecha de
-            inicio.
-          </span>
+          {t('engDesc')}{' '}
+          <span className="text-foreground/90">{t('engDescRequired')}</span>
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {error && (
           <p className="text-xs text-destructive flex items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2">
             <AlertCircle className="size-3.5 shrink-0" />
@@ -328,85 +383,222 @@ export function EngagementsManager({
           </p>
         )}
 
-        {showValidation && !validation.valid && (
-          <ul className="text-xs text-destructive space-y-0.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 list-disc pl-5">
-            {validation.errors.map((msg) => (
-              <li key={msg}>{msg}</li>
-            ))}
-          </ul>
-        )}
+        <div className="rounded-lg border border-border bg-muted/15 overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-border bg-card/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative min-w-0 flex-1 max-w-md">
+              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={t('engSearch')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 pl-8 text-sm bg-background"
+              />
+            </div>
+            <Button type="button" size="sm" onClick={startCreate} disabled={busy}>
+              <Plus className="size-3.5 mr-1.5" />
+              {t('engNewProject')}
+            </Button>
+          </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            {editingId ? 'Editando proyecto guardado' : 'Nuevo proyecto (sin guardar)'}
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={resetForm} disabled={busy}>
-            <FilePlus2 className="size-3.5 mr-1" />
-            Nuevo
-          </Button>
+          {loading ? (
+            <p className="text-xs text-muted-foreground flex items-center gap-2 px-4 py-8">
+              <Loader2 className="size-3.5 animate-spin" />
+              {t('engLoadingProjects')}
+            </p>
+          ) : filteredItems.length === 0 ? (
+            <div className="px-4 py-10 text-center space-y-3">
+              <FolderOpen className="size-8 mx-auto text-muted-foreground/60" />
+              <p className="text-sm text-muted-foreground">
+                {userItems.length === 0 ? t('engEmptyProjects') : t('engNoSearchResults')}
+              </p>
+              {userItems.length === 0 ? (
+                <Button type="button" size="sm" onClick={startCreate}>
+                  <Plus className="size-3.5 mr-1.5" />
+                  {t('engCreateProject')}
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="px-3 py-2.5 font-medium">{t('engColProject')}</th>
+                    <th className="px-3 py-2.5 font-medium hidden md:table-cell">{t('engColServiceType')}</th>
+                    <th className="px-3 py-2.5 font-medium hidden lg:table-cell">{t('engColStart')}</th>
+                    <th className="px-3 py-2.5 font-medium">{t('engColStatus')}</th>
+                    <th className="px-3 py-2.5 font-medium text-right">{t('engColActions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((eg) => {
+                    const selected = selectedId === eg.id || editingId === eg.id;
+                    return (
+                      <tr
+                        key={eg.id}
+                        className={cn(
+                          'border-b border-border/60 transition-colors',
+                          selected
+                            ? 'bg-violet-500/10 shadow-[inset_3px_0_0_0] shadow-violet-500'
+                            : 'hover:bg-muted/40'
+                        )}
+                      >
+                        <td className="px-3 py-2.5">
+                          <button
+                            type="button"
+                            className="text-left min-w-0 w-full"
+                            onClick={() => void loadIntoForm(eg.id)}
+                          >
+                            <span className="font-medium text-foreground block truncate">
+                              {engagementLabel(eg)}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground block truncate md:hidden">
+                              {labelServiceType(eg.tipo_servicio, uiLanguage)}
+                            </span>
+                            {eg.cliente && eg.nombre_proyecto ? (
+                              <span className="text-[11px] text-muted-foreground block truncate">
+                                {eg.cliente}
+                              </span>
+                            ) : null}
+                          </button>
+                        </td>
+                        <td className="px-3 py-2.5 hidden md:table-cell">
+                          <span className="text-xs text-foreground/90">
+                            {labelServiceType(eg.tipo_servicio, uiLanguage)}
+                          </span>
+                          {eg.tipo ? (
+                            <span className="block text-[10px] text-muted-foreground">{eg.tipo}</span>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2.5 hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                          {formatEngagementDate(eg.fecha_inicio, uiLanguage)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
+                              estadoTone(eg.estado)
+                            )}
+                          >
+                            {labelEngagementStatus(eg.estado, uiLanguage)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => void loadIntoForm(eg.id)}
+                              disabled={busy}
+                            >
+                              {t('engOpen')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              onClick={() => void handleDelete(eg.id)}
+                              disabled={busy}
+                              title={t('engDeleteProject')}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        <div className="max-h-[26rem] overflow-y-auto space-y-2 pr-1">
-          <FormSection title="Engagement / Proyecto" defaultOpen>
+        {!showForm ? (
+          <p className="text-xs text-muted-foreground text-center py-1">{t('engSelectHint')}</p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-foreground">
+                {editingId ? t('engFormConfig') : t('engFormNew')}
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={resetForm} disabled={busy}>
+                {t('engCloseForm')}
+              </Button>
+            </div>
+
+            {showValidation && !validation.valid && (
+              <ul className="text-xs text-destructive space-y-0.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 list-disc pl-5">
+                {validation.errors.map((msg) => (
+                  <li key={msg}>{msg}</li>
+                ))}
+              </ul>
+            )}
+
+            <div className="max-h-[26rem] overflow-y-auto space-y-2 pr-1">
+          <FormSection title={t('engSectionProject')} defaultOpen>
             <div className="grid sm:grid-cols-2 gap-2">
               <div className="space-y-1">
-                <FieldLabel required={!form.nombre_proyecto.trim()}>Cliente</FieldLabel>
+                <FieldLabel required={!form.nombre_proyecto.trim()}>{t('engFieldClient')}</FieldLabel>
                 <Input
-                  placeholder="Nombre del cliente"
+                  placeholder={t('engFieldClientPh')}
                   value={form.cliente}
                   onChange={(e) => setForm((f) => ({ ...f, cliente: e.target.value }))}
                   className={cn('text-sm bg-background', fieldErrorClass(invalid('cliente')))}
                 />
               </div>
               <div className="space-y-1">
-                <FieldLabel required={!form.cliente.trim()}>Nombre proyecto</FieldLabel>
+                <FieldLabel required={!form.cliente.trim()}>{t('engFieldProjectName')}</FieldLabel>
                 <Input
-                  placeholder="Nombre del proyecto"
+                  placeholder={t('engFieldProjectNamePh')}
                   value={form.nombre_proyecto}
                   onChange={(e) => setForm((f) => ({ ...f, nombre_proyecto: e.target.value }))}
                   className={cn('text-sm bg-background', fieldErrorClass(invalid('nombre_proyecto')))}
                 />
               </div>
               <div className="space-y-1">
-                <FieldLabel required>Tipo servicio</FieldLabel>
+                <FieldLabel required>{t('engFieldServiceType')}</FieldLabel>
                 <select
                   value={form.tipo_servicio}
                   onChange={(e) => setForm((f) => ({ ...f, tipo_servicio: e.target.value }))}
                   className={cn(selectClass, fieldErrorClass(invalid('tipo_servicio')))}
                 >
-                  <option value="">— Seleccionar —</option>
-                  {TIPOS_SERVICIO.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  <option value="">{t('engSelectOption')}</option>
+                  {serviceTypeOptions(uiLanguage).map(({ value, label }) => (
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="space-y-1">
-                <FieldLabel>Estado</FieldLabel>
+                <FieldLabel>{t('engFieldStatus')}</FieldLabel>
                 <select
                   value={form.estado}
                   onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value }))}
                   className={selectClass}
                 >
-                  {ESTADOS_PROYECTO.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {statusOptions(uiLanguage).map(({ value, label }) => (
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="space-y-1">
-                <FieldLabel>Responsable</FieldLabel>
+                <FieldLabel>{t('engFieldOwner')}</FieldLabel>
                 <Input
-                  placeholder="Analista responsable"
+                  placeholder={t('engFieldOwnerPh')}
                   value={form.responsable}
                   onChange={(e) => setForm((f) => ({ ...f, responsable: e.target.value }))}
                   className="text-sm bg-background"
                 />
               </div>
               <div className="space-y-1">
-                <FieldLabel required>Fecha inicio</FieldLabel>
+                <FieldLabel required>{t('engFieldStartDate')}</FieldLabel>
                 <Input
                   type="date"
                   value={form.fecha_inicio}
@@ -418,7 +610,7 @@ export function EngagementsManager({
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <FieldLabel>Fecha fin</FieldLabel>
+                <FieldLabel>{t('engFieldEndDate')}</FieldLabel>
                 <Input
                   type="date"
                   value={form.fecha_fin}
@@ -431,26 +623,25 @@ export function EngagementsManager({
 
           {!form.tipo_servicio ? (
             <p className="text-xs text-muted-foreground rounded-md border border-dashed border-border px-3 py-2">
-              Selecciona el <strong className="font-medium text-foreground">tipo de servicio</strong>{' '}
-              para mostrar alcance, accesos y campos específicos (DAST, SAST, infra, etc.).
+              {t('engPickServiceTypeHint')}
             </p>
           ) : null}
 
           {showSection('alcance') && form.tipo_servicio ? (
-            <FormSection title="Alcance">
+            <FormSection title={t('engSectionScope')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 {(
                   [
-                    ['ips', 'IPs'],
-                    ['dominios', 'Dominios'],
-                    ['urls', 'URLs'],
-                    ['ambientes', 'Ambientes'],
-                    ['activos_incluidos', 'Activos incluidos'],
-                    ['activos_excluidos', 'Activos excluidos'],
+                    'ips',
+                    'dominios',
+                    'urls',
+                    'ambientes',
+                    'activos_incluidos',
+                    'activos_excluidos',
                   ] as const
-                ).map(([key, label]) => (
+                ).map((key) => (
                   <div key={key} className="space-y-1">
-                    <FieldLabel>{label}</FieldLabel>
+                    <FieldLabel>{labelScopeField(key, uiLanguage)}</FieldLabel>
                     <Input
                       value={p.alcance[key]}
                       onChange={(e) =>
@@ -468,10 +659,10 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('tipo_analisis') && form.tipo_servicio ? (
-            <FormSection title="Tipo de análisis">
+            <FormSection title={t('engSectionAnalysis')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <FieldLabel>Caja Negra / Gris / Blanca</FieldLabel>
+                  <FieldLabel>{t('engFieldAnalysisBox')}</FieldLabel>
                   <select
                     value={form.tipo}
                     onChange={(e) =>
@@ -479,15 +670,15 @@ export function EngagementsManager({
                     }
                     className={selectClass}
                   >
-                    {TIPOS_ANALISIS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {analysisTypeOptions(uiLanguage).map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Método</FieldLabel>
+                  <FieldLabel>{t('engFieldMethod')}</FieldLabel>
                   <select
                     value={p.tipo_analisis.metodo}
                     onChange={(e) =>
@@ -499,15 +690,15 @@ export function EngagementsManager({
                     className={selectClass}
                   >
                     <option value="">—</option>
-                    {METODOS_ANALISIS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {analysisMethodOptions(uiLanguage).map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Alcance red</FieldLabel>
+                  <FieldLabel>{t('engFieldNetworkScope')}</FieldLabel>
                   <select
                     value={p.tipo_analisis.alcance_red}
                     onChange={(e) =>
@@ -519,15 +710,15 @@ export function EngagementsManager({
                     className={selectClass}
                   >
                     <option value="">—</option>
-                    {ALCANCE_RED.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {networkScopeOptions(uiLanguage).map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Intrusividad</FieldLabel>
+                  <FieldLabel>{t('engFieldIntrusiveness')}</FieldLabel>
                   <select
                     value={p.tipo_analisis.intrusivo}
                     onChange={(e) =>
@@ -539,9 +730,9 @@ export function EngagementsManager({
                     className={selectClass}
                   >
                     <option value="">—</option>
-                    {INTRUSIVIDAD.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {intrusivenessOptions(uiLanguage).map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
                     ))}
                   </select>
@@ -551,10 +742,10 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('accesos') && form.tipo_servicio ? (
-            <FormSection title="Accesos">
+            <FormSection title={t('engSectionAccess')}>
               <div className="grid sm:grid-cols-2 gap-3">
                 <BoolField
-                  label="Credenciales entregadas"
+                  label={t('engAccessCredentials')}
                   checked={p.accesos.credenciales_entregadas}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -569,10 +760,10 @@ export function EngagementsManager({
                       accesos: { ...pr.accesos, credenciales_notas: v },
                     }))
                   }
-                  notePlaceholder="Detalle de credenciales"
+                  notePlaceholder={t('engAccessCredentialsPh')}
                 />
                 <BoolField
-                  label="VPN requerida"
+                  label={t('engAccessVpn')}
                   checked={p.accesos.vpn_requerida}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -587,10 +778,10 @@ export function EngagementsManager({
                       accesos: { ...pr.accesos, vpn_notas: v },
                     }))
                   }
-                  notePlaceholder="Detalle VPN"
+                  notePlaceholder={t('engAccessVpnPh')}
                 />
                 <BoolField
-                  label="Usuarios de prueba"
+                  label={t('engAccessTestUsers')}
                   checked={p.accesos.usuarios_prueba}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -605,10 +796,10 @@ export function EngagementsManager({
                       accesos: { ...pr.accesos, usuarios_prueba_notas: v },
                     }))
                   }
-                  notePlaceholder="Usuarios / roles"
+                  notePlaceholder={t('engAccessTestUsersPh')}
                 />
                 <BoolField
-                  label="Código fuente entregado"
+                  label={t('engAccessSourceCode')}
                   checked={p.accesos.codigo_fuente_entregado}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -623,10 +814,10 @@ export function EngagementsManager({
                       accesos: { ...pr.accesos, codigo_fuente_notas: v },
                     }))
                   }
-                  notePlaceholder="Repositorio / acceso"
+                  notePlaceholder={t('engAccessSourceCodePh')}
                 />
                 <BoolField
-                  label="Documentación entregada"
+                  label={t('engAccessDocs')}
                   checked={p.accesos.documentacion_entregada}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -641,19 +832,19 @@ export function EngagementsManager({
                       accesos: { ...pr.accesos, documentacion_notas: v },
                     }))
                   }
-                  notePlaceholder="Enlaces / descripción"
+                  notePlaceholder={t('engAccessDocsPh')}
                 />
               </div>
             </FormSection>
           ) : null}
 
           {showSection('reglas') && form.tipo_servicio ? (
-            <FormSection title="Reglas de engagement">
+            <FormSection title={t('engSectionRules')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div className="space-y-1 sm:col-span-2">
-                  <FieldLabel>Horarios permitidos</FieldLabel>
+                  <FieldLabel>{t('engFieldAllowedHours')}</FieldLabel>
                   <Input
-                    placeholder="Ej. Lun–Vie 09:00–18:00"
+                    placeholder={t('engFieldAllowedHoursPh')}
                     value={p.reglas.horarios_permitidos}
                     onChange={(e) =>
                       setProfile((pr) => ({
@@ -665,7 +856,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <BoolField
-                  label="DoS permitido"
+                  label={t('engRuleDosAllowed')}
                   checked={p.reglas.dos_permitido}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -675,7 +866,7 @@ export function EngagementsManager({
                   }
                 />
                 <BoolField
-                  label="Explotación permitida"
+                  label={t('engRuleExploitAllowed')}
                   checked={p.reglas.explotacion_permitida}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -685,7 +876,7 @@ export function EngagementsManager({
                   }
                 />
                 <BoolField
-                  label="Ingeniería social permitida"
+                  label={t('engRuleSocialAllowed')}
                   checked={p.reglas.ingenieria_social_permitida}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -695,9 +886,9 @@ export function EngagementsManager({
                   }
                 />
                 <div className="space-y-1 sm:col-span-2">
-                  <FieldLabel>Contacto emergencia</FieldLabel>
+                  <FieldLabel>{t('engFieldEmergencyContact')}</FieldLabel>
                   <Input
-                    placeholder="Nombre, teléfono, email"
+                    placeholder={t('engFieldEmergencyContactPh')}
                     value={p.reglas.contacto_emergencia}
                     onChange={(e) =>
                       setProfile((pr) => ({
@@ -713,7 +904,7 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('herramientas') && form.tipo_servicio ? (
-            <FormSection title="Herramientas">
+            <FormSection title={t('engSectionTools')}>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {HERRAMIENTAS.map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 text-xs text-foreground">
@@ -736,10 +927,10 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('dast') && form.tipo_servicio ? (
-            <FormSection title="DAST / aplicación">
+            <FormSection title={t('engSectionDast')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <FieldLabel>URL objetivo</FieldLabel>
+                  <FieldLabel>{t('engFieldTargetUrl')}</FieldLabel>
                   <Input
                     value={p.dast.url_objetivo}
                     onChange={(e) =>
@@ -752,7 +943,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Login URL</FieldLabel>
+                  <FieldLabel>{t('engFieldLoginUrl')}</FieldLabel>
                   <Input
                     value={p.dast.login_url}
                     onChange={(e) =>
@@ -765,7 +956,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <BoolField
-                  label="Auth requerida"
+                  label={t('engFieldAuthRequired')}
                   checked={p.dast.auth_requerida}
                   onChange={(v) =>
                     setProfile((pr) => ({
@@ -775,9 +966,9 @@ export function EngagementsManager({
                   }
                 />
                 <div className="space-y-1 sm:col-span-2">
-                  <FieldLabel>Headers custom</FieldLabel>
+                  <FieldLabel>{t('engFieldCustomHeaders')}</FieldLabel>
                   <Input
-                    placeholder="Authorization: Bearer …"
+                    placeholder={t('engFieldCustomHeadersPh')}
                     value={p.dast.headers_custom}
                     onChange={(e) =>
                       setProfile((pr) => ({
@@ -793,10 +984,10 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('sast') && form.tipo_servicio ? (
-            <FormSection title="SAST">
+            <FormSection title={t('engSectionSast')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <FieldLabel>Repositorio</FieldLabel>
+                  <FieldLabel>{t('engFieldRepository')}</FieldLabel>
                   <Input
                     value={p.sast.repositorio}
                     onChange={(e) =>
@@ -809,7 +1000,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Branch</FieldLabel>
+                  <FieldLabel>{t('engFieldBranch')}</FieldLabel>
                   <Input
                     value={p.sast.branch}
                     onChange={(e) =>
@@ -822,7 +1013,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>Lenguaje</FieldLabel>
+                  <FieldLabel>{t('engFieldLanguage')}</FieldLabel>
                   <Input
                     value={p.sast.lenguaje}
                     onChange={(e) =>
@@ -835,7 +1026,7 @@ export function EngagementsManager({
                   />
                 </div>
                 <div className="space-y-1">
-                  <FieldLabel>SCM</FieldLabel>
+                  <FieldLabel>{t('engFieldScm')}</FieldLabel>
                   <select
                     value={p.sast.scm}
                     onChange={(e) =>
@@ -859,18 +1050,18 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('pentest_infra') && form.tipo_servicio ? (
-            <FormSection title="Pentest infraestructura">
+            <FormSection title={t('engSectionPentestInfra')}>
               <div className="grid sm:grid-cols-2 gap-2">
                 {(
                   [
-                    ['ip_objetivo', 'IP objetivo'],
-                    ['segmento_red', 'Segmento red'],
-                    ['firewall_waf', 'Firewall / WAF'],
-                    ['servicios_criticos', 'Servicios críticos'],
+                    'ip_objetivo',
+                    'segmento_red',
+                    'firewall_waf',
+                    'servicios_criticos',
                   ] as const
-                ).map(([key, label]) => (
+                ).map((key) => (
                   <div key={key} className="space-y-1">
-                    <FieldLabel>{label}</FieldLabel>
+                    <FieldLabel>{labelPentestInfraField(key, uiLanguage)}</FieldLabel>
                     <Input
                       value={p.pentest_infra[key]}
                       onChange={(e) =>
@@ -888,9 +1079,9 @@ export function EngagementsManager({
           ) : null}
 
           {showSection('reporting') && form.tipo_servicio ? (
-            <FormSection title="Reporting">
+            <FormSection title={t('engSectionReporting')}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {REPORTING_OPTIONS.map(({ key, label }) => (
+                {reportingOptions(uiLanguage).map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 text-xs text-foreground">
                     <input
                       type="checkbox"
@@ -926,63 +1117,17 @@ export function EngagementsManager({
             ) : (
               <Plus className="size-3.5 mr-1.5" />
             )}
-            {editingId ? 'Guardar proyecto' : 'Guardar proyecto'}
+            {t('engSaveProject')}
           </Button>
           {!canSave && showValidation ? (
-            <span className="text-[11px] text-destructive">Completa los campos obligatorios</span>
+            <span className="text-[11px] text-destructive">{t('engCompleteRequired')}</span>
           ) : (
             <span className="text-[11px] text-muted-foreground hidden sm:inline">
-              Cliente o nombre · tipo servicio · fecha inicio
+              {t('engSaveHint')}
             </span>
           )}
         </div>
-
-        {loading ? (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="size-3 animate-spin" />
-            Cargando…
-          </p>
-        ) : items.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Sin proyectos guardados. Usa «Guardar proyecto» para crear el primero.
-          </p>
-        ) : (
-          <ul className="space-y-1.5 max-h-48 overflow-y-auto">
-            {items.map((eg) => (
-              <li
-                key={eg.id}
-                className={cn(
-                  'flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors',
-                  selectedId === eg.id || editingId === eg.id
-                    ? 'border-violet-500/40 bg-violet-500/15'
-                    : 'border-border bg-muted/30 hover:border-border hover:bg-muted/50'
-                )}
-              >
-                <button
-                  type="button"
-                  className="flex-1 text-left min-w-0"
-                  onClick={() => void loadIntoForm(eg.id)}
-                >
-                  <span className="text-foreground font-medium block truncate">
-                    {eg.nombre_proyecto || eg.cliente}
-                  </span>
-                  <span className="text-muted-foreground font-mono text-[10px] block truncate">
-                    {[eg.tipo_servicio, eg.tipo].filter(Boolean).join(' · ') || eg.cliente}
-                  </span>
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                  onClick={() => void handleDelete(eg.id)}
-                  disabled={busy}
-                >
-                  <Trash2 className="size-3" />
-                </Button>
-              </li>
-            ))}
-          </ul>
+          </>
         )}
       </CardContent>
     </Card>

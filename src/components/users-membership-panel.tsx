@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/auth-context';
+import { useUiT } from '@/lib/use-ui-locale';
 import {
-  ROLE_LABELS,
   createTenantUser,
+  hasPlatformAdminAccess,
   listTenants,
   listUsersWithMemberships,
   removeUserMembership,
@@ -24,8 +25,9 @@ const ASSIGNABLE_ROLES: UserRole[] = ['tenant_admin', 'analyst', 'client_viewer'
 type EditRow = { tenant_id: string; role: UserRole };
 
 export function UsersMembershipPanel() {
-  const { role, activeTenant, refresh } = useAuth();
-  const isPlatformAdmin = role === 'platform_admin';
+  const { role, tenants: sessionTenants, activeTenant, refresh } = useAuth();
+  const { t, role: roleLabel } = useUiT();
+  const isPlatformAdmin = role ? hasPlatformAdminAccess(role, sessionTenants) : false;
 
   const [users, setUsers] = useState<AdminUserWithMemberships[]>([]);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
@@ -57,11 +59,11 @@ export function UsersMembershipPanel() {
         setSelectedTenantIds([activeTenant.id]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar usuarios');
+      setError(e instanceof Error ? e.message : t('usersErrorLoad'));
     } finally {
       setLoading(false);
     }
-  }, [isPlatformAdmin, activeTenant?.id, selectedTenantIds.length]);
+  }, [isPlatformAdmin, activeTenant?.id, selectedTenantIds.length, t]);
 
   useEffect(() => {
     void load();
@@ -76,7 +78,7 @@ export function UsersMembershipPanel() {
   async function onCreateUser(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedTenantIds.length) {
-      setError('Selecciona al menos un tenant');
+      setError(t('usersErrorSelectTenant'));
       return;
     }
     setError(null);
@@ -94,7 +96,7 @@ export function UsersMembershipPanel() {
       await load();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear el usuario');
+      setError(err instanceof Error ? err.message : t('usersErrorCreate'));
     }
   }
 
@@ -126,7 +128,7 @@ export function UsersMembershipPanel() {
       await load();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudieron guardar las asignaciones');
+      setError(err instanceof Error ? err.message : t('usersErrorSaveAssignments'));
     }
   }
 
@@ -141,7 +143,7 @@ export function UsersMembershipPanel() {
       await load();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo actualizar el rol');
+      setError(err instanceof Error ? err.message : t('usersErrorUpdateRole'));
     }
   }
 
@@ -156,25 +158,25 @@ export function UsersMembershipPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="size-5" aria-hidden />
-          Usuarios multi-tenant
+          {t('usersTitle')}
         </CardTitle>
         <CardDescription>
           {isPlatformAdmin
-            ? 'Un mismo usuario puede pertenecer a varios tenants con el mismo rol RBAC en cada uno.'
-            : `Usuarios del tenant ${activeTenant?.nombre ?? ''}. Para asignar varios tenants, usa una cuenta platform_admin.`}
+            ? t('usersDescription')
+            : `${t('usersTenantOnly')} ${activeTenant?.nombre ?? ''}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Cargando…</p>
+          <p className="text-sm text-muted-foreground">{t('loading')}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="py-2 pr-4">Usuario</th>
-                  <th className="py-2 pr-4">Tenants y roles</th>
-                  {isPlatformAdmin ? <th className="py-2 pr-4 text-right">Acciones</th> : null}
+                  <th className="py-2 pr-4">{t('usersColUser')}</th>
+                  <th className="py-2 pr-4">{t('usersColTenants')}</th>
+                  {isPlatformAdmin ? <th className="py-2 pr-4 text-right">{t('usersColActions')}</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -208,13 +210,31 @@ export function UsersMembershipPanel() {
                               >
                                 {ASSIGNABLE_ROLES.map((r) => (
                                   <option key={r} value={r}>
-                                    {ROLE_LABELS[r]}
+                                    {roleLabel(r)}
                                   </option>
                                 ))}
-                                <option value="platform_admin">{ROLE_LABELS.platform_admin}</option>
+                                <option value="platform_admin">{roleLabel('platform_admin')}</option>
+                              </select>
+                            ) : m.tenant_id === activeTenant?.id ? (
+                              <select
+                                className="h-7 rounded-md border border-border bg-background px-1.5"
+                                value={m.role}
+                                onChange={(e) =>
+                                  void onRoleChangeInTenant(
+                                    u.id,
+                                    m.tenant_id,
+                                    e.target.value as UserRole
+                                  )
+                                }
+                              >
+                                {ASSIGNABLE_ROLES.map((r) => (
+                                  <option key={r} value={r}>
+                                    {roleLabel(r)}
+                                  </option>
+                                ))}
                               </select>
                             ) : (
-                              <span className="text-muted-foreground">{ROLE_LABELS[m.role as UserRole] ?? m.role}</span>
+                              <span className="text-muted-foreground">{roleLabel(m.role as UserRole) ?? m.role}</span>
                             )}
                             {isPlatformAdmin && u.memberships.length > 1 ? (
                               <button
@@ -226,7 +246,7 @@ export function UsersMembershipPanel() {
                                     .then(() => refresh())
                                 }
                               >
-                                Quitar
+                                {t('usersRemove')}
                               </button>
                             ) : null}
                           </li>
@@ -236,7 +256,7 @@ export function UsersMembershipPanel() {
                     {isPlatformAdmin ? (
                       <td className="py-3 pr-4 text-right">
                         <Button type="button" variant="outline" size="sm" onClick={() => openEdit(u)}>
-                          Editar tenants
+                          {t('usersEditTenants')}
                         </Button>
                       </td>
                     ) : null}
@@ -249,7 +269,7 @@ export function UsersMembershipPanel() {
 
         {editingUserId && isPlatformAdmin ? (
           <div className="rounded-lg border border-border p-4 space-y-3">
-            <p className="text-sm font-medium">Asignación de tenants</p>
+            <p className="text-sm font-medium">{t('usersTenantAssignment')}</p>
             {editRows.map((row, idx) => (
               <div key={`${row.tenant_id}-${idx}`} className="flex flex-wrap gap-2 items-center">
                 <select
@@ -280,10 +300,10 @@ export function UsersMembershipPanel() {
                 >
                   {ASSIGNABLE_ROLES.map((r) => (
                     <option key={r} value={r}>
-                      {ROLE_LABELS[r]}
+                      {roleLabel(r)}
                     </option>
                   ))}
-                  <option value="platform_admin">{ROLE_LABELS.platform_admin}</option>
+                  <option value="platform_admin">{roleLabel('platform_admin')}</option>
                 </select>
                 <Button
                   type="button"
@@ -292,43 +312,43 @@ export function UsersMembershipPanel() {
                   onClick={() => setEditRows((rows) => rows.filter((_, i) => i !== idx))}
                   disabled={editRows.length <= 1}
                 >
-                  Quitar
+                  {t('usersRemove')}
                 </Button>
               </div>
             ))}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={addEditRow}>
                 <Plus className="size-3.5 mr-1" aria-hidden />
-                Añadir tenant
+                {t('usersAddTenant')}
               </Button>
               <Button type="button" size="sm" onClick={() => void saveEdit()}>
-                Guardar asignaciones
+                {t('usersSaveAssignments')}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => setEditingUserId(null)}>
-                Cancelar
+                {t('usersCancel')}
               </Button>
             </div>
           </div>
         ) : null}
 
         <form onSubmit={onCreateUser} className="space-y-4 pt-4 border-t border-border">
-          <p className="text-sm font-medium">Nuevo usuario o asignar existente por email</p>
+          <p className="text-sm font-medium">{t('usersNewTitle')}</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <Input
-              placeholder="Correo"
+              placeholder={t('usersEmail')}
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
             <Input
-              placeholder="Nombre"
+              placeholder={t('usersName')}
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               required
             />
             <Input
-              placeholder="Contraseña (solo usuario nuevo)"
+              placeholder={t('usersPassword')}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -340,20 +360,18 @@ export function UsersMembershipPanel() {
             >
               {ASSIGNABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
+                  {roleLabel(r)}
                 </option>
               ))}
               {isPlatformAdmin ? (
-                <option value="platform_admin">{ROLE_LABELS.platform_admin}</option>
+                <option value="platform_admin">{roleLabel('platform_admin')}</option>
               ) : null}
             </select>
           </div>
 
           {tenantOptions.length > 0 ? (
             <fieldset className="space-y-2">
-              <legend className="text-xs text-muted-foreground">
-                Asignar a tenants (mismo rol en todos)
-              </legend>
+              <legend className="text-xs text-muted-foreground">{t('usersAssignTenants')}</legend>
               <div className="flex flex-wrap gap-3">
                 {tenantOptions.map((t) => (
                   <label
@@ -373,7 +391,7 @@ export function UsersMembershipPanel() {
             </fieldset>
           ) : null}
 
-          <Button type="submit">Crear / asignar usuario</Button>
+          <Button type="submit">{t('usersCreateAssign')}</Button>
         </form>
       </CardContent>
     </Card>

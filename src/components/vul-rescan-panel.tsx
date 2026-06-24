@@ -1,17 +1,19 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { FileSpreadsheet, Loader2, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { resolveIngestApiUrl } from '@/lib/api-base';
-import { authHeaders } from '@/lib/auth-storage';
+import { postIngestMultipart, shouldCacheNessusForMap, LARGE_INGEST_BYTES } from '@/lib/ingest-upload';
+import { estimateIngestSeconds } from '@/lib/eta-progress';
+import { LongTaskProgress } from '@/components/long-task-progress';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
 import { appendNessusFileToCache } from '@/lib/exposure-report';
 import Link from 'next/link';
+import { appendAssetScopeToFormData, type IngestAssetScope } from '@/components/ingest-asset-scope-fields';
 
 type RescanResult = {
   scan_run_id: string;
@@ -29,10 +31,15 @@ export function VulRescanPanel({
   onComplete,
   engagementId: engagementIdProp,
   hideProjectPicker,
+  embedded,
+  importScope,
 }: {
   onComplete?: () => void;
   engagementId?: string;
   hideProjectPicker?: boolean;
+  /** Sin Card exterior (dentro de AvInfraIngestPanel). */
+  embedded?: boolean;
+  importScope?: IngestAssetScope;
 }) {
   const { engagements, engagementId: selectedId, setEngagementId, loading: loadingProjects } =
     useProjectSelection();
@@ -42,6 +49,15 @@ export function VulRescanPanel({
   const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [result, setResult] = useState<RescanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeFile, setActiveFile] = useState<File | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [estimateSec, setEstimateSec] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (status !== 'uploading') return;
+    const id = window.setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [status]);
 
   const upload = useCallback(
     async (file: File) => {
@@ -53,24 +69,26 @@ export function VulRescanPanel({
       setStatus('uploading');
       setError(null);
       setResult(null);
+      setActiveFile(file);
+      setElapsedSec(0);
+      setEstimateSec(file.size >= LARGE_INGEST_BYTES ? estimateIngestSeconds(file.size) : 180);
       const form = new FormData();
       form.append('file', file);
       form.append('engagement_id', engagementId);
       form.append('scope', scope);
       form.append('absent_policy', absentPolicy);
       form.append('label', file.name);
+      if (importScope) appendAssetScopeToFormData(form, importScope);
       try {
-        const res = await fetch(resolveIngestApiUrl('/api/v1/ingest/nessus-csv/rescan'), {
-          method: 'POST',
-          headers: authHeaders(),
-          body: form,
-        });
+        const res = await postIngestMultipart('/api/v1/ingest/nessus-csv/rescan', form);
         const data = (await res.json()) as RescanResult & { detail?: string };
         if (!res.ok) throw new Error(data.detail ?? res.statusText);
-        try {
-          await appendNessusFileToCache(file, { engagementId, title: file.name });
-        } catch {
-          /* mapa opcional */
+        if (shouldCacheNessusForMap(file)) {
+          try {
+            void appendNessusFileToCache(file, { engagementId, title: file.name });
+          } catch {
+            /* mapa opcional */
+          }
         }
         setResult(data);
         setStatus('done');
@@ -78,9 +96,12 @@ export function VulRescanPanel({
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Error al procesar re-escaneo');
         setStatus('error');
+      } finally {
+        setActiveFile(null);
+        setEstimateSec(undefined);
       }
     },
-    [engagementId, scope, absentPolicy, onComplete]
+    [engagementId, scope, absentPolicy, importScope, onComplete]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -93,21 +114,9 @@ export function VulRescanPanel({
     },
   });
 
-  return (
-    <Card className="border-emerald-500/20">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <RefreshCw className="size-4 text-emerald-600" />
-          Re-escaneo AV (Nessus)
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Compara el CSV con el repositorio de vulnerabilidades: actualiza{' '}
-          <span className="text-foreground">last_seen</span>, marca ausentes como Atendido o
-          Remediado, y reaparecidas sin crear fila nueva.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2 items-end">
+  const inner = (
+    <>
+      <div className="flex flex-wrap gap-2 items-end">
           {!hideProjectPicker && !engagementIdProp ? (
           <label className="text-xs space-y-1">
             <span className="text-muted-foreground">Proyecto / campaña</span>
@@ -163,15 +172,25 @@ export function VulRescanPanel({
         >
           <input {...getInputProps()} />
           {status === 'uploading' ? (
-            <Loader2 className="size-8 mx-auto animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Comparando con repositorio…</span>
           ) : (
             <FileSpreadsheet className="size-8 mx-auto text-emerald-600/80" />
           )}
-          <p className="text-sm mt-2 font-medium">Soltar CSV Nessus de re-escaneo</p>
+          <p className="text-sm mt-2 font-medium">Soltar CSV Nessus</p>
           <p className="text-[11px] text-muted-foreground mt-1">
-            No duplica hallazgos: usa huella plugin+activo / CVE+activo · hasta 150 MB
+            Comparación por huella plugin+activo / CVE+activo · hasta 150 MB
           </p>
         </div>
+
+        {status === 'uploading' ? (
+          <LongTaskProgress
+            title="Re-escaneo AV (Nessus)"
+            phase={activeFile?.name ?? 'Procesando CSV'}
+            elapsedSec={elapsedSec}
+            estimatedTotalSec={estimateSec}
+            hint="Compara filas del CSV con el repositorio: nuevas, actualizadas, reaparecidas y ausentes."
+          />
+        ) : null}
 
         {status === 'done' && result ? (
           <div className="flex items-start gap-2 text-xs text-emerald-700 dark:text-emerald-400">
@@ -204,7 +223,27 @@ export function VulRescanPanel({
             Subir otro archivo
           </Button>
         ) : null}
-      </CardContent>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-3">{inner}</div>;
+  }
+
+  return (
+    <Card className="border-emerald-500/20">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <RefreshCw className="size-4 text-emerald-600" />
+          Re-escaneo AV (Nessus)
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Compara el CSV con el repositorio de vulnerabilidades: actualiza{' '}
+          <span className="text-foreground">last_seen</span>, marca ausentes como Atendido o
+          Remediado, y reaparecidas sin crear fila nueva.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">{inner}</CardContent>
     </Card>
   );
 }

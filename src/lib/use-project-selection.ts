@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
-import { pickDefaultEngagement } from '@/lib/default-engagement';
+import { filterUserEngagements } from '@/lib/default-engagement';
 import { listEngagements, type Engagement } from '@/lib/secops-api';
 
-/** Carga proyectos del tenant y preselecciona el Proyecto Default. */
+/** Carga servicios del tenant (sin el espacio interno) para selectores opcionales. */
 export function useProjectSelection(initialId = '') {
   const { activeTenant, ready } = useAuth();
   const [engagements, setEngagements] = useState<Engagement[]>([]);
@@ -16,10 +16,13 @@ export function useProjectSelection(initialId = '') {
     setLoading(true);
     try {
       const list = await listEngagements();
-      setEngagements(list);
+      const userEngagements = filterUserEngagements(list);
+      setEngagements(userEngagements);
       setEngagementId((current) => {
-        if (current && list.some((e) => e.id === current)) return current;
-        return pickDefaultEngagement(list)?.id ?? '';
+        if (current && userEngagements.some((e) => e.id === current)) return current;
+        if (initialId && userEngagements.some((e) => e.id === initialId)) return initialId;
+        // Sin auto-selección: inventario global o el usuario elige un servicio real.
+        return '';
       });
     } catch {
       setEngagements([]);
@@ -27,7 +30,7 @@ export function useProjectSelection(initialId = '') {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initialId]);
 
   useEffect(() => {
     if (!ready) return;

@@ -11,12 +11,14 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: "160mb",
     // Ingesta grande (parseo + catálogo + BD) puede tardar >30 s.
-    proxyTimeout: 300_000,
+    proxyTimeout: 600_000,
   },
   async redirects() {
     return [
-      { source: "/Vulnerabilities", destination: "/vul-mgmt", permanent: true },
-      { source: "/vulnerabilities", destination: "/vul-mgmt", permanent: true },
+      { source: "/Vulnerabilities", destination: "/vul-mgmt/dashboard", permanent: true },
+      { source: "/vulnerabilities", destination: "/vul-mgmt/dashboard", permanent: true },
+      // Evita redirect() en page.tsx (rompe Performance.measure en dev con Turbopack).
+      { source: "/vul-mgmt", destination: "/vul-mgmt/dashboard", permanent: false },
     ];
   },
   async rewrites() {
@@ -25,8 +27,9 @@ const nextConfig: NextConfig = {
         source: "/api/secops-health",
         destination: `${backendUrl}/health`,
       },
+      // Ingest multipart va a app/api/secops/ingest/[...path]/route.ts (sin límite 10 MB).
       {
-        source: "/api/secops/:path*",
+        source: "/api/secops/:path((?!ingest(?:/|$)).*)",
         destination: `${backendUrl}/api/v1/:path*`,
       },
     ];

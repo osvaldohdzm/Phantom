@@ -11,12 +11,9 @@ import {
   loadExposureMapCache,
   type ExposureReportData,
 } from '@/lib/exposure-report';
-import { generateHTML, type ReportMetadata } from '@/app/(secops)/tools/exposure/html-template';
+import { ExposureMapView } from '@/components/exposure-map-view';
 import { listAssets, listFindings } from '@/lib/secops-api';
 import { useProjectSelection } from '@/lib/use-project-selection';
-
-const VIS_JS_URL =
-  'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js';
 
 type DataSource = 'cache' | 'repository' | 'upload';
 
@@ -28,34 +25,29 @@ export function ExposureMapPanel() {
     '';
   const [source, setSource] = useState<DataSource>('cache');
   const [data, setData] = useState<ExposureReportData | null>(null);
-  const [srcDoc, setSrcDoc] = useState('');
+  const [mapTitle, setMapTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const renderMap = useCallback(async (reportData: ExposureReportData, title: string) => {
-    const res = await fetch(VIS_JS_URL);
-    if (!res.ok) throw new Error('No se pudo cargar vis.js para el mapa');
-    const visJsSource = await res.text();
-    const metadata: ReportMetadata = {
-      title: title || projectName || 'Mapa de exposición',
-      date: new Date().toISOString().split('T')[0],
-    };
-    setSrcDoc(generateHTML(reportData, metadata, visJsSource));
-    setData(reportData);
-  }, [projectName]);
+  const renderMap = useCallback(
+    (reportData: ExposureReportData, title: string) => {
+      setMapTitle(title || projectName || 'Mapa de exposición');
+      setData(reportData);
+    },
+    [projectName]
+  );
 
   const loadFromCache = useCallback(async () => {
     const cache = loadExposureMapCache();
     if (!cache?.data?.vulnerabilities?.length) {
       setError('Sin datos Nessus en caché. Importa un CSV en Ingesta o sube un archivo abajo.');
       setData(null);
-      setSrcDoc('');
       return;
     }
     setError(null);
     setSource('cache');
-    await renderMap(cache.data, cache.title);
+    renderMap(cache.data, cache.title);
   }, [renderMap]);
 
   const loadFromRepository = useCallback(async () => {
@@ -74,11 +66,10 @@ export function ExposureMapPanel() {
       if (!reportData.vulnerabilities.length) {
         setError('No hay hallazgos para este servicio. Importa Nessus en Ingesta primero.');
         setData(null);
-        setSrcDoc('');
         return;
       }
       setSource('repository');
-      await renderMap(reportData, projectName || 'Repositorio AV');
+      renderMap(reportData, projectName || 'Repositorio AV');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar datos del repositorio');
     } finally {
@@ -109,7 +100,7 @@ export function ExposureMapPanel() {
     try {
       const reportData = await buildExposureDataFromFiles(list);
       setSource('upload');
-      await renderMap(reportData, list.map((f) => f.name).join(', '));
+      renderMap(reportData, list.map((f) => f.name).join(', '));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer el archivo Nessus');
     } finally {
@@ -185,17 +176,12 @@ export function ExposureMapPanel() {
           <Loader2 className="size-5 animate-spin" />
           Generando mapa…
         </div>
-      ) : srcDoc ? (
+      ) : data ? (
         <div className="space-y-2">
           <p className="text-[10px] text-muted-foreground tabular-nums">
             {hostCount} host(s) · {vulnCount} vulnerabilidad(es) en el mapa
           </p>
-          <iframe
-            title="Mapa de exposición Nessus"
-            className="w-full h-[min(78vh,880px)] rounded-xl border border-border bg-background"
-            srcDoc={srcDoc}
-            sandbox="allow-scripts allow-same-origin"
-          />
+          <ExposureMapView data={data} title={mapTitle} />
         </div>
       ) : null}
     </div>

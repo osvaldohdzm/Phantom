@@ -1,20 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Download, FileSpreadsheet, Loader2, RefreshCw, Search, Table2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
   deleteAllFindingsInRepository,
+  fetchFindingsSeverityBreakdown,
   listAllAssets,
-  listAllFindingsInRepository,
+  streamAllFindingsInRepository,
+  FINDINGS_LIST_MAX,
   type Finding,
   type SecopsAsset,
 } from '@/lib/secops-api';
 import {
   rowMatchesMatrixView,
-  VULN_MATRIX_VIEW_OPTIONS,
   type VulnMatrixViewId,
 } from '@/lib/vuln-matrix-classify';
 import {
@@ -29,26 +30,38 @@ import { matchesReviewFilter, type ReviewFilter } from '@/lib/finding-completene
 import type { Severity } from '@/lib/secops-api';
 import type { MatrixColumnFilters, MatrixSort } from '@/lib/vuln-matrix-filters';
 import { downloadVulnMatrixCsv, downloadVulnMatrixExcel } from '@/lib/vuln-matrix-export';
+import { LongTaskProgress } from '@/components/long-task-progress';
+import type { LoadProgress } from '@/lib/eta-progress';
+import { useUiT } from '@/lib/use-ui-locale';
 
 type VulnConsolidatedMatrixPanelProps = {
   refreshToken?: number;
 };
 
-function friendlyLoadError(message: string): string {
-  if (/less than or equal to 5000/i.test(message)) {
-    return 'Límite de carga del servidor alcanzado.';
-  }
-  return message;
-}
-
 export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMatrixPanelProps) {
+  const { t, format, matrixViews } = useUiT();
+  const viewOptions = matrixViews();
+
+  const friendlyLoadError = useCallback(
+    (message: string): string => {
+      if (/less than or equal to 100,?000/i.test(message)) {
+        return t('matrixLoadLimit');
+      }
+      return message;
+    },
+    [t]
+  );
   const [viewId, setViewId] = useState<VulnMatrixViewId>('completa');
   const [toolSourceFilter, setToolSourceFilter] = useState<ToolSourceFilterId>('all');
   const [searchQ, setSearchQ] = useState('');
   const [findings, setFindings] = useState<Finding[]>([]);
   const [assets, setAssets] = useState<SecopsAsset[]>([]);
   const [repoTotal, setRepoTotal] = useState(0);
+  const [serverSeverityCounts, setServerSeverityCounts] = useState<Record<Severity, number> | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -58,55 +71,112 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
   const [columnFilters, setColumnFilters] = useState<MatrixColumnFilters>({});
   const [matrixSort, setMatrixSort] = useState<MatrixSort | null>(null);
   const [clearingTable, setClearingTable] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null);
+  const [clearProgress, setClearProgress] = useState<LoadProgress | null>(null);
+  const deferredSearch = useDeferredValue(searchQ);
+  const deferredFindings = useDeferredValue(findings);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    const { signal } = controller;
+
     setLoading(true);
+    setStreaming(false);
     setError(null);
     setWarning(null);
+    setFindings([]);
+    setRepoTotal(0);
+    setServerSeverityCounts(null);
+    setTruncated(false);
+    setLoadProgress({ phase: 'counting', loaded: 0, total: 0 });
     const tool_source = toolSourceFilterApiValue(toolSourceFilter);
 
-    try {
-      const [findingsResult, assetResult] = await Promise.allSettled([
-        listAllFindingsInRepository({ tool_source }),
-        listAllAssets(),
-      ]);
+    // Conteo por severidad agregado en el servidor (1 query indexada): pinta el total
+    // y las insignias al instante, sin esperar a que bajen las ~50k filas.
+    void fetchFindingsSeverityBreakdown({ tool_source: tool_source ?? undefined }, signal)
+      .then((b) => {
+        if (signal.aborted) return;
+        setServerSeverityCounts(b.by_severity);
+        setRepoTotal((prev) => (prev > 0 ? prev : b.total));
+      })
+      .catch(() => {
+        /* el conteo cliente cubre el fallback */
+      });
 
-      if (findingsResult.status === 'fulfilled') {
-        const { findings: loaded, truncated: isTruncated, totalInDb } = findingsResult.value;
-        setFindings(loaded);
-        setTruncated(isTruncated);
-        setRepoTotal(totalInDb);
-      } else {
-        setFindings([]);
-        setRepoTotal(0);
-        setTruncated(false);
-        setError(
-          friendlyLoadError(
-            findingsResult.reason instanceof Error
-              ? findingsResult.reason.message
-              : 'No se pudieron cargar hallazgos'
-          )
-        );
-      }
+    // Coalesce streamed batches so we re-render at most a few times per second
+    // instead of once per network response (smooth while 50k rows arrive).
+    const buffer: Finding[] = [];
+    let flushTimer: number | null = null;
+    const flush = () => {
+      flushTimer = null;
+      if (signal.aborted || buffer.length === 0) return;
+      const chunk = buffer.splice(0, buffer.length);
+      setFindings((prev) => prev.concat(chunk));
+    };
+    const scheduleFlush = () => {
+      if (flushTimer != null) return;
+      flushTimer = window.setTimeout(flush, 80);
+    };
 
-      if (assetResult.status === 'fulfilled') {
-        setAssets(assetResult.value);
-      } else {
+    let firstBatch = true;
+
+    // Assets load in parallel; they only affect view classification, so they
+    // must not block findings from streaming into the table.
+    void listAllAssets()
+      .then((a) => {
+        if (!signal.aborted) setAssets(a);
+      })
+      .catch((e) => {
+        if (signal.aborted) return;
         setAssets([]);
-        const msg =
-          assetResult.reason instanceof Error ? assetResult.reason.message : 'Error al cargar activos';
-        setWarning(friendlyLoadError(msg));
-      }
+        setWarning(friendlyLoadError(e instanceof Error ? e.message : t('matrixLoadAssetsError')));
+      });
+
+    try {
+      const { totalInDb, truncated: isTruncated } = await streamAllFindingsInRepository({
+        tool_source,
+        signal,
+        onBatch: (batch, info) => {
+          buffer.push(...batch);
+          scheduleFlush();
+          setRepoTotal(info.total);
+          if (firstBatch && batch.length > 0) {
+            firstBatch = false;
+            setLoading(false);
+            setStreaming(true);
+          }
+        },
+        onProgress: (p) => {
+          if (!signal.aborted) setLoadProgress(p);
+        },
+      });
+      if (flushTimer != null) window.clearTimeout(flushTimer);
+      flush();
+      if (signal.aborted) return;
+      setTruncated(isTruncated);
+      setRepoTotal(totalInDb);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar datos');
+      if (signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
+      setError(
+        friendlyLoadError(e instanceof Error ? e.message : t('matrixLoadFindingsError'))
+      );
     } finally {
-      setLoading(false);
+      if (loadAbortRef.current === controller) {
+        setLoading(false);
+        setStreaming(false);
+        setLoadProgress(null);
+      }
     }
-  }, [toolSourceFilter]);
+  }, [toolSourceFilter, friendlyLoadError, t]);
 
   useEffect(() => {
     void load();
   }, [load, refreshToken, reloadTick]);
+
+  useEffect(() => () => loadAbortRef.current?.abort(), []);
 
   const assetById = useMemo(() => {
     const map = new Map<string, SecopsAsset>();
@@ -117,7 +187,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
   const matrixRows = useMemo(() => {
     const out: { finding: Finding; asset?: SecopsAsset | null; sourceIndex: number }[] = [];
     let idx = 0;
-    for (const finding of findings) {
+    for (const finding of deferredFindings) {
       const asset = finding.asset_id ? assetById.get(finding.asset_id) ?? null : null;
       if (!rowMatchesMatrixView(finding, asset, viewId)) continue;
       if (severityFilter !== 'all' && finding.severidad !== severityFilter) continue;
@@ -126,7 +196,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
       idx += 1;
     }
     return out;
-  }, [findings, assetById, viewId, severityFilter, reviewFilter]);
+  }, [deferredFindings, assetById, viewId, severityFilter, reviewFilter]);
 
   const severityCounts = useMemo(() => {
     const counts: Record<Severity, number> = {
@@ -136,47 +206,58 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
       Low: 0,
       Info: 0,
     };
-    for (const finding of findings) {
+    for (const finding of deferredFindings) {
       const asset = finding.asset_id ? assetById.get(finding.asset_id) ?? null : null;
       if (!rowMatchesMatrixView(finding, asset, viewId)) continue;
       counts[finding.severidad] += 1;
     }
     return counts;
-  }, [findings, assetById, viewId]);
+  }, [deferredFindings, assetById, viewId]);
+
+  // En la vista del repositorio completo (sin clasificación por activo) el conteo del
+  // servidor es exacto y aparece al instante; en vistas derivadas usamos el del cliente.
+  const displaySeverityCounts = useMemo(() => {
+    if (viewId === 'completa' && reviewFilter === 'all' && serverSeverityCounts) {
+      return serverSeverityCounts;
+    }
+    return severityCounts;
+  }, [viewId, reviewFilter, serverSeverityCounts, severityCounts]);
 
   const actionTargets = useMemo(() => matrixRows.map((r) => r.finding), [matrixRows]);
 
-  const activeView = VULN_MATRIX_VIEW_OPTIONS.find((v) => v.id === viewId)!;
+  const activeView = viewOptions.find((v) => v.id === viewId)!;
 
   const handleClearTable = useCallback(async () => {
     if (repoTotal <= 0) return;
     const tool_source = toolSourceFilterApiValue(toolSourceFilter);
-    const scope =
-      toolSourceFilter === 'all'
-        ? `las ${repoTotal.toLocaleString()} vulnerabilidades del repositorio`
-        : `${repoTotal.toLocaleString()} vulnerabilidades (filtro de fuente activo)`;
+    const count = repoTotal.toLocaleString();
     const ok = window.confirm(
-      `¿Eliminar ${scope}?\n\nEsta acción es permanente y no se puede deshacer.`
+      toolSourceFilter === 'all'
+        ? format('matrixConfirmDeleteAll', { count })
+        : format('matrixConfirmDeleteFiltered', { count })
     );
     if (!ok) return;
     setClearingTable(true);
     setError(null);
+    setClearProgress({ phase: 'deleting', loaded: 0, total: repoTotal });
     try {
-      const deleted = await deleteAllFindingsInRepository(
-        tool_source ? { tool_source } : undefined
-      );
+      const deleted = await deleteAllFindingsInRepository({
+        ...(tool_source ? { tool_source } : {}),
+        onProgress: (p) => setClearProgress(p),
+      });
       setReloadTick((n) => n + 1);
       if (deleted === 0) {
-        setWarning('No se eliminó ningún hallazgo.');
+        setWarning(t('matrixClearNone'));
       } else {
         setWarning(null);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo vaciar la tabla');
+      setError(e instanceof Error ? e.message : t('matrixClearError'));
     } finally {
       setClearingTable(false);
+      setClearProgress(null);
     }
-  }, [repoTotal, toolSourceFilter]);
+  }, [repoTotal, toolSourceFilter, format, t]);
 
   return (
     <div className="space-y-0">
@@ -186,7 +267,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-8 pl-8 text-xs bg-background"
-              placeholder="Buscar…"
+              placeholder={t('matrixSearch')}
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
             />
@@ -194,14 +275,14 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
           <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
             <Table2 className="inline size-3 mr-0.5" />
             <span className="font-medium text-foreground">{matrixRows.length}</span>/{repoTotal} ·{' '}
-            {VULN_MATRIX_PRIMARY_COLUMN_IDS.length} cols
+            {VULN_MATRIX_PRIMARY_COLUMN_IDS.length} {t('matrixCols')}
           </span>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="h-7 gap-1 px-2 text-[11px] text-destructive border-destructive/40 hover:bg-destructive/10"
-            disabled={loading || clearingTable || repoTotal <= 0}
+            disabled={loading || streaming || clearingTable || repoTotal <= 0}
             onClick={() => void handleClearTable()}
           >
             {clearingTable ? (
@@ -209,16 +290,22 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
             ) : (
               <Trash2 className="size-3.5" />
             )}
-            Vaciar tabla
+            {t('matrixClearTable')}
           </Button>
+          <span
+            className="text-[10px] text-muted-foreground hidden sm:inline"
+            title={t('matrixClearTableTitle')}
+          >
+            {t('matrixResetRepo')}
+          </span>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="h-7 gap-1 px-2 text-[11px]"
-            disabled={loading || matrixRows.length === 0}
+            disabled={loading || streaming || matrixRows.length === 0}
             onClick={() => downloadVulnMatrixCsv(matrixRows)}
-            title="Exportar filas visibles a CSV"
+            title={t('matrixExportCsvTitle')}
           >
             <Download className="size-3.5" />
             CSV
@@ -228,9 +315,9 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
             variant="outline"
             size="sm"
             className="h-7 gap-1 px-2 text-[11px]"
-            disabled={loading || matrixRows.length === 0}
+            disabled={loading || streaming || matrixRows.length === 0}
             onClick={() => downloadVulnMatrixExcel(matrixRows)}
-            title="Exportar filas visibles a Excel"
+            title={t('matrixExportExcelTitle')}
           >
             <FileSpreadsheet className="size-3.5" />
             Excel
@@ -240,16 +327,16 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
             variant="outline"
             size="sm"
             className="h-7 ml-auto gap-1 px-2 text-[11px]"
-            disabled={loading}
+            disabled={loading || streaming}
             onClick={() => void load()}
           >
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-            Actualizar
+            {t('matrixRefresh')}
           </Button>
         </div>
 
         <div className="flex flex-wrap gap-0.5 rounded-md border border-border/60 bg-background p-0.5">
-          {VULN_MATRIX_VIEW_OPTIONS.map((opt) => (
+          {viewOptions.map((opt) => (
             <button
               key={opt.id}
               type="button"
@@ -268,7 +355,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] text-muted-foreground mr-1">Fuente</span>
+          <span className="text-[10px] text-muted-foreground mr-1">{t('matrixSource')}</span>
           {TOOL_SOURCE_FILTER_OPTIONS.map((opt) => (
             <button
               key={opt.id}
@@ -281,7 +368,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {opt.id === 'all' ? 'Todas' : opt.label}
+              {opt.id === 'all' ? t('matrixAll') : opt.label}
             </button>
           ))}
         </div>
@@ -290,7 +377,7 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
 
         <VulnMatrixActionsBar
           targets={actionTargets}
-          severityCounts={severityCounts}
+          severityCounts={displaySeverityCounts}
           severityFilter={severityFilter}
           onSeverityFilterChange={setSeverityFilter}
           reviewFilter={reviewFilter}
@@ -310,16 +397,42 @@ export function VulnConsolidatedMatrixPanel({ refreshToken }: VulnConsolidatedMa
           ) : null}
           {warning ? <p className="text-amber-700 dark:text-amber-300">{warning}</p> : null}
           {truncated ? (
-            <p className="text-amber-700 dark:text-amber-300">Datos truncados — usa filtro por fuente.</p>
+            <p className="text-amber-700 dark:text-amber-300">
+              {format('matrixTruncated', { max: FINDINGS_LIST_MAX.toLocaleString() })}
+            </p>
           ) : null}
         </div>
       )}
+
+      {(loadProgress && (loading || streaming)) || clearProgress ? (
+        <div className="border-b border-border/50 px-3 py-2">
+          {loadProgress && (loading || streaming) ? (
+            <LongTaskProgress
+              title={t('matrixLoadingTitle')}
+              phase={loadProgress.label}
+              loaded={loadProgress.loaded}
+              total={loadProgress.total}
+              hint={streaming ? t('matrixStreamingHint') : t('matrixLoadingHint')}
+            />
+          ) : null}
+          {clearProgress ? (
+            <LongTaskProgress
+              title={t('matrixClearingTitle')}
+              phase={clearProgress.label}
+              loaded={clearProgress.loaded}
+              total={clearProgress.total}
+              hint={t('matrixClearingHint')}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="p-3">
         <VulnMatrixExcelGrid
           rows={matrixRows}
           loading={loading}
-          searchQuery={searchQ}
+          streaming={streaming}
+          searchQuery={deferredSearch}
           columnFilters={columnFilters}
           onColumnFiltersChange={setColumnFilters}
           sort={matrixSort}

@@ -191,6 +191,10 @@ export function VulnMgmtDashboard() {
             <CheckCircle2 className="size-4 text-emerald-500" />
             Accesos rápidos
           </CardTitle>
+          <CardDescription className="text-xs">
+            Abiertos y críticos del dashboard cuentan hallazgos ya publicados en gestión, no borradores
+            del servicio.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Link href="/vul-mgmt/hallazgos" className={buttonVariants({ variant: 'default', size: 'sm' })}>
@@ -198,6 +202,9 @@ export function VulnMgmtDashboard() {
           </Link>
           <Link href="/vul-mgmt/ingesta" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
             Importar scanners
+          </Link>
+          <Link href="/vul-mgmt/admin" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            Administración completa
           </Link>
           <Link href="/assets" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
             Inventario de activos

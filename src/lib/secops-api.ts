@@ -1,6 +1,7 @@
 import { getApiBaseUrl, resolveApiUrl } from '@/lib/api-base';
 import { authHeaders } from '@/lib/auth-storage';
 import type { EngagementProfile } from '@/lib/engagement-profile';
+import type { LoadProgress } from '@/lib/eta-progress';
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const url = resolveApiUrl(path);
@@ -218,9 +219,8 @@ export function statusToApiKey(status: FindingStatus): string {
   return STATUS_KEYS[status] ?? 'abierta';
 }
 
-export const FINDINGS_LIST_PAGE_SIZE = 2500;
-export const FINDINGS_LIST_MAX = 50_000;
-/** Filas por página en tablas de hallazgos (UI). */
+export const FINDINGS_LIST_PAGE_SIZE = 5000;
+export const FINDINGS_LIST_MAX = 100_000;
 export const FINDINGS_UI_PAGE_SIZES = [25, 50, 100, 250, 500] as const;
 export const FINDINGS_UI_PAGE_SIZE_ALL = 'all' as const;
 export type FindingsUiPageSize =
@@ -349,6 +349,39 @@ export async function countFindings(params?: {
   return data.total ?? 0;
 }
 
+export interface FindingsSeverityBreakdown {
+  total: number;
+  by_severity: Record<Severity, number>;
+}
+
+export async function fetchFindingsSeverityBreakdown(
+  params?: {
+    engagement_id?: string;
+    status?: string;
+    q?: string;
+    tool_source?: string;
+  },
+  signal?: AbortSignal,
+): Promise<FindingsSeverityBreakdown> {
+  const q = new URLSearchParams();
+  if (params?.engagement_id) q.set('engagement_id', params.engagement_id);
+  if (params?.status) q.set('status', params.status);
+  if (params?.q?.trim()) q.set('q', params.q.trim());
+  if (params?.tool_source?.trim()) q.set('tool_source', params.tool_source.trim());
+  const qs = q.toString();
+  const data = await apiFetch<{ total: number; by_severity?: Partial<Record<Severity, number>> }>(
+    `/api/v1/findings/severity-breakdown${qs ? `?${qs}` : ''}`,
+    signal ? { signal } : undefined,
+  );
+  const empty: Record<Severity, number> = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 };
+  return {
+    total: data.total ?? 0,
+    by_severity: { ...empty, ...(data.by_severity ?? {}) },
+  };
+}
+
+export type FindingsListProjection = 'full' | 'matrix';
+
 export async function listFindings(params?: {
   engagement_id?: string;
   status?: string;
@@ -359,6 +392,8 @@ export async function listFindings(params?: {
   q?: string;
   tool_source?: string;
   order_by?: FindingsOrderBy;
+  projection?: FindingsListProjection;
+  signal?: AbortSignal;
 }): Promise<Finding[]> {
   const q = new URLSearchParams();
   if (params?.engagement_id) q.set('engagement_id', params.engagement_id);
@@ -370,15 +405,26 @@ export async function listFindings(params?: {
   if (params?.q?.trim()) q.set('q', params.q.trim());
   if (params?.tool_source?.trim()) q.set('tool_source', params.tool_source.trim());
   if (params?.order_by) q.set('order_by', params.order_by);
+  if (params?.projection === 'matrix') q.set('projection', 'matrix');
   const qs = q.toString();
-  return apiFetch<Finding[]>(`/api/v1/findings${qs ? `?${qs}` : ''}`);
+  return apiFetch<Finding[]>(
+    `/api/v1/findings${qs ? `?${qs}` : ''}`,
+    params?.signal ? { signal: params.signal } : undefined
+  );
 }
 
 /** Carga todos los hallazgos de un proyecto (paginado en el servidor). */
 export async function listAllFindingsForEngagement(
   engagementId: string,
-  options?: { severidad?: Severity; severidades?: Severity[]; status?: string; q?: string }
+  options?: {
+    severidad?: Severity;
+    severidades?: Severity[];
+    status?: string;
+    q?: string;
+    onProgress?: (p: LoadProgress) => void;
+  }
 ): Promise<{ findings: Finding[]; totalInDb: number; truncated: boolean }> {
+  options?.onProgress?.({ phase: 'counting', loaded: 0, total: 0, label: 'Contando hallazgos…' });
   const totalInDb = await countFindings({
     engagement_id: engagementId,
     severidad: options?.severidad,
@@ -387,6 +433,7 @@ export async function listAllFindingsForEngagement(
     q: options?.q,
   });
 
+  const cap = Math.min(totalInDb, FINDINGS_LIST_MAX);
   const findings: Finding[] = [];
   let skip = 0;
 
@@ -403,6 +450,12 @@ export async function listAllFindingsForEngagement(
     if (!batch.length) break;
     findings.push(...batch);
     skip += batch.length;
+    options?.onProgress?.({
+      phase: 'fetching',
+      loaded: findings.length,
+      total: cap,
+      label: `Lote ${Math.ceil(skip / FINDINGS_LIST_PAGE_SIZE)} · ${FINDINGS_LIST_PAGE_SIZE.toLocaleString()} filas/página`,
+    });
     if (batch.length < FINDINGS_LIST_PAGE_SIZE) break;
   }
 
@@ -420,7 +473,9 @@ export async function listAllFindingsInRepository(options?: {
   status?: string;
   q?: string;
   tool_source?: string;
+  onProgress?: (p: LoadProgress) => void;
 }): Promise<{ findings: Finding[]; totalInDb: number; truncated: boolean }> {
+  options?.onProgress?.({ phase: 'counting', loaded: 0, total: 0, label: 'Contando repositorio…' });
   const totalInDb = await countFindings({
     severidad: options?.severidad,
     severidades: options?.severidades,
@@ -429,6 +484,7 @@ export async function listAllFindingsInRepository(options?: {
     tool_source: options?.tool_source,
   });
 
+  const cap = Math.min(totalInDb, FINDINGS_LIST_MAX);
   const findings: Finding[] = [];
   let skip = 0;
 
@@ -445,6 +501,12 @@ export async function listAllFindingsInRepository(options?: {
     if (!batch.length) break;
     findings.push(...batch);
     skip += batch.length;
+    options?.onProgress?.({
+      phase: 'fetching',
+      loaded: findings.length,
+      total: cap,
+      label: `Descargando ${findings.length.toLocaleString()} de ${cap.toLocaleString()} (máx. ${FINDINGS_LIST_MAX.toLocaleString()})`,
+    });
     if (batch.length < FINDINGS_LIST_PAGE_SIZE) break;
   }
 
@@ -453,6 +515,147 @@ export async function listAllFindingsInRepository(options?: {
     totalInDb,
     truncated: findings.length < totalInDb,
   };
+}
+
+/** Páginas en vuelo simultáneas al transmitir el repositorio. */
+export const FINDINGS_STREAM_CONCURRENCY = 10;
+
+export type FindingsStreamInfo = {
+  loaded: number;
+  cap: number;
+  total: number;
+};
+
+export type FindingsStreamResult = {
+  totalInDb: number;
+  loaded: number;
+  truncated: boolean;
+};
+
+/**
+ * Transmite los hallazgos del repositorio en lotes paralelos, entregando cada
+ * lote a `onBatch` en cuanto llega. A diferencia de `listAllFindingsInRepository`
+ * (que descarga todo de forma secuencial antes de resolver), esto permite a la UI
+ * renderizar las primeras filas en segundos y seguir poblando la tabla mientras
+ * el resto se descarga en paralelo. Soporta cancelación vía `AbortSignal`.
+ */
+export async function streamAllFindingsInRepository(options: {
+  severidad?: Severity;
+  severidades?: Severity[];
+  status?: string;
+  q?: string;
+  tool_source?: string;
+  projection?: FindingsListProjection;
+  concurrency?: number;
+  signal?: AbortSignal;
+  onBatch: (batch: Finding[], info: FindingsStreamInfo) => void;
+  onProgress?: (p: LoadProgress) => void;
+}): Promise<FindingsStreamResult> {
+  const { onBatch, onProgress, signal } = options;
+  const projection = options.projection ?? 'matrix';
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException('Carga cancelada', 'AbortError');
+  };
+
+  onProgress?.({ phase: 'counting', loaded: 0, total: 0, label: 'Contando repositorio…' });
+  const totalInDb = await countFindings({
+    severidad: options.severidad,
+    severidades: options.severidades,
+    status: options.status,
+    q: options.q,
+    tool_source: options.tool_source,
+  });
+  throwIfAborted();
+
+  const cap = Math.min(totalInDb, FINDINGS_LIST_MAX);
+  if (cap <= 0) {
+    onProgress?.({ phase: 'fetching', loaded: 0, total: 0, label: 'Repositorio vacío' });
+    return { totalInDb, loaded: 0, truncated: false };
+  }
+
+  const offsets: number[] = [];
+  for (let skip = 0; skip < cap; skip += FINDINGS_LIST_PAGE_SIZE) offsets.push(skip);
+
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? FINDINGS_STREAM_CONCURRENCY, offsets.length));
+  let nextIndex = 0;
+  let loaded = 0;
+
+  const worker = async () => {
+    for (;;) {
+      throwIfAborted();
+      const i = nextIndex;
+      nextIndex += 1;
+      if (i >= offsets.length) return;
+      const batch = await listFindings({
+        severidad: options.severidad,
+        severidades: options.severidades,
+        status: options.status,
+        q: options.q,
+        tool_source: options.tool_source,
+        projection,
+        limit: FINDINGS_LIST_PAGE_SIZE,
+        skip: offsets[i],
+        signal,
+      });
+      throwIfAborted();
+      loaded += batch.length;
+      onBatch(batch, { loaded, cap, total: totalInDb });
+      onProgress?.({
+        phase: 'fetching',
+        loaded,
+        total: cap,
+        label: `Descargando ${loaded.toLocaleString()} de ${cap.toLocaleString()} · ${concurrency} en paralelo`,
+      });
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+  return { totalInDb, loaded, truncated: loaded < totalInDb };
+}
+
+export type FindingTypeGroup = {
+  key: string;
+  titulo: string;
+  severidad: Severity;
+  tool_label: string;
+  instance_count: number;
+  member_ids: string[];
+  representative: Finding;
+};
+
+export type FindingTypeGroupsResult = {
+  groups: FindingTypeGroup[];
+  total_findings: number;
+  total_types: number;
+};
+
+/**
+ * Agrega hallazgos por tipo de vulnerabilidad en el servidor (un representante por
+ * tipo). Reemplaza la descarga de decenas de miles de hallazgos completos en la
+ * fase "Revisión por tipo": solo viajan los representantes + conteos + ids miembro.
+ */
+export async function listFindingTypeGroups(params?: {
+  engagement_id?: string;
+  severidad?: Severity;
+  severidades?: Severity[];
+  status?: string;
+  q?: string;
+  tool_source?: string;
+  include_member_ids?: boolean;
+}): Promise<FindingTypeGroupsResult> {
+  const qs = new URLSearchParams();
+  if (params?.engagement_id) qs.set('engagement_id', params.engagement_id);
+  if (params?.severidad) qs.set('severidad', params.severidad);
+  if (params?.severidades?.length) qs.set('severidades', params.severidades.join(','));
+  if (params?.status) qs.set('status', params.status);
+  if (params?.q?.trim()) qs.set('q', params.q.trim());
+  if (params?.tool_source?.trim()) qs.set('tool_source', params.tool_source.trim());
+  if (params?.include_member_ids === false) qs.set('include_member_ids', 'false');
+  const query = qs.toString();
+  return apiFetch<FindingTypeGroupsResult>(
+    `/api/v1/findings/grouped-by-type${query ? `?${query}` : ''}`
+  );
 }
 
 export async function bulkDeleteFindings(
@@ -466,21 +669,48 @@ export async function bulkDeleteFindings(
 }
 
 export async function bulkDeleteFindingsByQuery(params: {
-  engagement_id: string;
+  engagement_id?: string;
+  /** Borra a nivel repositorio (sin engagement); requerido si no hay engagement_id. */
+  repository?: boolean;
   severidad?: Severity;
   severidades?: Severity[];
   q?: string;
+  tool_source?: string;
 }): Promise<{ deleted_count: number }> {
   return apiFetch('/api/v1/findings/bulk-delete-by-query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       engagement_id: params.engagement_id,
+      repository: params.repository || undefined,
       severidad: params.severidad,
       severidades: params.severidades?.length ? params.severidades.join(',') : undefined,
       q: params.q?.trim() || undefined,
+      tool_source: params.tool_source?.trim() || undefined,
     }),
   });
+}
+
+export async function publishFindingsToRepository(
+  engagementId: string
+): Promise<{ published_count: number; message?: string }> {
+  return apiFetch('/api/v1/findings/publish-to-repository', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engagement_id: engagementId }),
+  });
+}
+
+export type AssetGroup = {
+  id: string;
+  nombre: string;
+  descripcion?: string | null;
+  color?: string | null;
+  asset_ids: string[];
+};
+
+export async function listAssetGroups(): Promise<AssetGroup[]> {
+  return apiFetch('/api/v1/asset-groups');
 }
 
 const BULK_DELETE_BATCH = 500;
@@ -499,7 +729,12 @@ export async function bulkDeleteFindingsBatched(ids: string[]): Promise<number> 
 /** Elimina todos los hallazgos del tenant (repositorio), respetando filtros opcionales. */
 export async function deleteAllFindingsInRepository(options?: {
   tool_source?: string;
+  onProgress?: (p: LoadProgress) => void;
 }): Promise<number> {
+  options?.onProgress?.({ phase: 'counting', loaded: 0, total: 0, label: 'Contando hallazgos a eliminar…' });
+  const initialTotal = await countFindings({ tool_source: options?.tool_source });
+  if (initialTotal <= 0) return 0;
+
   let totalDeleted = 0;
   for (;;) {
     const remaining = await countFindings({ tool_source: options?.tool_source });
@@ -512,6 +747,12 @@ export async function deleteAllFindingsInRepository(options?: {
     if (!batch.length) break;
     const deleted = await bulkDeleteFindingsBatched(batch.map((f) => f.id));
     totalDeleted += deleted;
+    options?.onProgress?.({
+      phase: 'deleting',
+      loaded: totalDeleted,
+      total: initialTotal,
+      label: `Eliminados ${totalDeleted.toLocaleString()} de ~${initialTotal.toLocaleString()}`,
+    });
     if (deleted === 0) break;
   }
   return totalDeleted;
@@ -676,8 +917,9 @@ export async function enrichFinding(id: string): Promise<void> {
   await apiFetch(`/api/v1/findings/${id}/ai-enrich`, { method: 'POST' });
 }
 
-export async function listEngagements(): Promise<Engagement[]> {
-  return apiFetch<Engagement[]>('/api/v1/engagements');
+export async function listEngagements(options?: { includeInternal?: boolean }): Promise<Engagement[]> {
+  const q = options?.includeInternal ? '?include_internal=true' : '';
+  return apiFetch<Engagement[]>(`/api/v1/engagements${q}`);
 }
 
 export interface PlatformStats {

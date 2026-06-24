@@ -14,6 +14,7 @@ import {
   canAdminTenant,
   canWriteSecOps,
   fetchMe,
+  hasPlatformAdminAccess,
   isClientViewer,
   login as apiLogin,
   logout as apiLogout,
@@ -24,6 +25,15 @@ import {
   type UserRole,
 } from '@/lib/auth-api';
 import { getStoredToken } from '@/lib/auth-storage';
+import {
+  coerceTenantLanguage,
+  resolveTenantLanguage,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
+import {
+  resolveUiLanguage,
+  type UiLanguagePreference,
+} from '@/lib/user-preferences';
 
 type AuthState = {
   user: AuthUser | null;
@@ -43,6 +53,10 @@ type AuthContextValue = AuthState & {
   canWrite: boolean;
   isClient: boolean;
   isAdmin: boolean;
+  isPlatformAdmin: boolean;
+  tenantLanguage: TenantLanguage;
+  uiLanguage: TenantLanguage;
+  uiLanguagePreference: UiLanguagePreference;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -152,8 +166,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySession, router]
   );
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
+  const value = useMemo<AuthContextValue>(() => {
+    const tenantLanguage = resolveTenantLanguage(state.branding);
+    const uiLanguagePreference =
+      (state.user?.ui_language_preference as UiLanguagePreference | undefined) ?? 'auto';
+    const resolvedFromApi = state.user?.ui_language;
+    const uiLanguage = coerceTenantLanguage(
+      resolvedFromApi === 'es' || resolvedFromApi === 'en'
+        ? resolvedFromApi
+        : resolveUiLanguage(uiLanguagePreference, tenantLanguage),
+      tenantLanguage
+    );
+    return {
       ...state,
       login,
       logout,
@@ -162,9 +186,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canWrite: state.role ? canWriteSecOps(state.role) : false,
       isClient: state.role ? isClientViewer(state.role) : false,
       isAdmin: state.role ? canAdminTenant(state.role) : false,
-    }),
-    [state, login, logout, switchTenant, refresh]
-  );
+      isPlatformAdmin: state.role ? hasPlatformAdminAccess(state.role, state.tenants) : false,
+      tenantLanguage,
+      uiLanguage,
+      uiLanguagePreference,
+    };
+  }, [state, login, logout, switchTenant, refresh]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

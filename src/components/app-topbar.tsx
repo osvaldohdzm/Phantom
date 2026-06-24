@@ -6,11 +6,13 @@ import { Building2, ChevronDown, LogOut, PanelLeft, PanelLeftClose, User } from 
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuth } from '@/contexts/auth-context';
 import { useSidebarOptional } from '@/contexts/sidebar-context';
-import { ROLE_LABELS, canAdminTenant } from '@/lib/auth-api';
+import { canAdminTenant } from '@/lib/auth-api';
+import { useUiT } from '@/lib/use-ui-locale';
 import { cn } from '@/lib/utils';
 
 function SidebarToggle({ className }: { className?: string }) {
   const sidebar = useSidebarOptional();
+  const { t } = useUiT();
   if (!sidebar) return null;
   const { open, toggle } = sidebar;
   return (
@@ -23,9 +25,9 @@ function SidebarToggle({ className }: { className?: string }) {
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
         className
       )}
-      aria-label={open ? 'Ocultar menú de navegación' : 'Mostrar menú de navegación'}
+      aria-label={open ? t('topbarHideNav') : t('topbarShowNav')}
       aria-expanded={open}
-      title={open ? 'Ocultar menú (⌘B)' : 'Mostrar menú (⌘B)'}
+      title={open ? t('topbarHideNavTitle') : t('topbarShowNavTitle')}
     >
       {open ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
     </button>
@@ -34,6 +36,7 @@ function SidebarToggle({ className }: { className?: string }) {
 
 export function AppTopbar({ className }: { className?: string }) {
   const { user, role, tenants, activeTenant, switchTenant, logout, loading } = useAuth();
+  const { t, role: roleLabel } = useUiT();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -71,10 +74,10 @@ export function AppTopbar({ className }: { className?: string }) {
         <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground min-w-0">
           <Building2 className="size-3.5 shrink-0" aria-hidden />
           <span className="truncate">
-            {activeTenant?.nombre ?? 'Sin tenant'}
+            {activeTenant?.nombre ?? t('topbarNoTenant')}
             {role ? (
               <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                {ROLE_LABELS[role]}
+                {roleLabel(role)}
               </span>
             ) : null}
           </span>
@@ -84,12 +87,12 @@ export function AppTopbar({ className }: { className?: string }) {
       <div className="flex items-center gap-2 ml-auto">
         {tenants.length > 1 ? (
           <label className="flex items-center gap-1.5 text-xs">
-            <span className="sr-only">Cambiar tenant</span>
+            <span className="sr-only">{t('topbarSwitchTenant')}</span>
             <select
               className="h-8 max-w-[11rem] truncate rounded-md border border-border bg-background px-2 text-xs text-foreground"
               value={activeTenant?.id ?? ''}
               onChange={(e) => void switchTenant(e.target.value)}
-              aria-label="Cambiar organización"
+              aria-label={t('topbarSwitchOrg')}
             >
               {tenants.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -123,13 +126,20 @@ export function AppTopbar({ className }: { className?: string }) {
                 <p className="text-sm font-medium truncate">{user.nombre}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
+              <Link
+                href="/profile"
+                className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
+                onClick={() => setMenuOpen(false)}
+              >
+                {t('navProfile')}
+              </Link>
               {role === 'client_viewer' ? (
                 <Link
                   href="/portal"
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Portal cliente
+                  {t('topbarClientPortal')}
                 </Link>
               ) : (
                 <Link
@@ -137,7 +147,7 @@ export function AppTopbar({ className }: { className?: string }) {
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Tablero SecOps
+                  {t('topbarSecOpsDashboard')}
                 </Link>
               )}
               {role && canAdminTenant(role) ? (
@@ -146,7 +156,7 @@ export function AppTopbar({ className }: { className?: string }) {
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Administración
+                  {t('navAdministration')}
                 </Link>
               ) : null}
               <button
@@ -159,7 +169,7 @@ export function AppTopbar({ className }: { className?: string }) {
                 }}
               >
                 <LogOut className="size-3.5" aria-hidden />
-                Cerrar sesión
+                {t('topbarLogout')}
               </button>
             </div>
           ) : null}

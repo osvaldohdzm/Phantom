@@ -1,6 +1,6 @@
 import {
-  suggestCatalogSpanishField,
-  type CatalogSpanishAiField,
+  suggestCatalogLocaleField,
+  type CatalogLocaleAiField,
 } from '@/lib/catalog-ai-fields';
 import {
   findingToCatalogInput,
@@ -10,7 +10,7 @@ import { applyFieldLengthRules } from '@/lib/ai-field-length';
 import {
   getAiPromptForField,
   getCatalogFieldConfigSync,
-  mandatorySpanishAiFields,
+  mandatoryLocaleAiFields,
   type CatalogFieldConfig,
 } from '@/lib/catalog-field-config';
 import { groupFindingsForGeminiBatch } from '@/lib/finding-gemini-batch';
@@ -19,6 +19,10 @@ import {
   type Finding,
   type SyncFromCatalogResult,
 } from '@/lib/secops-api';
+import {
+  catalogColumnForLocale,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
 import {
   EXPLICACION_TECNICA_MAX_PARAGRAPHS,
   truncateToParagraphs,
@@ -42,7 +46,7 @@ async function fetchCatalogRow(catalogId: string): Promise<Record<string, unknow
 
 async function patchCatalogFields(
   catalogId: string,
-  updates: Partial<Record<CatalogSpanishAiField, string>>
+  updates: Partial<Record<string, string>>
 ): Promise<Record<string, unknown>> {
   const res = await fetch(`/api/vulns-catalog/${encodeURIComponent(catalogId)}`, {
     method: 'PATCH',
@@ -82,7 +86,6 @@ function groupHasContext(members: Finding[]): boolean {
   });
 }
 
-/** Propaga catálogo al proyecto; si el índice no enlaza, sincroniza los hallazgos del grupo visible. */
 async function syncAfterCatalogPatch(
   members: Finding[],
   catalogId: string,
@@ -101,13 +104,15 @@ async function syncAfterCatalogPatch(
 async function runCatalogFieldGroups(
   findings: Finding[],
   engagementId: string,
-  fields: CatalogSpanishAiField[],
+  fields: CatalogLocaleAiField[],
   options?: {
     fieldConfig?: CatalogFieldConfig;
+    language?: TenantLanguage;
     onProgress?: (done: number, total: number) => void;
   }
 ): Promise<CatalogGeminiBatchResult> {
-  const config = options?.fieldConfig ?? getCatalogFieldConfigSync();
+  const language = options?.language ?? 'es';
+  const config = options?.fieldConfig ?? getCatalogFieldConfigSync(language);
   const groups = groupFindingsForGeminiBatch(findings).filter(groupHasContext);
   if (!groups.length) {
     throw new Error(
@@ -124,11 +129,15 @@ async function runCatalogFieldGroups(
   for (const members of groups) {
     try {
       let { catalogId, row } = await ensureCatalogForGroup(members);
-      const batchUpdates: Partial<Record<CatalogSpanishAiField, string>> = {};
+      const batchUpdates: Partial<Record<string, string>> = {};
 
       for (const field of fields) {
-        const hint = getAiPromptForField(field, config);
-        const suggested = await suggestCatalogSpanishField(field, row, { fieldHint: hint, config });
+        const hint = getAiPromptForField(field, config, language);
+        const suggested = await suggestCatalogLocaleField(field, row, {
+          fieldHint: hint,
+          config,
+          language,
+        });
         const value = applyFieldLengthRules(suggested, hint);
         row = { ...row, [field]: value };
         batchUpdates[field] = value;
@@ -160,10 +169,30 @@ async function runCatalogFieldGroups(
   };
 }
 
-/**
- * Rellena/mejorar campos Español obligatorios en catálogo (sobrescribe texto existente)
- * y propaga a todos los hallazgos del proyecto con el mismo plugin/identificador.
- */
+/** Rellena campos localizados obligatorios en catálogo y propaga a hallazgos. */
+export async function fillCatalogLocaleAndPropagate(
+  findings: Finding[],
+  engagementId: string,
+  options?: {
+    fieldConfig?: CatalogFieldConfig;
+    language?: TenantLanguage;
+    onProgress?: (done: number, total: number) => void;
+  }
+): Promise<CatalogGeminiBatchResult> {
+  const language = options?.language ?? 'es';
+  const config = options?.fieldConfig ?? getCatalogFieldConfigSync(language);
+  const fields = mandatoryLocaleAiFields(config, language);
+  if (!fields.length) {
+    throw new Error(
+      language === 'en'
+        ? 'No mandatory catalog fields configured for AI.'
+        : 'No hay campos obligatorios configurados para IA en el catálogo.'
+    );
+  }
+  return runCatalogFieldGroups(findings, engagementId, fields, options);
+}
+
+/** @deprecated Usar fillCatalogLocaleAndPropagate */
 export async function fillCatalogSpanishAndPropagate(
   findings: Finding[],
   engagementId: string,
@@ -172,39 +201,33 @@ export async function fillCatalogSpanishAndPropagate(
     onProgress?: (done: number, total: number) => void;
   }
 ): Promise<CatalogGeminiBatchResult> {
-  const config = options?.fieldConfig ?? getCatalogFieldConfigSync();
-  const fields = mandatorySpanishAiFields(config);
-  if (!fields.length) {
-    throw new Error('No hay campos Español obligatorios configurados para IA en el catálogo.');
-  }
-  return runCatalogFieldGroups(findings, engagementId, fields, options);
+  return fillCatalogLocaleAndPropagate(findings, engagementId, { ...options, language: 'es' });
 }
 
-/** Una columna / un campo Español: 1 llamada Gemini por tipo de vulnerabilidad en el filtro. */
 export async function fillCatalogFieldAndPropagate(
   findings: Finding[],
   engagementId: string,
-  field: CatalogSpanishAiField,
+  field: CatalogLocaleAiField,
   options?: {
     fieldConfig?: CatalogFieldConfig;
+    language?: TenantLanguage;
     onProgress?: (done: number, total: number) => void;
   }
 ): Promise<CatalogGeminiBatchResult> {
   return runCatalogFieldGroups(findings, engagementId, [field], options);
 }
 
-/**
- * Acota EspExplicacionTecnica en catálogo (máx. N párrafos) y sincroniza hallazgos del proyecto.
- * Sin selección, usa el mismo alcance que Gemini (filtro/página visible).
- */
 export async function truncateCatalogExplicacionAndPropagate(
   findings: Finding[],
   engagementId: string,
   options?: {
     maxParagraphs?: number;
+    language?: TenantLanguage;
     onProgress?: (done: number, total: number) => void;
   }
 ): Promise<CatalogGeminiBatchResult> {
+  const language = options?.language ?? 'es';
+  const techCol = catalogColumnForLocale('technical_explanation', language);
   const maxParagraphs = options?.maxParagraphs ?? EXPLICACION_TECNICA_MAX_PARAGRAPHS;
   const groups = groupFindingsForGeminiBatch(findings);
   if (!groups.length) {
@@ -220,11 +243,11 @@ export async function truncateCatalogExplicacionAndPropagate(
   for (const members of groups) {
     try {
       const { catalogId, row } = await ensureCatalogForGroup(members);
-      const raw = String(row.EspExplicacionTecnica ?? '').trim();
+      const raw = String(row[techCol] ?? '').trim();
       if (raw) {
         const truncated = truncateToParagraphs(raw, maxParagraphs);
         if (truncated !== raw) {
-          await patchCatalogFields(catalogId, { EspExplicacionTecnica: truncated });
+          await patchCatalogFields(catalogId, { [techCol]: truncated });
           fieldsFilled += 1;
         }
         const sync = await syncAfterCatalogPatch(members, catalogId, engagementId);

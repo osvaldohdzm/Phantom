@@ -1,4 +1,4 @@
-"""Proyecto Default por tenant — contenedor de inventario, hallazgos e importaciones."""
+"""Espacio interno por tenant — almacén técnico, no un servicio listable en UI."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.models.auth import Tenant
 from app.models.core import Asset, Engagement, EngagementType
 
-DEFAULT_SERVICE_NAME = "Servicio Default"
+# Nombre interno (no debe mostrarse como servicio en la UI).
+DEFAULT_SERVICE_NAME = "Espacio del tenant"
 DEFAULT_PROJECT_NAME = DEFAULT_SERVICE_NAME  # compat
 DEFAULT_ESTADO = "En curso"
 DEFAULT_TIPO_SERVICIO = "Pentest"
@@ -21,7 +22,11 @@ def is_default_engagement(eg: Engagement) -> bool:
     if profile.get("is_default"):
         return True
     name = (eg.nombre_proyecto or "").strip()
-    return name in (DEFAULT_SERVICE_NAME, "Proyecto Default")
+    return name in (
+        DEFAULT_SERVICE_NAME,
+        "Proyecto Default",
+        "Servicio Default",
+    )
 
 
 def get_default_engagement(db: Session, tenant_id: UUID) -> Engagement | None:
@@ -56,16 +61,23 @@ def ensure_default_engagements_all_tenants(db: Session) -> None:
         ensure_default_engagement(db, tenant)
 
 
-def backfill_orphan_assets_to_default(db: Session) -> None:
-    """Asigna activos sin proyecto al Proyecto Default del tenant."""
+def detach_assets_from_default_engagements(db: Session) -> None:
+    """Los activos no deben quedar atados al espacio interno; inventario global del tenant."""
     for tenant in db.query(Tenant).all():
-        default_eg = ensure_default_engagement(db, tenant)
+        default_eg = get_default_engagement(db, tenant.id)
+        if not default_eg:
+            continue
         db.query(Asset).filter(
             Asset.tenant_id == tenant.id,
-            Asset.engagement_id.is_(None),
-        ).update({Asset.engagement_id: default_eg.id}, synchronize_session=False)
+            Asset.engagement_id == default_eg.id,
+        ).update({Asset.engagement_id: None}, synchronize_session=False)
+
+
+def backfill_orphan_assets_to_default(db: Session) -> None:
+    """Los activos sin proyecto permanecen con engagement_id NULL (inventario global)."""
+    return
 
 
 def bootstrap_tenant_defaults(db: Session) -> None:
     ensure_default_engagements_all_tenants(db)
-    backfill_orphan_assets_to_default(db)
+    detach_assets_from_default_engagements(db)

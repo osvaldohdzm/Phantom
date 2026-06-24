@@ -6,17 +6,17 @@ import { buttonVariants } from '@/components/ui/button';
 const catalog = [
   {
     name: 'Pentest infra / red / aplicación',
-    note: 'Flujo 7 pasos · M10 + M14',
+    note: 'Servicio · 7 pasos · M10 + M14',
     href: '/reports',
   },
   {
     name: 'Análisis estático (SAST)',
-    note: 'Flujo dedicado · parsers en Fase 3',
+    note: 'Servicio SAST · parsers en Fase 3',
     href: '/reports',
   },
   {
     name: 'DAST web (Acunetix, Burp)',
-    note: 'Ingesta Acunetix + flujo DAST',
+    note: 'Ingesta Acunetix + servicio DAST',
     href: '/reports',
   },
   {
@@ -40,10 +40,10 @@ export default function SecServicesPage() {
           Mapa de módulos M1–M17 según la especificación del sistema. Lo marcado como{' '}
           <span className="text-emerald-600 dark:text-emerald-400">Operativo</span> o{' '}
           <span className="text-amber-600 dark:text-amber-400">Parcial</span> ya tiene código en
-          Spectre; el pentest de 7 pasos permanece en Reportes Word.
+          Spectre; los servicios de pentest, DAST, SAST y AV Infra usan un wizard de 7 pasos.
         </p>
         <Link href="/reports" className={buttonVariants({ variant: 'outline' })}>
-          Ir a Reportes Word (pentest)
+          Ir a servicios (flujo pentest)
         </Link>
       </div>
 
@@ -52,7 +52,7 @@ export default function SecServicesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Catálogo de servicios</CardTitle>
-          <CardDescription>Enlaces a los flujos implementados hoy</CardDescription>
+          <CardDescription>Enlaces a los servicios implementados hoy</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {catalog.map((c) => (

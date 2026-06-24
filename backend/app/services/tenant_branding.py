@@ -7,9 +7,12 @@ from copy import deepcopy
 from typing import Any, Optional
 from uuid import UUID
 
+from app.services.official_field_config import merge_official_fields, normalize_official_fields
+
 HEX_COLOR = re.compile(r"^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
 
 BRANDING_DEFAULTS: dict[str, Any] = {
+    "language": "es",
     "product_name": "Phantom",
     "workspace_name": None,
     "tagline": "Security Operations Platform",
@@ -90,6 +93,9 @@ def normalize_branding(raw: Optional[dict]) -> dict[str, Any]:
         val = raw[key]
         if key in ("primary_color", "accent_color", "sidebar_color"):
             base[key] = _clean_hex(val)
+        elif key == "language":
+            if val in ("es", "en"):
+                base[key] = val
         elif key == "default_theme":
             if val in ("light", "dark", "system"):
                 base[key] = val
@@ -111,6 +117,7 @@ def normalize_branding(raw: Optional[dict]) -> dict[str, Any]:
         else:
             base[key] = _clean_str(val, max_len=255 if key != "report_footer" else 2000)
 
+    base["official_fields"] = normalize_official_fields(raw.get("official_fields"))
     return base
 
 
@@ -123,6 +130,8 @@ def merge_branding_update(current: Optional[dict], patch: dict[str, Any]) -> dic
             merged[key] = BRANDING_DEFAULTS[key]
         elif key in ("primary_color", "accent_color", "sidebar_color"):
             merged[key] = _clean_hex(val)
+        elif key == "language" and val in ("es", "en"):
+            merged[key] = val
         elif key == "default_theme" and val in ("light", "dark", "system"):
             merged[key] = val
         elif key == "allow_theme_toggle":
@@ -131,6 +140,10 @@ def merge_branding_update(current: Optional[dict], patch: dict[str, Any]) -> dic
             merged[key] = bool(val)
         else:
             merged[key] = _clean_str(val, max_len=8000 if key == "email_footer_html" else 255)
+    if "official_fields" in patch:
+        merged["official_fields"] = merge_official_fields(
+            merged.get("official_fields"), patch["official_fields"]
+        )
     return merged
 
 

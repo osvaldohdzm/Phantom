@@ -1,4 +1,4 @@
-import type { Severity } from '@/lib/secops-api';
+import type { Finding, Severity } from '@/lib/secops-api';
 import {
   getSpreadsheetCellCharCount,
   getSpreadsheetCellValue,
@@ -7,7 +7,8 @@ import {
   type SpreadsheetColumnId,
   type SpreadsheetSortableColumnId,
 } from '@/lib/finding-spreadsheet-columns';
-import type { Finding } from '@/lib/secops-api';
+import type { TenantLanguage } from '@/lib/tenant-locale';
+import { DEFAULT_TENANT_LANGUAGE } from '@/lib/tenant-locale';
 import { compareBySeverity } from '@/lib/severity-sort';
 import { findingCompleteness } from '@/lib/finding-completeness';
 
@@ -34,13 +35,14 @@ const ALL_SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low', 'Info']
 export function findingMatchesColumnFilter(
   finding: Finding,
   columnId: SpreadsheetSortableColumnId,
-  filter: SpreadsheetColumnFilter | undefined
+  filter: SpreadsheetColumnFilter | undefined,
+  language: TenantLanguage = DEFAULT_TENANT_LANGUAGE
 ): boolean {
   if (!filter) return true;
 
   if (isCharCountColumn(columnId)) {
     const sourceId = sourceFromCharCountColumn(columnId);
-    const len = getSpreadsheetCellCharCount(finding, sourceId);
+    const len = getSpreadsheetCellCharCount(finding, sourceId, language);
     switch (filter.kind) {
       case 'char_gte':
         return len >= filter.min;
@@ -56,7 +58,7 @@ export function findingMatchesColumnFilter(
   }
 
   const dataColumnId = columnId as SpreadsheetColumnId;
-  const raw = getSpreadsheetCellValue(finding, dataColumnId);
+  const raw = getSpreadsheetCellValue(finding, dataColumnId, language);
   const value = raw.toLowerCase();
 
   switch (filter.kind) {
@@ -71,9 +73,9 @@ export function findingMatchesColumnFilter(
     case 'severity_in':
       return filter.values.length === 0 || filter.values.includes(finding.severidad);
     case 'char_gte':
-      return getSpreadsheetCellCharCount(finding, dataColumnId) >= filter.min;
+      return getSpreadsheetCellCharCount(finding, dataColumnId, language) >= filter.min;
     case 'char_lte':
-      return getSpreadsheetCellCharCount(finding, dataColumnId) <= filter.max;
+      return getSpreadsheetCellCharCount(finding, dataColumnId, language) <= filter.max;
     default:
       return true;
   }
@@ -81,18 +83,20 @@ export function findingMatchesColumnFilter(
 
 export function applySpreadsheetColumnFilters(
   findings: Finding[],
-  filters: SpreadsheetColumnFilters
+  filters: SpreadsheetColumnFilters,
+  language: TenantLanguage = DEFAULT_TENANT_LANGUAGE
 ): Finding[] {
   const entries = Object.entries(filters) as [SpreadsheetSortableColumnId, SpreadsheetColumnFilter][];
   if (!entries.length) return findings;
   return findings.filter((f) =>
-    entries.every(([col, filter]) => findingMatchesColumnFilter(f, col, filter))
+    entries.every(([col, filter]) => findingMatchesColumnFilter(f, col, filter, language))
   );
 }
 
 export function sortFindingsByColumn(
   findings: Finding[],
-  sort: SpreadsheetSort | null
+  sort: SpreadsheetSort | null,
+  language: TenantLanguage = DEFAULT_TENANT_LANGUAGE
 ): Finding[] {
   if (!sort) return findings;
   const { column, direction } = sort;
@@ -102,15 +106,15 @@ export function sortFindingsByColumn(
     if (isCharCountColumn(column)) {
       const sourceId = sourceFromCharCountColumn(column);
       cmp =
-        getSpreadsheetCellCharCount(a, sourceId) - getSpreadsheetCellCharCount(b, sourceId);
+        getSpreadsheetCellCharCount(a, sourceId, language) - getSpreadsheetCellCharCount(b, sourceId, language);
     } else if (column === 'severidad') {
       cmp = compareBySeverity(a.severidad, b.severidad);
     } else if (column === 'completeness') {
       cmp = findingCompleteness(a).percent - findingCompleteness(b).percent;
     } else {
-      const va = getSpreadsheetCellValue(a, column).toLowerCase();
-      const vb = getSpreadsheetCellValue(b, column).toLowerCase();
-      cmp = va.localeCompare(vb, 'es');
+      const va = getSpreadsheetCellValue(a, column, language).toLowerCase();
+      const vb = getSpreadsheetCellValue(b, column, language).toLowerCase();
+      cmp = va.localeCompare(vb, language === 'en' ? 'en' : 'es');
     }
     return direction === 'asc' ? cmp : -cmp;
   });
@@ -120,15 +124,16 @@ export function sortFindingsByColumn(
 export function uniqueColumnValues(
   findings: Finding[],
   columnId: SpreadsheetColumnId,
-  limit = 40
+  limit = 40,
+  language: TenantLanguage = DEFAULT_TENANT_LANGUAGE
 ): string[] {
   const set = new Set<string>();
   for (const f of findings) {
-    const v = getSpreadsheetCellValue(f, columnId).trim();
+    const v = getSpreadsheetCellValue(f, columnId, language).trim();
     if (v) set.add(v);
     if (set.size >= limit) break;
   }
-  return [...set].sort((a, b) => a.localeCompare(b, 'es'));
+  return [...set].sort((a, b) => a.localeCompare(b, language === 'en' ? 'en' : 'es'));
 }
 
 export function severityFilterFromColumn(

@@ -6,6 +6,12 @@ import {
 } from '@/lib/secops-api';
 import { catalogColumnForSource, normalizeToolSource } from '@/lib/catalog-tool-index';
 import { extractNessusPluginId } from '@/lib/finding-grouping';
+import {
+  catalogColumnForLocale,
+  type CatalogLocaleFieldKey,
+  DEFAULT_TENANT_LANGUAGE,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
 
 const SEVERITY_EN: Record<Severity, string> = {
   Critical: 'Critical',
@@ -66,6 +72,7 @@ export function findingToCatalogRow(input: CatalogFromFindingInput): CatalogRowP
   const remediacion = (input.propuesta_remediacion || '').trim().slice(0, 32000) || null;
   const metodo = (input.metodo_deteccion || '').trim().slice(0, 32000) || null;
   const tecnica = (input.explicacion_tecnica || '').trim().slice(0, 32000) || null;
+  const metodoEs = metodo && /escaneo|nessus|manual/i.test(metodo) ? metodo : null;
 
   const toolSource = normalizeToolSource(input.tool_source ?? (pluginId ? 'Nessus' : 'Manual'));
   const toolCol = catalogColumnForSource(toolSource);
@@ -93,14 +100,14 @@ export function findingToCatalogRow(input: CatalogFromFindingInput): CatalogRowP
       input.cvss_score != null && Number.isFinite(input.cvss_score)
         ? String(input.cvss_score)
         : null,
-    EspNombreVulnerabilidadUnificado: titulo || null,
     EspSeveridadUnificada: SEVERITY_ES[sev],
-    EspDescripcionUnificada: descripcion,
-    EspAmenazaUnificadaGeneral: amenaza,
-    EspPropuestaRemediacionUnificada: remediacion,
-    EspPropuestaRemediacionUnificadaEnRedPrivada: remediacion,
-    EspMetodoDeteccion: metodo,
-    EspExplicacionTecnica: tecnica,
+    EspMetodoDeteccion: metodoEs,
+    EspNombreVulnerabilidadUnificado: null,
+    EspDescripcionUnificada: null,
+    EspAmenazaUnificadaGeneral: null,
+    EspPropuestaRemediacionUnificada: null,
+    EspPropuestaRemediacionUnificadaEnRedPrivada: null,
+    EspExplicacionTecnica: null,
   };
 
   if (toolCol && toolId && toolCol !== 'NessusPluginId') {
@@ -170,9 +177,26 @@ function catalogCell(row: Record<string, unknown>, key: string): string {
   return String(v).trim();
 }
 
+function pickCatalogCell(
+  row: Record<string, unknown>,
+  language: TenantLanguage,
+  key: CatalogLocaleFieldKey,
+  ...fallbackColumns: string[]
+): string {
+  const primary = catalogColumnForLocale(key, language);
+  const primaryVal = catalogCell(row, primary);
+  if (primaryVal) return primaryVal;
+  for (const col of fallbackColumns) {
+    const v = catalogCell(row, col);
+    if (v) return v;
+  }
+  return '';
+}
+
 /** Mapea fila de core.vulns_catalog → campos actualizables del hallazgo. */
 export function catalogRowToFindingUpdate(
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
+  language: TenantLanguage = DEFAULT_TENANT_LANGUAGE
 ): Partial<{
   titulo: string;
   descripcion: string;
@@ -188,33 +212,54 @@ export function catalogRowToFindingUpdate(
 }> {
   const update: ReturnType<typeof catalogRowToFindingUpdate> = {};
 
-  const titulo =
-    catalogCell(row, 'EspNombreVulnerabilidadUnificado') ||
-    catalogCell(row, 'StandardVulnerabilityName') ||
-    catalogCell(row, 'Vulnerability');
+  const titulo = pickCatalogCell(
+    row,
+    language,
+    'title',
+    language === 'es' ? 'StandardVulnerabilityName' : 'EspNombreVulnerabilidadUnificado',
+    'Vulnerability'
+  );
   if (titulo) update.titulo = titulo.slice(0, 500);
 
-  const sev = catalogCell(row, 'EspSeveridadUnificada') || catalogCell(row, 'Severity');
+  const sev = pickCatalogCell(row, language, 'severity', language === 'es' ? 'Severity' : 'EspSeveridadUnificada');
   if (sev) update.severidad = normalizeSeverity(sev);
 
-  const descripcion =
-    catalogCell(row, 'EspDescripcionUnificada') || catalogCell(row, 'Description');
+  const descripcion = pickCatalogCell(
+    row,
+    language,
+    'description',
+    language === 'en' ? 'EspDescripcionUnificada' : 'Description'
+  );
   if (descripcion) update.descripcion = descripcion.slice(0, 32000);
 
-  const amenaza =
-    catalogCell(row, 'EspAmenazaUnificadaGeneral') || catalogCell(row, 'Danger');
+  const amenaza = pickCatalogCell(
+    row,
+    language,
+    'threat_general',
+    language === 'en' ? 'EspAmenazaUnificadaGeneral' : 'Danger',
+    catalogColumnForLocale('threat_internet', language)
+  );
   if (amenaza) update.amenaza_ampliada = amenaza.slice(0, 32000);
 
   const rem =
-    catalogCell(row, 'EspPropuestaRemediacionUnificadaEnRedPrivada') ||
-    catalogCell(row, 'EspPropuestaRemediacionUnificada') ||
-    catalogCell(row, 'Solution');
+    pickCatalogCell(row, language, 'remediation_private') ||
+    pickCatalogCell(row, language, 'remediation', language === 'en' ? 'EspPropuestaRemediacionUnificada' : 'Solution');
   if (rem) update.propuesta_remediacion = rem.slice(0, 32000);
 
-  const metodo = catalogCell(row, 'EspMetodoDeteccion');
+  const metodo = pickCatalogCell(
+    row,
+    language,
+    'detection_method',
+    language === 'en' ? 'EspMetodoDeteccion' : 'SourceDetection'
+  );
   if (metodo) update.metodo_deteccion = metodo.slice(0, 32000);
 
-  const tecnica = catalogCell(row, 'EspExplicacionTecnica');
+  const tecnica = pickCatalogCell(
+    row,
+    language,
+    'technical_explanation',
+    language === 'en' ? 'EspExplicacionTecnica' : 'Description'
+  );
   if (tecnica) update.explicacion_tecnica = tecnica.slice(0, 32000);
 
   const refs = catalogCell(row, 'References');

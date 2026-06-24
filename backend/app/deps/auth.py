@@ -151,8 +151,27 @@ def require_admin(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
     return ctx
 
 
-def require_platform_admin(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
-    if ctx.role != UserRole.platform_admin:
+def user_has_platform_admin(db: Session, user_id: UUID) -> bool:
+    return (
+        db.query(TenantMembership)
+        .filter(
+            TenantMembership.user_id == user_id,
+            TenantMembership.role == UserRole.platform_admin,
+        )
+        .first()
+        is not None
+    )
+
+
+def is_effective_platform_admin(ctx: AuthContext, db: Session) -> bool:
+    return ctx.role == UserRole.platform_admin or user_has_platform_admin(db, ctx.user.id)
+
+
+def require_platform_admin(
+    ctx: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> AuthContext:
+    if not is_effective_platform_admin(ctx, db):
         raise HTTPException(status_code=403, detail="Solo administradores de plataforma")
     return ctx
 

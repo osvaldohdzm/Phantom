@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getFlowStep, PENTEST_REPORT_FLOW, type ReportFlow } from '@/lib/reports-flows';
+import { useUiT } from '@/lib/use-ui-locale';
 
 type ReportsStepShellProps = {
   flow?: ReportFlow;
@@ -15,7 +16,6 @@ type ReportsStepShellProps = {
   footerExtra?: React.ReactNode;
   nextDisabled?: boolean;
   nextDisabledHint?: string;
-  /** Navegación de pasos (debajo del título; el flujo depende del tipo de proyecto). */
   stepper?: React.ReactNode;
 };
 
@@ -31,6 +31,7 @@ export function ReportsStepShell({
   nextDisabledHint,
   stepper,
 }: ReportsStepShellProps) {
+  const { t, format } = useUiT();
   const resolvedFlow = flow ?? PENTEST_REPORT_FLOW;
   const def = getFlowStep(resolvedFlow, step);
   const Icon = def.icon;
@@ -48,7 +49,11 @@ export function ReportsStepShell({
             </span>
             <div className="min-w-0 space-y-0.5">
               <p className="type-small text-muted-foreground">
-                {resolvedFlow.label} · Paso {step} de {resolvedFlow.steps.length}
+                {format('reportsFlowStep', {
+                  flow: resolvedFlow.label,
+                  step: String(step),
+                  total: String(resolvedFlow.steps.length),
+                })}
                 {projectName ? (
                   <>
                     {' '}
@@ -95,7 +100,7 @@ export function ReportsStepShell({
           {prev ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => onStep(prev)}>
               <ArrowLeft className="size-4 mr-1" />
-              Anterior
+              {t('reportsPrevious')}
             </Button>
           ) : null}
           {nextDisabledHint && nextDisabled ? (
@@ -111,7 +116,7 @@ export function ReportsStepShell({
               title={nextDisabled ? nextDisabledHint : undefined}
               onClick={() => onStep(next)}
             >
-              Siguiente: {nextDef.shortLabel}
+              {format('reportsNext', { label: nextDef.shortLabel })}
               <ArrowRight className="size-4 ml-1.5" />
             </Button>
           ) : null}

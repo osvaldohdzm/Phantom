@@ -1,20 +1,24 @@
 import {
   getAiPromptForField,
+  localeFieldSourceHint,
   type CatalogFieldConfig,
 } from '@/lib/catalog-field-config';
-import {
-  CATALOG_SPANISH_AI_FIELDS,
-  CATALOG_SPANISH_CONTEXT_FIELDS,
-  type CatalogSpanishAiField,
-} from '@/lib/catalog-spanish-field-ids';
 import { VULNS_CATALOG_TOOL_ID_COLUMNS } from '@/lib/catalog-tool-index';
 import { applyFieldLengthRules } from '@/lib/ai-field-length';
 import { sanitizeAiPlainText } from '@/lib/plain-report-text';
 import {
+  catalogColumnForLocale,
+  catalogLocaleAiColumns,
+  catalogLocaleContextColumns,
+  LOCALE_SOURCE_COLUMNS,
+  localeFieldKeyFromColumn,
+  type CatalogLocaleFieldKey,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
+import {
   catalogColumnLabel,
   VULNS_CATALOG_EDITABLE_COLUMNS,
   VULNS_CATALOG_SELECT_COLUMNS,
-  type VulnsCatalogEditableColumn,
 } from '@/lib/vulns-catalog-columns';
 
 export {
@@ -23,39 +27,7 @@ export {
   type CatalogSpanishAiField,
 } from '@/lib/catalog-spanish-field-ids';
 
-/** Columnas fuente en inglés/técnico que alimentan la redacción Español. */
-const ENGLISH_SOURCE_COLUMNS = [
-  'StandardVulnerabilityName',
-  'Vulnerability',
-  'Severity',
-  'SourceDetection',
-  'Description',
-  'Danger',
-  'Solution',
-  'CVE',
-  'CWE',
-  'CVSSOverallScore3_1',
-  'References',
-  'NessusPluginId',
-  ...VULNS_CATALOG_TOOL_ID_COLUMNS.filter((c) => c !== 'NessusPluginId'),
-] as const;
-
-/** Qué columnas fuente priorizar por cada campo Español. */
-export const SPANISH_FIELD_SOURCE_HINTS: Record<CatalogSpanishAiField, string> = {
-  EspSeveridadUnificada: 'Prioriza Severity y el impacto descrito en Description/Danger.',
-  EspDescripcionUnificada: 'Prioriza Description y el contexto de Vulnerability/CVE.',
-  EspAmenazaUnificadaGeneral:
-    'Prioriza Danger, Description y CVE; describe impacto y escenarios.',
-  EspAmenazaUnificadaDesdeInternet:
-    'Prioriza Danger/Description asumiendo exposición a Internet.',
-  EspPropuestaRemediacionUnificada: 'Prioriza Solution y cualquier workaround indicado.',
-  EspPropuestaRemediacionUnificadaEnRedPrivada:
-    'Prioriza Solution adaptado a red privada/interna.',
-  EspMetodoDeteccion:
-    'Prioriza SourceDetection, NessusPluginId y Description (cómo se detectó).',
-  EspExplicacionTecnica:
-    'Prioriza Description, CVE, CWE y detalles técnicos del registro.',
-};
+export type CatalogLocaleAiField = string;
 
 function cellText(row: Record<string, unknown>, col: string): string | null {
   const raw = row[col];
@@ -68,45 +40,58 @@ function formatContextBlock(label: string, value: string): string {
   return `${label}:\n${value}`;
 }
 
+function sourceColumnsForLanguage(language: TenantLanguage): readonly string[] {
+  if (language === 'en') {
+    return [
+      ...LOCALE_SOURCE_COLUMNS,
+      ...VULNS_CATALOG_TOOL_ID_COLUMNS.filter((c) => c !== 'NessusPluginId'),
+    ];
+  }
+  return [
+    ...LOCALE_SOURCE_COLUMNS,
+    ...VULNS_CATALOG_TOOL_ID_COLUMNS.filter((c) => c !== 'NessusPluginId'),
+  ];
+}
+
 /**
- * Construye contexto para Gemini: todos los campos NO vacíos del registro.
- * - Español ya completados (coherencia)
- * - Inglés / técnico / IDs de herramienta (fuente principal)
- * - Cualquier otro dato presente en la fila
+ * Construye contexto para Gemini según idioma del tenant.
  */
-export function buildContextForSpanishField(
-  field: CatalogSpanishAiField,
-  row: Record<string, unknown>
+export function buildContextForLocaleField(
+  field: string,
+  row: Record<string, unknown>,
+  language: TenantLanguage = 'es'
 ): {
   full: string;
-  filledSpanish: string;
+  filledLocale: string;
   currentField: string;
   sourceData: string;
   sourceHint: string;
   nonEmptyCount: number;
 } {
   const currentFieldValue = cellText(row, field);
-  const currentFieldLabel = catalogColumnLabel(field);
+  const currentFieldLabel = catalogColumnLabel(field, language);
   const currentField = currentFieldValue
     ? `## Valor actual del campo a generar/mejorar: ${currentFieldLabel}\n${formatContextBlock(currentFieldLabel, currentFieldValue)}`
     : '';
 
-  const filledSpanishParts: string[] = [];
-  for (const col of CATALOG_SPANISH_CONTEXT_FIELDS) {
+  const contextColumns = catalogLocaleContextColumns(language);
+  const filledLocaleParts: string[] = [];
+  for (const col of contextColumns) {
     if (col === field) continue;
     const val = cellText(row, col);
     if (val) {
-      filledSpanishParts.push(formatContextBlock(catalogColumnLabel(col), val));
+      filledLocaleParts.push(formatContextBlock(catalogColumnLabel(col, language), val));
     }
   }
 
-  const seen = new Set<string>([field, 'Id', ...CATALOG_SPANISH_CONTEXT_FIELDS]);
-  const englishParts: string[] = [];
+  const seen = new Set<string>([field, 'Id', ...contextColumns]);
+  const sourceParts: string[] = [];
 
-  for (const col of ENGLISH_SOURCE_COLUMNS) {
+  for (const col of sourceColumnsForLanguage(language)) {
+    if (language === 'en' && contextColumns.includes(col)) continue;
     const val = cellText(row, col);
     if (!val) continue;
-    englishParts.push(formatContextBlock(catalogColumnLabel(col), val));
+    sourceParts.push(formatContextBlock(catalogColumnLabel(col, language), val));
     seen.add(col);
   }
 
@@ -116,7 +101,7 @@ export function buildContextForSpanishField(
     if (seen.has(col)) continue;
     const val = cellText(row, col);
     if (!val) continue;
-    otherParts.push(formatContextBlock(catalogColumnLabel(col), val));
+    otherParts.push(formatContextBlock(catalogColumnLabel(col, language), val));
     seen.add(col);
   }
 
@@ -124,7 +109,7 @@ export function buildContextForSpanishField(
     if (seen.has(col)) continue;
     const val = cellText(row, col);
     if (!val) continue;
-    otherParts.push(formatContextBlock(catalogColumnLabel(col), val));
+    otherParts.push(formatContextBlock(catalogColumnLabel(col, language), val));
     seen.add(col);
   }
 
@@ -132,86 +117,90 @@ export function buildContextForSpanishField(
     if (seen.has(key) || key === 'Id') continue;
     const val = cellText(row, key);
     if (!val) continue;
-    otherParts.push(formatContextBlock(catalogColumnLabel(key), val));
+    otherParts.push(formatContextBlock(catalogColumnLabel(key, language), val));
     seen.add(key);
   }
 
-  const filledSpanish = filledSpanishParts.length
-    ? `## Campos ya completados en español (mantén coherencia)\n${filledSpanishParts.join('\n\n')}`
+  const localeLabel = language === 'en' ? 'locale' : 'español';
+  const filledLocale = filledLocaleParts.length
+    ? `## Campos ya completados en ${localeLabel} (mantén coherencia)\n${filledLocaleParts.join('\n\n')}`
     : '';
 
-  const sourceData = englishParts.length
-    ? `## Datos fuente en inglés / técnico (traduce y adapta; NO omitas)\n${englishParts.join('\n\n')}`
-    : '';
+  const sourceLabel =
+    language === 'en'
+      ? '## Datos fuente del escáner / catálogo (usa todo lo relevante)\n'
+      : '## Datos fuente en inglés / técnico (traduce y adapta; NO omitas)\n';
+  const sourceData = sourceParts.length ? `${sourceLabel}${sourceParts.join('\n\n')}` : '';
 
   const complement = otherParts.length
     ? `## Otros datos del registro\n${otherParts.join('\n\n')}`
     : '';
 
-  const sections = [currentField, filledSpanish, sourceData, complement].filter(Boolean);
+  const sections = [currentField, filledLocale, sourceData, complement].filter(Boolean);
   const nonEmptyCount =
     (currentFieldValue ? 1 : 0) +
-    filledSpanishParts.length +
-    englishParts.length +
+    filledLocaleParts.length +
+    sourceParts.length +
     otherParts.length;
 
   return {
     full: sections.join('\n\n'),
-    filledSpanish,
+    filledLocale,
     currentField,
     sourceData,
-    sourceHint: SPANISH_FIELD_SOURCE_HINTS[field],
+    sourceHint: localeFieldSourceHint(field, language),
     nonEmptyCount,
   };
 }
 
-export function englishContextForSpanishField(
-  field: CatalogSpanishAiField,
+/** @deprecated Usar buildContextForLocaleField */
+export function buildContextForSpanishField(
+  field: string,
   row: Record<string, unknown>
-): string {
-  return buildContextForSpanishField(field, row).full;
+) {
+  const ctx = buildContextForLocaleField(field, row, 'es');
+  return {
+    ...ctx,
+    filledSpanish: ctx.filledLocale,
+  };
 }
 
-/** @deprecated Usar buildContextForSpanishField */
-export function contextForSpanishField(
-  field: CatalogSpanishAiField,
-  row: Record<string, unknown>
-): string {
-  return buildContextForSpanishField(field, row).full;
-}
-
-export async function suggestCatalogSpanishField(
-  field: CatalogSpanishAiField,
+export async function suggestCatalogLocaleField(
+  field: string,
   row: Record<string, unknown>,
-  options?: { fieldHint?: string; config?: CatalogFieldConfig }
+  options?: { fieldHint?: string; config?: CatalogFieldConfig; language?: TenantLanguage }
 ): Promise<string> {
+  const language = options?.language ?? 'es';
   const {
     full: sourceContext,
-    filledSpanish,
+    filledLocale,
     currentField,
     sourceHint,
     nonEmptyCount,
-  } = buildContextForSpanishField(field, row);
+  } = buildContextForLocaleField(field, row, language);
 
   if (!sourceContext.trim() || nonEmptyCount === 0) {
     throw new Error(
-      'No hay contexto en el registro. Completa al menos nombre, descripción, solución o CVE en inglés antes de usar IA.'
+      language === 'en'
+        ? 'No context in the record. Fill at least name, description, solution or CVE before using AI.'
+        : 'No hay contexto en el registro. Completa al menos nombre, descripción, solución o CVE en inglés antes de usar IA.'
     );
   }
 
   const fieldHint =
     options?.fieldHint?.trim() ||
-    getAiPromptForField(field, options?.config);
+    getAiPromptForField(field, options?.config, language);
 
-  const res = await fetch('/api/ai/suggest-catalog-spanish', {
+  const res = await fetch('/api/ai/suggest-catalog-locale', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       field,
-      englishContext: sourceContext,
-      hasFilledSpanish: filledSpanish.length > 0 || currentField.length > 0,
+      language,
+      sourceContext,
+      hasFilledLocale: filledLocale.length > 0 || currentField.length > 0,
       hasCurrentFieldValue: currentField.length > 0,
-      currentSpanish: row[field] != null ? String(row[field]) : '',
+      currentValue: row[field] != null ? String(row[field]) : '',
       fieldHint,
       sourceHint,
       nonEmptyCount,
@@ -223,4 +212,38 @@ export async function suggestCatalogSpanishField(
   }
   const raw = sanitizeAiPlainText((data.value || '').trim());
   return applyFieldLengthRules(raw, fieldHint);
+}
+
+/** @deprecated Usar suggestCatalogLocaleField */
+export async function suggestCatalogSpanishField(
+  field: string,
+  row: Record<string, unknown>,
+  options?: { fieldHint?: string; config?: CatalogFieldConfig }
+): Promise<string> {
+  return suggestCatalogLocaleField(field, row, { ...options, language: 'es' });
+}
+
+export function catalogAiColumnsForLanguage(language: TenantLanguage = 'es'): string[] {
+  return catalogLocaleAiColumns(language);
+}
+
+export function catalogColumnForLocaleFieldKey(
+  key: CatalogLocaleFieldKey,
+  language: TenantLanguage = 'es'
+): string {
+  return catalogColumnForLocale(key, language);
+}
+
+export function isCatalogAiColumn(
+  column: string,
+  language: TenantLanguage = 'es'
+): boolean {
+  return catalogLocaleAiColumns(language).includes(column);
+}
+
+export function localeFieldKeyFromCatalogColumn(
+  column: string,
+  language: TenantLanguage = 'es'
+): CatalogLocaleFieldKey | null {
+  return localeFieldKeyFromColumn(column, language);
 }

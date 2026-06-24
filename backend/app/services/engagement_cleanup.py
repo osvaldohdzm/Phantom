@@ -6,9 +6,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.core import Engagement, Finding, RemediationPlan
+from app.models.core import Asset, Engagement, Finding, RemediationPlan
 from app.models.execution_log import ExecutionLog
 from app.models.reports import ReportJob
+from app.models.scan import AssetScanTarget, ScanRun
 from app.models.scope import ScopeSnapshot
 from app.models.vault import VaultCredential
 from app.models.workspace import PhantomWorkspace
@@ -43,6 +44,15 @@ def delete_engagement_dependencies(db: Session, engagement_id: UUID) -> None:
     )
     db.query(ScopeSnapshot).filter(ScopeSnapshot.engagement_id == engagement_id).delete(
         synchronize_session=False
+    )
+    db.query(ScanRun).filter(ScanRun.engagement_id == engagement_id).delete(
+        synchronize_session=False
+    )
+    db.query(AssetScanTarget).filter(AssetScanTarget.engagement_id == engagement_id).delete(
+        synchronize_session=False
+    )
+    db.query(Asset).filter(Asset.engagement_id == engagement_id).update(
+        {Asset.engagement_id: None}, synchronize_session=False
     )
     db.query(VaultCredential).filter(VaultCredential.engagement_id == engagement_id).update(
         {VaultCredential.engagement_id: None}, synchronize_session=False

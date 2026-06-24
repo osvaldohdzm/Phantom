@@ -35,6 +35,26 @@ export function loadReportsSession(): Partial<ReportsSession> {
   }
 }
 
+export function clearReportsWorkflowSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const prev = loadReportsSession();
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        engagementId: '',
+        projectName: '',
+        tipoServicio: '',
+        activeStep: 1,
+        analystContext: prev.analystContext ?? '',
+        stepOrderVersion: REPORTS_STEP_ORDER_VERSION,
+      })
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 export function saveReportsSession(session: Partial<ReportsSession>): void {
   if (typeof window === 'undefined') return;
   try {

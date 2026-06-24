@@ -3,6 +3,8 @@
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PENTEST_REPORT_FLOW, type ReportFlow } from '@/lib/reports-flows';
+import { useUiT } from '@/lib/use-ui-locale';
+import { uiFormat } from '@/lib/ui-locale';
 
 type ReportsStepperProps = {
   flow?: ReportFlow;
@@ -17,6 +19,7 @@ export function ReportsStepper({
   onStep,
   className,
 }: ReportsStepperProps) {
+  const { t } = useUiT();
   const resolvedFlow = flow ?? PENTEST_REPORT_FLOW;
   const steps = resolvedFlow.steps;
 
@@ -26,7 +29,7 @@ export function ReportsStepper({
         'w-full overflow-x-auto rounded-xl border border-border bg-card px-3 py-2.5 sm:px-4',
         className
       )}
-      aria-label={`Pasos del reporte — ${resolvedFlow.label}`}
+      aria-label={uiFormat(t('reportsStepperAria'), { flow: resolvedFlow.label })}
     >
       <ol className="flex items-center min-w-max sm:min-w-0">
         {steps.map((step, i) => {

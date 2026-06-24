@@ -952,13 +952,30 @@ def build_finding_replacements(
     merged_raw_output: Optional[str] = None,
     group_members: Optional[list[Finding]] = None,
     operational_catalog: Optional[dict[str, Any]] = None,
+    tenant_language: str = "es",
 ) -> dict[str, str]:
     """Mapea un hallazgo a marcadores «Columna» estándar."""
+    from app.services.tenant_locale import (
+        DEFAULT_TENANT_LANGUAGE,
+        TenantLanguage,
+        catalog_column,
+        catalog_remediation_columns,
+        catalog_title_columns,
+    )
+
+    lang: TenantLanguage = "en" if tenant_language == "en" else DEFAULT_TENANT_LANGUAGE
+    title_col, title_fallback = catalog_title_columns(lang)
+    desc_col = catalog_column(lang, "description")
+    threat_col = catalog_column(lang, "threat_general")
+    tech_col = catalog_column(lang, "technical_explanation")
+    method_col = catalog_column(lang, "detection_method")
+    rem_private, rem_general = catalog_remediation_columns(lang)
+
     remediation = preprocess_report_field(
         _operational_catalog_field(
             operational_catalog,
-            "EspPropuestaRemediacionUnificadaEnRedPrivada",
-            "EspPropuestaRemediacionUnificada",
+            rem_private,
+            rem_general,
             finding=finding,
             attr="propuesta_remediacion",
             group_members=group_members,
@@ -977,14 +994,14 @@ def build_finding_replacements(
 
     descripcion_raw = _operational_catalog_field(
         operational_catalog,
-        "EspDescripcionUnificada",
+        desc_col,
         finding=finding,
         attr="descripcion",
         group_members=group_members,
     )
     explicacion_source = _operational_catalog_field(
         operational_catalog,
-        "EspExplicacionTecnica",
+        tech_col,
         finding=finding,
         attr="explicacion_tecnica",
         group_members=group_members,
@@ -998,7 +1015,7 @@ def build_finding_replacements(
     amenaza = preprocess_report_field(
         _operational_catalog_field(
             operational_catalog,
-            "EspAmenazaUnificadaGeneral",
+            threat_col,
             finding=finding,
             attr="amenaza_ampliada",
             group_members=group_members,
@@ -1026,7 +1043,7 @@ def build_finding_replacements(
         tipo_salidas = "markdown" if salidas_markdown and cleaned_salidas else "texto plano"
     metodo_source = _operational_catalog_field(
         operational_catalog,
-        "EspMetodoDeteccion",
+        method_col,
         finding=finding,
         attr="metodo_deteccion",
         group_members=group_members,
@@ -1068,8 +1085,8 @@ def build_finding_replacements(
     titulo = preprocess_report_field(
         _operational_catalog_field(
             operational_catalog,
-            "EspNombreVulnerabilidadUnificado",
-            "StandardVulnerabilityName",
+            title_col,
+            title_fallback,
             finding=finding,
             attr="titulo",
             group_members=group_members,
@@ -1092,6 +1109,10 @@ def build_finding_replacements(
         "«PROPUESTA DE REMEDIACIÓN»": remediation or (finding.propuesta_remediacion or ""),
         "«Remediación»": remediation,
         "«Solución»": remediation,
+        "«Description»": descripcion,
+        "«Threat»": amenaza,
+        "«Remediation»": remediation or (finding.propuesta_remediacion or ""),
+        "«Solution»": remediation or (finding.propuesta_remediacion or ""),
         "«Severidad»": sev_inai,
         "«Nivel de riesgo»": sev_inai,
         "«NIVEL DE RIESGO»": sev_inai,
@@ -1380,7 +1401,12 @@ class DocxReportGenerator:
         grouped_rows = prepare_grouped_rows_for_report(findings, assets_map=assets_map)
         members_by_id = {f.id: f for f in findings}
 
+        from app.services.tenant_locale import tenant_language_for_id
         from app.services.vulns_catalog_lookup import resolve_operational_catalog_for_finding
+
+        report_lang = "es"
+        if db is not None and engagement is not None:
+            report_lang = tenant_language_for_id(db, engagement.tenant_id)
 
         with tempfile.TemporaryDirectory() as tmp:
             for i, row in enumerate(grouped_rows, start=1):
@@ -1404,6 +1430,7 @@ class DocxReportGenerator:
                     merged_raw_output=row.merged_raw_tool_output,
                     group_members=group_members,
                     operational_catalog=operational_catalog,
+                    tenant_language=report_lang,
                 )
                 sev = finding.severidad.value if finding.severidad else "Medium"
                 tmp_path = str(Path(tmp) / f"doc_{i}.docx")

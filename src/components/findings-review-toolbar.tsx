@@ -20,6 +20,8 @@ import {
   Square,
   Table2,
   Trash2,
+  Upload,
+  Eraser,
   Wrench,
 } from 'lucide-react';
 import { EXPLICACION_TECNICA_MAX_PARAGRAPHS } from '@/lib/truncate-paragraphs';
@@ -230,7 +232,7 @@ export type FindingsReviewToolbarProps = {
   onSelectAllInQuery: () => void;
   onSelectAllOnPage: () => void;
   onClearSelection: () => void;
-  busy: 'gemini' | 'save' | 'delete' | 'sync' | 'consolidate' | 'assign-groups' | null;
+  busy: 'gemini' | 'save' | 'delete' | 'sync' | 'consolidate' | 'assign-groups' | 'publish' | 'clear' | null;
   geminiTargetCount: number;
   geminiProgress: { done: number; total: number } | null;
   onGeminiCatalog: () => void;
@@ -273,6 +275,13 @@ export type FindingsReviewToolbarProps = {
   showToolSourceFilter?: boolean;
   toolSourceFilter?: import('@/lib/finding-source-filters').ToolSourceFilterId;
   onToolSourceFilterChange?: (id: import('@/lib/finding-source-filters').ToolSourceFilterId) => void;
+  /** Paso de servicio: publicar o limpiar carga del engagement activo. */
+  showServiceWorkflowActions?: boolean;
+  onPublishToRepository?: () => void;
+  onClearServiceLoad?: () => void;
+  /** Instancias totales del servicio (todas las filas importadas, no solo tipos visibles). */
+  serviceFindingsCount?: number;
+  serviceTypeCount?: number;
 };
 
 export function FindingsReviewToolbar({
@@ -340,6 +349,11 @@ export function FindingsReviewToolbar({
   showToolSourceFilter,
   toolSourceFilter = 'all',
   onToolSourceFilterChange,
+  showServiceWorkflowActions,
+  onPublishToRepository,
+  onClearServiceLoad,
+  serviceFindingsCount = 0,
+  serviceTypeCount = 0,
 }: FindingsReviewToolbarProps) {
   const isCatalogTypes = variant === 'catalog-types';
   const viewOptions: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
@@ -811,29 +825,91 @@ export function FindingsReviewToolbar({
         ) : null}
 
         {showSpreadsheetActions ? (
-          <ToolbarMenu
-            label={
-              <span className="inline-flex items-center gap-1">
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs"
+              disabled={busy !== null || !engagementId}
+              onClick={onSyncEngagement}
+              title="Sincroniza TODOS los hallazgos del servicio desde el catálogo operativo (no solo el filtro visible)"
+            >
+              {busy === 'sync' ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
                 <RefreshCw className="size-3.5" />
-                Sync
-              </span>
-            }
-            disabled={busy !== null}
-            align="left"
-          >
-            <MenuItem disabled={!engagementId} onClick={onSyncEngagement}>
-              <RefreshCw className="size-3.5" />
-              Catálogo → todo el proyecto
-            </MenuItem>
-            <MenuItem disabled={filteredPageCount === 0} onClick={onSyncPage}>
-              <Table2 className="size-3.5" />
-              Catálogo → página actual
-            </MenuItem>
-            <MenuItem disabled={!hasSelection || selectAllInQuery} onClick={onSyncSelection}>
-              <CheckSquare className="size-3.5" />
-              Catálogo → selección
-            </MenuItem>
-          </ToolbarMenu>
+              )}
+              Sync servicio
+              {serviceFindingsCount > 0 ? (
+                <span className="tabular-nums opacity-80">
+                  ({serviceFindingsCount.toLocaleString()})
+                </span>
+              ) : null}
+            </Button>
+            <ToolbarMenu
+              label={<MoreHorizontal className="size-3.5" />}
+              variant="ghost"
+              className="px-2"
+              disabled={busy !== null}
+              align="left"
+            >
+              <MenuItem disabled={filteredPageCount === 0} onClick={onSyncPage}>
+                <Table2 className="size-3.5" />
+                Sync solo vista actual ({filteredPageCount.toLocaleString()} tipos)
+              </MenuItem>
+              <MenuItem disabled={!hasSelection || selectAllInQuery} onClick={onSyncSelection}>
+                <CheckSquare className="size-3.5" />
+                Sync solo selección
+              </MenuItem>
+            </ToolbarMenu>
+          </>
+        ) : null}
+
+        {showServiceWorkflowActions && engagementId ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              className="h-7 gap-1 text-xs"
+              disabled={busy !== null || serviceFindingsCount === 0}
+              onClick={onPublishToRepository}
+              title={
+                serviceFindingsCount > 0
+                  ? `Carga las ${serviceFindingsCount.toLocaleString()} instancias del servicio en gestión de vulnerabilidades (todas las importadas del CSV, no solo el filtro visible)`
+                  : 'Confirma la carga en gestión de vulnerabilidades (repositorio global del tenant)'
+              }
+            >
+              {busy === 'publish' ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Upload className="size-3.5" />
+              )}
+              Cargar a gestión
+              {serviceFindingsCount > 0 ? (
+                <span className="tabular-nums opacity-80">
+                  ({serviceFindingsCount.toLocaleString()})
+                </span>
+              ) : null}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+              disabled={busy !== null || serviceFindingsCount === 0}
+              onClick={onClearServiceLoad}
+              title="Elimina todos los hallazgos importados en este servicio (p. ej. archivo equivocado)"
+            >
+              {busy === 'clear' ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Eraser className="size-3.5" />
+              )}
+              Limpiar tabla
+            </Button>
+          </>
         ) : null}
 
         <ToolbarMenu
@@ -882,8 +958,13 @@ export function FindingsReviewToolbar({
           </summary>
           <p className="absolute right-3 z-40 mt-1 max-w-sm rounded-lg border border-border bg-popover p-2 text-[11px] leading-snug shadow-lg">
             El <strong className="font-medium text-foreground">Catálogo Operativo</strong> es la fuente de
-            verdad para campos Español. Gemini mejora el catálogo y propaga por plugin/identificador. Sin
-            selección, aplica al filtro visible.
+            verdad para campos Español. Gemini mejora el catálogo y propaga por plugin/identificador.{' '}
+            <strong className="font-medium text-foreground">Sync servicio</strong> y{' '}
+            <strong className="font-medium text-foreground">Cargar a gestión</strong> aplican a{' '}
+            <strong className="font-medium text-foreground">todas</strong> las instancias importadas del
+            servicio ({serviceFindingsCount > 0 ? serviceFindingsCount.toLocaleString() : 'todas'}), no al
+            filtro visible
+            {serviceTypeCount > 0 ? ` (${serviceTypeCount.toLocaleString()} tipos)` : ''}.
           </p>
         </details>
 

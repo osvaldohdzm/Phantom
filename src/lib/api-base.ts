@@ -13,16 +13,28 @@ export function getApiBaseUrl(): string {
   return `${backend}${API_V1}`;
 }
 
-/** Prefijo de rutas de ingesta multipart (route handler server-side, sin límite 10 MB). */
+/** Prefijo de rutas de ingesta multipart (directo al backend :8000). */
 const INGEST_API_PREFIX = '/api/v1/ingest/';
 
+function inferDirectBackendOrigin(): string | null {
+  const fromEnv = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (typeof window === 'undefined') return null;
+  const { hostname } = window.location;
+  // El API FastAPI escucha HTTP en :8000 aunque el frontend sea HTTPS.
+  return `http://${hostname}:8000`;
+}
+
 /**
- * Resuelve URL de ingesta: mismo origen vía `/api/secops/ingest/*`.
+ * Resuelve URL de ingesta: siempre directo al API FastAPI :8000 en el navegador
+ * (evita doble proxy Next y timeouts 504 en CSV grandes).
  */
-export function resolveIngestApiUrl(path: string): string {
+export function resolveIngestApiUrl(path: string, _opts?: { fileSize?: number }): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   if (typeof window !== 'undefined' && normalized.startsWith(INGEST_API_PREFIX)) {
     const rest = normalized.slice(INGEST_API_PREFIX.length);
+    const direct = inferDirectBackendOrigin();
+    if (direct) return `${direct}/api/v1/ingest/${rest}`;
     return `${window.location.origin}/api/secops/ingest/${rest}`;
   }
   return resolveApiUrl(path);

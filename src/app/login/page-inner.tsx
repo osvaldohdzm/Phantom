@@ -15,8 +15,8 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const next = searchParams.get('next') || '/';
   const orgSlug = searchParams.get('org') || searchParams.get('tenant') || '';
-  const [email, setEmail] = useState('admin@Phantom.local');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('phantom');
+  const [password, setPassword] = useState('phantom');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -80,11 +80,11 @@ export default function LoginPage() {
         <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-border bg-card/95 backdrop-blur p-6 shadow-sm">
           <div className="space-y-1.5">
             <label htmlFor="email" className="text-xs text-muted-foreground">
-              Correo
+              Usuario
             </label>
             <Input
               id="email"
-              type="email"
+              type="text"
               autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

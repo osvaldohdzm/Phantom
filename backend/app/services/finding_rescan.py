@@ -13,6 +13,8 @@ from app.models.core import Finding, FindingStatus, Severity
 from app.models.scan import ScanRun
 from app.services.dedup_fingerprint import build_dedup_fingerprint, build_dedup_fingerprint_from_draft
 from app.services.finding_history import append_finding_history
+from app.services.finding_import_enrich import enrich_finding_import_context
+from app.services.finding_repository_scope import SERVICE_DRAFT_STATUS
 from app.services.ingest_common import load_vulnerabilities_catalog_ids, resolve_finding_catalog_fk
 
 # Hallazgos que participan en la comparación de ausencia (activos en el repositorio).
@@ -57,6 +59,7 @@ def apply_nessus_rescan(
     absent_policy: str,
     scan_run: ScanRun,
     actor: Optional[str] = None,
+    fast_rescan: bool = False,
 ) -> dict[str, int]:
     now = datetime.now(timezone.utc)
     absent_status = (
@@ -88,6 +91,7 @@ def apply_nessus_rescan(
     }
 
     valid_catalog_ids = load_vulnerabilities_catalog_ids(db)
+    pending_new = 0
 
     for draft in drafts:
         fp = build_dedup_fingerprint_from_draft(draft)
@@ -113,15 +117,27 @@ def apply_nessus_rescan(
                 )
                 stats["reaparecido_count"] += 1
             else:
-                append_finding_history(
-                    db,
-                    finding,
-                    "rescan_seen",
-                    {"scan_run_id": str(scan_run.id), "fingerprint": fp},
-                    actor=actor,
-                )
+                if not fast_rescan:
+                    append_finding_history(
+                        db,
+                        finding,
+                        "rescan_seen",
+                        {"scan_run_id": str(scan_run.id), "fingerprint": fp},
+                        actor=actor,
+                    )
                 stats["updated_count"] += 1
             continue
+
+        import_ctx = draft.get("import_context")
+        detection_sources: list[dict] = []
+        if isinstance(import_ctx, dict) and import_ctx:
+            detection_sources.append(
+                {
+                    **import_ctx,
+                    "source": draft.get("tool_source") or "Nessus",
+                    "at": now.isoformat(),
+                }
+            )
 
         new_finding = Finding(
             titulo=draft["titulo"],
@@ -152,9 +168,17 @@ def apply_nessus_rescan(
             first_seen=now,
             last_seen=now,
             updated_at=now,
+            detection_sources=detection_sources or None,
+            global_status=SERVICE_DRAFT_STATUS,
         )
+        if not fast_rescan and tenant_id and isinstance(import_ctx, dict) and import_ctx:
+            enrich_finding_import_context(db, new_finding, tenant_id=tenant_id)
         db.add(new_finding)
-        db.flush()
+        pending_new += 1
+        if fast_rescan and pending_new % 500 == 0:
+            db.flush()
+        elif not fast_rescan:
+            db.flush()
         append_finding_history(
             db,
             new_finding,

@@ -10,16 +10,16 @@ import {
 } from 'lucide-react';
 import type { ReportFlow } from '@/lib/reports-flows/types';
 
-/** Flujo SAST — variante propia (repos, branch, lenguaje). */
+/** Servicio SAST — análisis estático de código. */
 export const SAST_REPORT_FLOW: ReportFlow = {
   id: 'sast',
   label: 'SAST',
-  subtitle: 'Código fuente y repos — análisis estático y revisión de findings.',
+  subtitle: 'Servicio SAST en código fuente y repositorios — análisis estático y revisión de hallazgos.',
   serviceTypes: ['SAST'],
   ingest: {
-    cardTitle: 'Importar hallazgos SAST',
+    cardTitle: 'Ingesta SAST',
     cardDescription:
-      'Sube exportaciones del analizador estático (formato tabular/CSV según herramienta). Revisa repo, branch y lenguaje en el proyecto antes de consolidar.',
+      'Exportaciones del analizador estático (CSV u otros formatos tabulares). Revisa repo, branch y lenguaje en el paso Servicio antes de consolidar.',
     optionalBadge: true,
     onCompleteGotoStep: 4,
   },
@@ -27,8 +27,8 @@ export const SAST_REPORT_FLOW: ReportFlow = {
     {
       n: 1,
       key: 'project',
-      label: 'Proyecto',
-      shortLabel: 'Proyecto',
+      label: 'Servicio',
+      shortLabel: 'Servicio',
       description: 'Repositorio, branch, SCM y acceso al código del engagement SAST.',
       icon: FolderKanban,
     },

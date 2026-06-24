@@ -57,7 +57,7 @@ import {
   getSpreadsheetCellValue,
   findingMatchesSpreadsheetSearch,
   catalogAiFieldForSpreadsheetColumn,
-  SPREADSHEET_COLUMNS,
+  spreadsheetColumnsForLanguage,
   spreadsheetColumnSupportsCatalogGemini,
   toCharCountColumnId,
   type SpreadsheetColumn,
@@ -73,6 +73,7 @@ import {
 import { OpenCatalogButton } from '@/components/open-catalog-button';
 import { SeverityBadge } from '@/components/severity-badge';
 import { CompletenessIndicator } from '@/components/completeness-indicator';
+import { useAuth } from '@/contexts/auth-context';
 
 const PRIMARY_FILTER_OPTIONS: { id: ReviewFilter; label: string }[] = [
   { id: 'all', label: 'Todos' },
@@ -128,10 +129,21 @@ export type CatalogTypeLeadingColumn = {
   width: number;
 };
 
-const CATALOG_TYPE_LEADING_COLUMNS: CatalogTypeLeadingColumn[] = [
+const CATALOG_TYPE_LEADING_COLUMNS_ES: CatalogTypeLeadingColumn[] = [
   { id: 'instance_count', label: 'Instancias', shortLabel: 'Inst.', width: 64 },
   { id: 'tool_identifier', label: 'Identificador', shortLabel: 'ID', width: 120 },
 ];
+
+const CATALOG_TYPE_LEADING_COLUMNS_EN: CatalogTypeLeadingColumn[] = [
+  { id: 'instance_count', label: 'Instances', shortLabel: 'Inst.', width: 64 },
+  { id: 'tool_identifier', label: 'Identifier', shortLabel: 'ID', width: 120 },
+];
+
+function catalogTypeLeadingColumns(
+  language: import('@/lib/tenant-locale').TenantLanguage
+): CatalogTypeLeadingColumn[] {
+  return language === 'en' ? CATALOG_TYPE_LEADING_COLUMNS_EN : CATALOG_TYPE_LEADING_COLUMNS_ES;
+}
 
 export type FindingsSpreadsheetTableProps = {
   findings: Finding[];
@@ -228,6 +240,11 @@ export function FindingsSpreadsheetTable({
   detailView: controlledDetailView,
   detailPreset,
 }: FindingsSpreadsheetTableProps) {
+  const { tenantLanguage, branding } = useAuth();
+  const spreadsheetColumns = useMemo(
+    () => spreadsheetColumnsForLanguage(tenantLanguage),
+    [tenantLanguage]
+  );
   const [internalSearch, setInternalSearch] = useState('');
   const search = controlledSearch ?? internalSearch;
   const setSearch = onSearchQueryChange ?? setInternalSearch;
@@ -243,8 +260,10 @@ export function FindingsSpreadsheetTable({
   const [missingFieldFilters, setMissingFieldFilters] = useState(() => buildMissingFieldFilters());
 
   useEffect(() => {
-    void loadCatalogFieldConfig().then(() => setMissingFieldFilters(buildMissingFieldFilters()));
-  }, []);
+    void loadCatalogFieldConfig(tenantLanguage, { branding }).then(() =>
+      setMissingFieldFilters(buildMissingFieldFilters())
+    );
+  }, [tenantLanguage, branding]);
   const [sort, setSort] = useState<SpreadsheetSort | null>({
     column: 'severidad',
     direction: 'asc',
@@ -305,12 +324,12 @@ export function FindingsSpreadsheetTable({
   const baseColumns = useMemo(() => {
     const excluded = new Set(excludeColumnIds ?? []);
     const cols = showAllFields
-      ? SPREADSHEET_COLUMNS
-      : SPREADSHEET_COLUMNS.filter((c) => c.reportField || c.id === 'completeness');
+      ? spreadsheetColumns
+      : spreadsheetColumns.filter((c) => c.reportField || c.id === 'completeness');
     return cols.filter((c) => !excluded.has(c.id));
-  }, [showAllFields, excludeColumnIds]);
+  }, [showAllFields, excludeColumnIds, spreadsheetColumns]);
 
-  const leadingColumns = catalogTypeRowMeta ? CATALOG_TYPE_LEADING_COLUMNS : [];
+  const leadingColumns = catalogTypeRowMeta ? catalogTypeLeadingColumns(tenantLanguage) : [];
 
   const visibleColumns = baseColumns;
 
@@ -382,7 +401,7 @@ export function FindingsSpreadsheetTable({
     let list = findings.filter((f) => {
       if (severityFilter !== 'all' && f.severidad !== severityFilter) return false;
       if (!matchesReviewFilter(f, completenessFilter)) return false;
-      if (!serverSearch && !findingMatchesSpreadsheetSearch(f, deferredSearch)) return false;
+      if (!serverSearch && !findingMatchesSpreadsheetSearch(f, deferredSearch, tenantLanguage)) return false;
       if (missingField !== 'any') {
         const c = findingCompleteness(f);
         if (!c.missingKeys.includes(missingField as ReviewFieldKey)) return false;
@@ -394,9 +413,9 @@ export function FindingsSpreadsheetTable({
     if (serverSearch && clientFilters.severidad) {
       delete clientFilters.severidad;
     }
-    list = applySpreadsheetColumnFilters(list, clientFilters);
+    list = applySpreadsheetColumnFilters(list, clientFilters, tenantLanguage);
     if (!serverSearch || sort) {
-      list = sortFindingsByColumn(list, sort);
+      list = sortFindingsByColumn(list, sort, tenantLanguage);
     }
     return list;
   }, [
@@ -408,6 +427,7 @@ export function FindingsSpreadsheetTable({
     columnFilters,
     sort,
     serverSearch,
+    tenantLanguage,
   ]);
 
   const totalRows = pagination?.total ?? filtered.length;
@@ -482,7 +502,7 @@ export function FindingsSpreadsheetTable({
     }
   };
 
-  const stickyLeft = (colIndex: number, col: (typeof SPREADSHEET_COLUMNS)[number]) => {
+  const stickyLeft = (colIndex: number, col: SpreadsheetColumn) => {
     if (!col.sticky) return undefined;
     let left = onToggleSelect ? 44 : 0;
     for (let i = 0; i < colIndex; i++) {
@@ -675,10 +695,10 @@ export function FindingsSpreadsheetTable({
                     shortLabel={dc.col.shortLabel}
                     sort={sort}
                     filter={columnFilters[dc.col.id]}
-                    uniqueValues={uniqueColumnValues(findings, dc.col.id)}
+                    uniqueValues={uniqueColumnValues(findings, dc.col.id, 40, tenantLanguage)}
                     onSort={handleSort}
                     onFilterChange={handleColumnFilterChange}
-                    showGemini={Boolean(engagementId) && spreadsheetColumnSupportsCatalogGemini(dc.col.id)}
+                    showGemini={Boolean(engagementId) && spreadsheetColumnSupportsCatalogGemini(dc.col.id, tenantLanguage)}
                     geminiBusy={geminiColumnId === dc.col.id}
                     onGemini={() => void runColumnCatalogGemini(dc.col.id)}
                     style={{
@@ -699,7 +719,7 @@ export function FindingsSpreadsheetTable({
                     onFilterChange={handleColumnFilterChange}
                     showGemini={
                       Boolean(engagementId) &&
-                      spreadsheetColumnSupportsCatalogGemini(dc.sourceCol.id)
+                      spreadsheetColumnSupportsCatalogGemini(dc.sourceCol.id, tenantLanguage)
                     }
                     geminiBusy={geminiColumnId === dc.sourceCol.id}
                     onGemini={() => void runColumnCatalogGemini(dc.sourceCol.id)}
@@ -797,7 +817,7 @@ export function FindingsSpreadsheetTable({
                         }
 
                         if (dc.kind === 'count') {
-                          const len = getSpreadsheetCellCharCount(f, dc.sourceCol.id);
+                          const len = getSpreadsheetCellCharCount(f, dc.sourceCol.id, tenantLanguage);
                           return (
                             <td
                               key={dc.countId}
@@ -815,7 +835,7 @@ export function FindingsSpreadsheetTable({
 
                         const col = dc.col;
                         const state = getSpreadsheetCellState(f, col.id);
-                        const value = getSpreadsheetCellValue(f, col.id);
+                        const value = getSpreadsheetCellValue(f, col.id, tenantLanguage);
                         const display =
                           col.id === 'severidad'
                             ? null

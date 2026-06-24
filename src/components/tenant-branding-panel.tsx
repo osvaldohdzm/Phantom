@@ -1,13 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ImageIcon, Loader2, Save, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, CheckCircle2, Globe, ImageIcon, Loader2, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/auth-context';
+import { useUiT } from '@/lib/use-ui-locale';
+import { CatalogFieldConfigPanel } from '@/components/catalog-field-config-panel';
 import {
-  canManageTenants,
+  hasPlatformAdminAccess,
   listTenants,
   type AdminTenant,
 } from '@/lib/auth-api';
@@ -24,6 +28,12 @@ import {
   type BrandingAssetSlot,
   type TenantBranding,
 } from '@/lib/tenant-branding';
+import type { TenantLanguage } from '@/lib/tenant-locale';
+import { uiFormat } from '@/lib/ui-locale';
+
+function langLabel(t: (k: import('@/lib/ui-locale').UiMessageKey) => string, lang: TenantLanguage) {
+  return lang === 'en' ? t('languageEnglish') : t('languageSpanish');
+}
 
 function ColorField({
   label,
@@ -115,17 +125,33 @@ function AssetSlotCard({
 }
 
 export function TenantBrandingPanel() {
-  const { role, activeTenant, refresh } = useAuth();
+  const { role, tenants: sessionTenants, activeTenant, tenantLanguage, refresh } = useAuth();
+  const { t } = useUiT();
+  const router = useRouter();
   const [tenantId, setTenantId] = useState<string>('');
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [form, setForm] = useState<TenantBranding>(mergeBranding(null));
+  const [savedForm, setSavedForm] = useState<TenantBranding>(mergeBranding(null));
+  const [savedLanguage, setSavedLanguage] = useState<TenantLanguage>('es');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
+  const [languageApplied, setLanguageApplied] = useState(false);
   const [assetBusy, setAssetBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const isPlatform = role ? canManageTenants(role) : false;
+  const isPlatform = role ? hasPlatformAdminAccess(role, sessionTenants) : false;
+  const selectedLanguage = (form.language ?? 'es') as TenantLanguage;
+  const languageDirty = selectedLanguage !== savedLanguage;
+  const editingActiveTenant = Boolean(activeTenant?.id && tenantId === activeTenant.id);
+  const sessionMatchesSaved =
+    editingActiveTenant && savedLanguage === tenantLanguage;
+
+  const otherFieldsDirty = useMemo(() => {
+    const normalized = { ...form, language: savedForm.language ?? 'es' };
+    return JSON.stringify(normalized) !== JSON.stringify(savedForm);
+  }, [form, savedForm]);
 
   useEffect(() => {
     if (!activeTenant) return;
@@ -143,7 +169,11 @@ export function TenantBrandingPanel() {
     setError(null);
     try {
       const data = await getTenantBranding(id);
-      setForm(mergeBranding(data));
+      const merged = mergeBranding(data);
+      setForm(merged);
+      setSavedForm(merged);
+      setSavedLanguage((merged.language ?? 'es') as TenantLanguage);
+      setLanguageApplied(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar branding');
     } finally {
@@ -156,7 +186,35 @@ export function TenantBrandingPanel() {
   }, [tenantId, load]);
 
   const patch = (partial: Partial<TenantBranding>) => {
+    setLanguageApplied(false);
     setForm((f) => ({ ...f, ...partial }));
+  };
+
+  const applyOperatingLanguage = async () => {
+    if (!tenantId || !languageDirty) return;
+    const label = langLabel(t, selectedLanguage);
+    const ok = window.confirm(uiFormat(t('tenantOpLangConfirm'), { lang: label }));
+    if (!ok) return;
+
+    setSavingLanguage(true);
+    setError(null);
+    setNotice(null);
+    setLanguageApplied(false);
+    try {
+      const updated = await updateTenantBranding(tenantId, { language: selectedLanguage });
+      const merged = mergeBranding(updated);
+      setForm(merged);
+      setSavedForm(merged);
+      setSavedLanguage((merged.language ?? 'es') as TenantLanguage);
+      if (editingActiveTenant) {
+        await refresh();
+        setLanguageApplied(true);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('errorGeneric'));
+    } finally {
+      setSavingLanguage(false);
+    }
   };
 
   const save = async () => {
@@ -165,12 +223,19 @@ export function TenantBrandingPanel() {
     setError(null);
     setNotice(null);
     try {
-      const updated = await updateTenantBranding(tenantId, form);
-      setForm(mergeBranding(updated));
-      setNotice('Branding guardado.');
+      const payload = { ...form };
+      if (languageDirty) {
+        payload.language = savedLanguage;
+      }
+      const updated = await updateTenantBranding(tenantId, payload);
+      const merged = mergeBranding(updated);
+      setForm(merged);
+      setSavedForm(merged);
+      setSavedLanguage((merged.language ?? 'es') as TenantLanguage);
+      setNotice(t('tenantBrandingSaved'));
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar');
+      setError(e instanceof Error ? e.message : t('errorGeneric'));
     } finally {
       setSaving(false);
     }
@@ -223,8 +288,8 @@ export function TenantBrandingPanel() {
       {isPlatform ? (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Organización</CardTitle>
-            <CardDescription>Selecciona el tenant a personalizar</CardDescription>
+            <CardTitle className="text-base">{t('tenantOrgTitle')}</CardTitle>
+            <CardDescription>{t('tenantOrgDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <select
@@ -240,24 +305,148 @@ export function TenantBrandingPanel() {
             </select>
           </CardContent>
         </Card>
+      ) : activeTenant ? (
+        <Card className="border-violet-500/15 bg-violet-500/5">
+          <CardContent className="py-3 text-sm">
+            <span className="text-muted-foreground">{t('profileActiveTenant')}:</span>{' '}
+            <span className="font-medium">{activeTenant.nombre}</span>
+            <span className="text-muted-foreground font-mono text-xs ml-2">({activeTenant.slug})</span>
+          </CardContent>
+        </Card>
       ) : null}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
-          <Loader2 className="size-4 animate-spin" /> Cargando branding…
+          <Loader2 className="size-4 animate-spin" /> {t('tenantLoadingBranding')}
         </div>
       ) : (
         <>
+          <Card
+            className={
+              languageDirty
+                ? 'border-amber-500/50 shadow-sm shadow-amber-500/10'
+                : languageApplied
+                  ? 'border-emerald-500/40'
+                  : 'border-violet-500/20'
+            }
+          >
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Globe className="size-4 text-violet-500" />
+                {t('tenantOpLangTitle')}
+              </CardTitle>
+              <CardDescription>{t('tenantOpLangDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span
+                  className={
+                    languageDirty
+                      ? 'rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-amber-800 dark:text-amber-200 font-medium'
+                      : 'rounded-full border border-border px-2.5 py-1 text-muted-foreground'
+                  }
+                >
+                  {languageDirty ? t('tenantOpLangPendingChange') : t('tenantOpLangCurrentSaved')}
+                  {!languageDirty ? `: ${langLabel(t, savedLanguage)}` : ''}
+                </span>
+                {editingActiveTenant && sessionMatchesSaved && !languageDirty ? (
+                  <span className="text-muted-foreground">
+                    · {t('languageCurrent')}: {langLabel(t, tenantLanguage)}
+                  </span>
+                ) : null}
+              </div>
+
+              <label className="flex flex-col gap-1.5 text-sm max-w-md">
+                <span className="text-muted-foreground">{t('languageLabel')}</span>
+                <select
+                  className={`h-9 rounded-md border bg-background px-3 text-sm ${
+                    languageDirty ? 'border-amber-500 ring-1 ring-amber-500/30' : 'border-input'
+                  }`}
+                  value={selectedLanguage}
+                  onChange={(e) => patch({ language: e.target.value as TenantLanguage })}
+                >
+                  <option value="es">{t('languageSpanish')}</option>
+                  <option value="en">{t('languageEnglish')}</option>
+                </select>
+              </label>
+
+              <p className="text-[11px] text-muted-foreground leading-relaxed">{t('tenantOpLangHint')}</p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {t('tenantOpLangUiNote')}{' '}
+                <Link href="/profile" className="text-violet-600 hover:underline dark:text-violet-400">
+                  {t('navProfile')}
+                </Link>
+              </p>
+
+              {!editingActiveTenant && isPlatform ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-md px-3 py-2 flex gap-2">
+                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                  {t('tenantOpLangOtherTenant')}
+                </p>
+              ) : null}
+
+              {languageApplied && editingActiveTenant ? (
+                <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-3 py-3 space-y-2 text-sm">
+                  <p className="font-medium text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                    <CheckCircle2 className="size-4" />
+                    {t('tenantOpLangSavedTitle')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {uiFormat(t('tenantOpLangSavedBody'), { lang: langLabel(t, savedLanguage) })}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{t('tenantOpLangReloadHint')}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => {
+                      router.refresh();
+                      window.location.reload();
+                    }}
+                  >
+                    <RefreshCw className="size-3.5 mr-1.5" />
+                    {t('tenantOpLangReload')}
+                  </Button>
+                </div>
+              ) : null}
+
+              <Button
+                type="button"
+                size="sm"
+                className="bg-violet-600 hover:bg-violet-700"
+                disabled={!languageDirty || savingLanguage}
+                onClick={() => void applyOperatingLanguage()}
+              >
+                {savingLanguage ? (
+                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                ) : (
+                  <Save className="size-3.5 mr-1.5" />
+                )}
+                {t('tenantOpLangApply')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <CatalogFieldConfigPanel
+            open
+            embedded
+            tenantId={tenantId}
+            branding={form}
+            configLanguage={selectedLanguage}
+            onSaved={() => {
+              void refresh();
+            }}
+          />
+
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Identidad del workspace</CardTitle>
-              <CardDescription>
-                Nombre visible, tagline y mensajes de login — sensación de plataforma propia
-              </CardDescription>
+              <CardTitle className="text-base">{t('tenantIdentityTitle')}</CardTitle>
+              <CardDescription>{t('tenantIdentityDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs text-muted-foreground">Nombre del workspace</label>
+                <label className="text-xs text-muted-foreground">{t('tenantWorkspaceName')}</label>
                 <Input
                   placeholder="BBVA Security Center"
                   value={form.workspace_name ?? ''}
@@ -265,7 +454,7 @@ export function TenantBrandingPanel() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Producto (fallback)</label>
+                <label className="text-xs text-muted-foreground">{t('tenantProductFallback')}</label>
                 <Input
                   placeholder="Phantom"
                   value={form.product_name ?? ''}
@@ -273,28 +462,28 @@ export function TenantBrandingPanel() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Tagline</label>
+                <label className="text-xs text-muted-foreground">{t('tenantTagline')}</label>
                 <Input
                   value={form.tagline ?? ''}
                   onChange={(e) => patch({ tagline: e.target.value })}
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Título login</label>
+                <label className="text-xs text-muted-foreground">{t('tenantLoginTitle')}</label>
                 <Input
                   value={form.login_headline ?? ''}
                   onChange={(e) => patch({ login_headline: e.target.value })}
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Subtítulo login</label>
+                <label className="text-xs text-muted-foreground">{t('tenantLoginSubtitle')}</label>
                 <Input
                   value={form.login_subtitle ?? ''}
                   onChange={(e) => patch({ login_subtitle: e.target.value })}
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs text-muted-foreground">Mensaje SOC (login)</label>
+                <label className="text-xs text-muted-foreground">{t('tenantLoginSoc')}</label>
                 <Input
                   placeholder="Authorized Security Operations Platform"
                   value={form.login_message ?? ''}
@@ -420,11 +609,16 @@ export function TenantBrandingPanel() {
             </CardContent>
           </Card>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={() => void save()} disabled={saving}>
+          <div className="flex flex-wrap items-center gap-3 sticky bottom-4 z-10 rounded-lg border border-border bg-background/95 backdrop-blur px-4 py-3 shadow-lg">
+            <Button type="button" onClick={() => void save()} disabled={saving || !otherFieldsDirty}>
               {saving ? <Loader2 className="size-4 animate-spin mr-2" /> : <Save className="size-4 mr-2" />}
-              Guardar branding
+              {t('tenantBrandingSave')}
             </Button>
+            {languageDirty ? (
+              <span className="text-xs text-amber-700 dark:text-amber-300">
+                {t('tenantOpLangPendingChange')} — {t('tenantOpLangApply')}
+              </span>
+            ) : null}
             {notice ? <span className="text-sm text-emerald-600">{notice}</span> : null}
             {error ? <span className="text-sm text-destructive">{error}</span> : null}
           </div>

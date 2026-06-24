@@ -2,19 +2,32 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { SecOpsMobileNav, SecOpsSidebarNav } from '@/components/secops-nav';
 import { AppTopbar } from '@/components/app-topbar';
 import { BrandingLogo } from '@/components/branding-logo';
 import { useBranding } from '@/contexts/branding-context';
+import { useAuth } from '@/contexts/auth-context';
 import { SidebarProvider, useSidebar } from '@/contexts/sidebar-context';
+import { markSecOpsPath } from '@/lib/reports-reentry';
 import { resolveBrandingAssetUrl } from '@/lib/tenant-branding';
 import { cn } from '@/lib/utils';
 
 function SecOpsShellInner({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { open, hydrated, toggle } = useSidebar();
+  const { uiLanguage } = useAuth();
   const { branding, workspaceName, productName } = useBranding();
   const banner = resolveBrandingAssetUrl(branding.dashboard_banner_url);
   const secondaryLogo = resolveBrandingAssetUrl(branding.logo_secondary_url);
+
+  useEffect(() => {
+    if (pathname) markSecOpsPath(pathname);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLanguage === 'en' ? 'en' : 'es';
+  }, [uiLanguage]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

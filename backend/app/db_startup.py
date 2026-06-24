@@ -148,6 +148,81 @@ def _migrate_finding_columns() -> None:
         conn.commit()
 
 
+def _migrate_finding_indexes() -> None:
+    """Índices para acelerar el repositorio CYB001 (COUNT + listados + group by).
+
+    La consulta del repositorio hace JOIN findings -> engagements (tenant) y filtra
+    por global_status / severidad, ordenando por created_at. Sin estos índices cada
+    consulta era un seq scan + hash join sobre toda la tabla (decenas de segundos en
+    ~50k+ filas). Son idempotentes (IF NOT EXISTS), así que reejecutar no hace nada.
+    """
+    statements = [
+        # JOIN con engagements para aislar por tenant.
+        "CREATE INDEX IF NOT EXISTS idx_findings_engagement_id ON findings (engagement_id)",
+        "CREATE INDEX IF NOT EXISTS idx_engagements_tenant_id ON engagements (tenant_id)",
+        # Filtro de repositorio (excluye borradores de servicio) y severidad.
+        "CREATE INDEX IF NOT EXISTS idx_findings_global_status ON findings (global_status)",
+        "CREATE INDEX IF NOT EXISTS idx_findings_severidad ON findings (severidad)",
+        "CREATE INDEX IF NOT EXISTS idx_findings_tool_source ON findings (tool_source)",
+        "CREATE INDEX IF NOT EXISTS idx_findings_status ON findings (status)",
+        # Orden por defecto del listado.
+        "CREATE INDEX IF NOT EXISTS idx_findings_created_at ON findings (created_at)",
+        # Índices compuestos para la ruta caliente del repositorio (count + group by).
+        "CREATE INDEX IF NOT EXISTS idx_findings_eng_status ON findings (engagement_id, global_status)",
+        "CREATE INDEX IF NOT EXISTS idx_findings_eng_status_sev ON findings (engagement_id, global_status, severidad)",
+        # JOIN opcional con assets en algunos listados/exportaciones.
+        "CREATE INDEX IF NOT EXISTS idx_findings_asset_id ON findings (asset_id)",
+    ]
+    with engine.connect() as conn:
+        for sql in statements:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception as exc:  # noqa: BLE001 — un índice no debe bloquear el arranque
+                conn.rollback()
+                print(f"[index migration] omitido '{sql}': {exc}")
+        # Refresca estadísticas del planificador para que use los índices nuevos de inmediato.
+        for tbl in ("findings", "engagements"):
+            try:
+                conn.execute(text(f"ANALYZE {tbl}"))
+                conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                conn.rollback()
+                print(f"[index migration] ANALYZE {tbl} omitido: {exc}")
+
+
+def _migrate_scan_runs_engagement_fk_cascade() -> None:
+    sql = """
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'scan_runs_engagement_id_fkey'
+          AND table_name = 'scan_runs'
+      ) THEN
+        ALTER TABLE scan_runs DROP CONSTRAINT scan_runs_engagement_id_fkey;
+        ALTER TABLE scan_runs
+          ADD CONSTRAINT scan_runs_engagement_id_fkey
+          FOREIGN KEY (engagement_id) REFERENCES engagements(id) ON DELETE CASCADE;
+      END IF;
+
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'asset_scan_targets_engagement_id_fkey'
+          AND table_name = 'asset_scan_targets'
+      ) THEN
+        ALTER TABLE asset_scan_targets DROP CONSTRAINT asset_scan_targets_engagement_id_fkey;
+        ALTER TABLE asset_scan_targets
+          ADD CONSTRAINT asset_scan_targets_engagement_id_fkey
+          FOREIGN KEY (engagement_id) REFERENCES engagements(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+    """
+    with engine.connect() as conn:
+        conn.execute(text(sql))
+        conn.commit()
+
+
 def _migrate_asset_source_columns() -> None:
     alters = [
         "ALTER TABLE assets ADD COLUMN IF NOT EXISTS os VARCHAR(255)",
@@ -250,6 +325,28 @@ def _migrate_tenant_branding() -> None:
         conn.commit()
 
 
+def _migrate_user_preferences() -> None:
+    alters = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}'::jsonb",
+        "UPDATE users SET preferences = '{}'::jsonb WHERE preferences IS NULL",
+    ]
+    with engine.connect() as conn:
+        for sql in alters:
+            conn.execute(text(sql))
+        conn.commit()
+
+
+def _migrate_audit_events_indexes() -> None:
+    alters = [
+        "CREATE INDEX IF NOT EXISTS ix_audit_events_tenant_id ON audit_events (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_audit_events_created_at ON audit_events (created_at DESC)",
+    ]
+    with engine.connect() as conn:
+        for sql in alters:
+            conn.execute(text(sql))
+        conn.commit()
+
+
 def _migrate_scan_and_groups() -> None:
     alters = [
         "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_kind VARCHAR(32) DEFAULT 'pentest'",
@@ -278,9 +375,13 @@ def run_schema_migrations() -> None:
     _migrate_report_jobs_template_fk_cascade()
     _migrate_auth_tenant_columns()
     _migrate_asset_source_columns()
+    _migrate_finding_indexes()
     _migrate_finding_status_enum()
     _migrate_scan_and_groups()
+    _migrate_scan_runs_engagement_fk_cascade()
     _migrate_tenant_branding()
+    _migrate_user_preferences()
+    _migrate_audit_events_indexes()
     db = SessionLocal()
     try:
         if db.query(ComplianceControl).count() == 0:

@@ -72,7 +72,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   {
     id: 'M10',
     name: 'Pentest lifecycle',
-    purpose: 'Proyecto, 7 pasos, hallazgos, reportes',
+    purpose: 'Servicio, 7 pasos, hallazgos, entregable Word',
     status: 'live',
     href: '/reports',
     phase: 'Fase 2',
@@ -90,7 +90,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   {
     id: 'M14',
     name: 'Reporting',
-    purpose: 'Word, plantillas, historial',
+    purpose: 'Exportación Word CYB001 (paso final del servicio)',
     status: 'partial',
     href: '/reports',
     phase: 'Fase 2',

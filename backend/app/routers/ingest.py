@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -22,6 +23,8 @@ from app.services.finding_import_enrich import enrich_finding_import_context
 from app.services.finding_history import append_finding_history
 from app.services.asset_scan_targets import refresh_scan_targets
 from app.services.finding_rescan import apply_nessus_rescan
+from app.services.import_asset_scope import apply_asset_scope_to_drafts
+from app.services.finding_repository_scope import SERVICE_DRAFT_STATUS
 from app.services.ingest_common import load_vulnerabilities_catalog_ids, resolve_finding_catalog_fk
 from app.services.vulns_catalog_lookup import enrich_drafts_with_catalog
 from app.models.scan import ScanRun
@@ -39,92 +42,150 @@ async def _read_upload(file: UploadFile) -> bytes:
     return raw
 
 
+def _draft_finding_columns(
+    d: dict,
+    engagement_id: Optional[UUID],
+    valid_catalog_ids,
+    now: datetime,
+) -> dict:
+    """Construye el dict de columnas de Finding a partir de un draft (sin id/timestamps)."""
+    detection_sources: list[dict] = []
+    import_ctx = d.get("import_context")
+    if isinstance(import_ctx, dict) and import_ctx:
+        detection_sources.append(
+            {
+                **import_ctx,
+                "source": d.get("tool_source") or "universal-csv",
+                "at": now.isoformat(),
+            }
+        )
+
+    origin_projects: list[dict] = []
+    csv_project = d.get("csv_project")
+    if csv_project:
+        first_seen = d.get("first_seen") or now
+        first_iso = first_seen.isoformat() if isinstance(first_seen, datetime) else str(first_seen)
+        origin_projects.append(
+            {
+                "name": str(csv_project)[:255],
+                "engagement_id": str(engagement_id) if engagement_id else None,
+                "first_seen": first_iso,
+                "last_seen": now.isoformat(),
+            }
+        )
+
+    finding_status = d.get("finding_status") or FindingStatus.abierta
+    first_seen_val = d.get("first_seen")
+    if not isinstance(first_seen_val, datetime):
+        first_seen_val = now
+    last_seen_val = d.get("last_seen")
+    if not isinstance(last_seen_val, datetime):
+        last_seen_val = now
+
+    return {
+        "titulo": d["titulo"],
+        "descripcion": d.get("descripcion"),
+        "severidad": d["severidad"],
+        "cvss_score": d.get("cvss_score"),
+        "cvss_vector": d.get("cvss_vector"),
+        "cve": d.get("cve"),
+        "cwe": d.get("cwe"),
+        "raw_tool_output": d.get("raw_tool_output"),
+        "explicacion_tecnica": d.get("explicacion_tecnica"),
+        "amenaza_ampliada": d.get("amenaza_ampliada"),
+        "componente_afectado": d.get("componente_afectado"),
+        "metodo_deteccion": d.get("metodo_deteccion"),
+        "tool_source": d.get("tool_source"),
+        "tool_vuln_id": d.get("tool_vuln_id"),
+        "propuesta_remediacion": d.get("propuesta_remediacion"),
+        "referencias": d.get("referencias"),
+        "epss_score": d.get("epss_score"),
+        "kev_listed": bool(d.get("kev_listed")),
+        "catalog_id": resolve_finding_catalog_fk(
+            d.get("catalog_vulns_id") or d.get("catalog_id"),
+            valid_catalog_ids,
+        ),
+        "engagement_id": engagement_id,
+        "status": finding_status,
+        "first_seen": first_seen_val,
+        "last_seen": last_seen_val,
+        "dedup_fingerprint": build_dedup_fingerprint_from_draft(d),
+        "remediation_context": d.get("remediation_context"),
+        "detection_sources": detection_sources or None,
+        "origin_projects": origin_projects or None,
+        "global_status": SERVICE_DRAFT_STATUS,
+    }
+
+
+def _persist_drafts_bulk(
+    db: Session,
+    drafts: list[dict],
+    engagement_id: Optional[UUID],
+    valid_catalog_ids,
+    now: datetime,
+    *,
+    chunk_size: int = 1000,
+) -> list[UUID]:
+    """Inserción masiva (bulk_insert_mappings): una sentencia INSERT por lote.
+
+    Evita el unit-of-work del ORM (alta por objeto + refresh) que domina el
+    tiempo en CSV de decenas de miles de filas.
+    """
+    ids: list[UUID] = []
+    mappings: list[dict] = []
+    for d in drafts:
+        cols = _draft_finding_columns(d, engagement_id, valid_catalog_ids, now)
+        new_id = uuid.uuid4()
+        cols["id"] = new_id
+        cols["created_at"] = now
+        cols["updated_at"] = now
+        cols["sync_status"] = "pending"
+        ids.append(new_id)
+        mappings.append(cols)
+        if len(mappings) >= chunk_size:
+            db.bulk_insert_mappings(Finding, mappings)
+            db.commit()
+            mappings.clear()
+    if mappings:
+        db.bulk_insert_mappings(Finding, mappings)
+        db.commit()
+    return ids
+
+
 def _persist_drafts(
     db: Session,
     drafts: list[dict],
     engagement_id: Optional[UUID],
     tenant_id: Optional[UUID] = None,
+    *,
+    fast_bulk: bool = False,
 ) -> list[UUID]:
     if engagement_id is not None:
         eg = db.get(Engagement, engagement_id)
         if not eg:
             raise HTTPException(status_code=404, detail="Engagement no encontrado")
 
-    ids: list[UUID] = []
-    chunk: list[Finding] = []
+    bulk = fast_bulk or len(drafts) > 2000
     valid_catalog_ids = load_vulnerabilities_catalog_ids(db)
     now = datetime.now(timezone.utc)
-    for d in drafts:
-        detection_sources: list[dict] = []
-        import_ctx = d.get("import_context")
-        if isinstance(import_ctx, dict) and import_ctx:
-            detection_sources.append(
-                {
-                    **import_ctx,
-                    "source": d.get("tool_source") or "universal-csv",
-                    "at": now.isoformat(),
-                }
-            )
 
-        origin_projects: list[dict] = []
-        csv_project = d.get("csv_project")
-        if csv_project:
-            first_seen = d.get("first_seen") or now
-            first_iso = first_seen.isoformat() if isinstance(first_seen, datetime) else str(first_seen)
-            origin_projects.append(
-                {
-                    "name": str(csv_project)[:255],
-                    "engagement_id": str(engagement_id) if engagement_id else None,
-                    "first_seen": first_iso,
-                    "last_seen": now.isoformat(),
-                }
-            )
-
-        finding_status = d.get("finding_status") or FindingStatus.abierta
-        first_seen_val = d.get("first_seen")
-        if not isinstance(first_seen_val, datetime):
-            first_seen_val = now
-        last_seen_val = d.get("last_seen")
-        if not isinstance(last_seen_val, datetime):
-            last_seen_val = now
-
-        f = Finding(
-            titulo=d["titulo"],
-            descripcion=d.get("descripcion"),
-            severidad=d["severidad"],
-            cvss_score=d.get("cvss_score"),
-            cvss_vector=d.get("cvss_vector"),
-            cve=d.get("cve"),
-            cwe=d.get("cwe"),
-            raw_tool_output=d.get("raw_tool_output"),
-            explicacion_tecnica=d.get("explicacion_tecnica"),
-            amenaza_ampliada=d.get("amenaza_ampliada"),
-            componente_afectado=d.get("componente_afectado"),
-            metodo_deteccion=d.get("metodo_deteccion"),
-            tool_source=d.get("tool_source"),
-            tool_vuln_id=d.get("tool_vuln_id"),
-            propuesta_remediacion=d.get("propuesta_remediacion"),
-            referencias=d.get("referencias"),
-            epss_score=d.get("epss_score"),
-            kev_listed=bool(d.get("kev_listed")),
-            catalog_id=resolve_finding_catalog_fk(
-                d.get("catalog_vulns_id") or d.get("catalog_id"),
-                valid_catalog_ids,
-            ),
-            engagement_id=engagement_id,
-            status=finding_status,
-            first_seen=first_seen_val,
-            last_seen=last_seen_val,
-            updated_at=now,
-            dedup_fingerprint=build_dedup_fingerprint_from_draft(d),
-            remediation_context=d.get("remediation_context"),
-            detection_sources=detection_sources or None,
-            origin_projects=origin_projects or None,
+    if bulk:
+        return _persist_drafts_bulk(
+            db, drafts, engagement_id, valid_catalog_ids, now
         )
+
+    chunk_size = 250
+    ids: list[UUID] = []
+    chunk: list[Finding] = []
+    for d in drafts:
+        cols = _draft_finding_columns(d, engagement_id, valid_catalog_ids, now)
+        cols["updated_at"] = now
+        f = Finding(**cols)
+        import_ctx = d.get("import_context")
         if tenant_id and import_ctx:
             enrich_finding_import_context(db, f, tenant_id=tenant_id)
         chunk.append(f)
-        if len(chunk) >= 250:
+        if len(chunk) >= chunk_size:
             for x in chunk:
                 db.add(x)
             db.commit()
@@ -134,7 +195,10 @@ def _persist_drafts(
                     db,
                     x,
                     "ingest",
-                    {"tool_source": x.tool_source, "engagement_id": str(engagement_id) if engagement_id else None},
+                    {
+                        "tool_source": x.tool_source,
+                        "engagement_id": str(engagement_id) if engagement_id else None,
+                    },
                 )
                 ids.append(x.id)
             db.commit()
@@ -201,10 +265,24 @@ def _assert_ingest_access(db: Session, engagement_id: UUID, ctx: AuthContext) ->
     require_engagement_tenant(db, engagement_id, ctx.tenant_id)
 
 
+def _ingest_scope_forms(
+    drafts: list[dict],
+    asset_group: Optional[str],
+    asset_subgroup: Optional[str],
+) -> None:
+    apply_asset_scope_to_drafts(
+        drafts,
+        asset_group=asset_group,
+        asset_subgroup=asset_subgroup,
+    )
+
+
 @router.post("/nessus-csv", response_model=IngestBatchResponse)
 async def ingest_nessus_csv(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
+    asset_group: Optional[str] = Form(None),
+    asset_subgroup: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
@@ -217,15 +295,23 @@ async def ingest_nessus_csv(
             status_code=400,
             detail="No se extrajeron filas del CSV. Comprueba que sea export Nessus/Tenable (.csv).",
         )
-    catalog_hits = enrich_drafts_with_catalog(db, drafts)
-    catalog_stats = ensure_drafts_catalog(db, drafts)
-    ids = _persist_drafts(db, drafts, engagement_id, ctx.tenant_id)
-    _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
+    _ingest_scope_forms(drafts, asset_group, asset_subgroup)
+    bulk = len(drafts) > 2000
+    catalog_hits = enrich_drafts_with_catalog(db, drafts, tenant_id=ctx.tenant_id)
+    catalog_stats = ensure_drafts_catalog(db, drafts, fast_mode=bulk)
+    ids = _persist_drafts(
+        db, drafts, engagement_id, ctx.tenant_id, fast_bulk=bulk
+    )
+    if not bulk:
+        _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
     msg = _ingest_catalog_message(len(drafts), catalog_hits, catalog_stats)
+    if bulk:
+        fast_note = f" Modo rápido: {len(drafts):,} filas importadas."
+        msg = (msg + fast_note) if msg else fast_note.strip()
     return IngestBatchResponse(
         source="nessus-csv",
-        created_count=len(ids),
-        finding_ids=ids,
+        created_count=len(ids) if ids else len(drafts),
+        finding_ids=[],
         message=msg,
     )
 
@@ -237,6 +323,8 @@ async def ingest_nessus_csv_rescan(
     scope: str = Form("tenant"),
     absent_policy: str = Form("atendido"),
     label: Optional[str] = Form(None),
+    asset_group: Optional[str] = Form(None),
+    asset_subgroup: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> NessusRescanResponse:
@@ -257,8 +345,11 @@ async def ingest_nessus_csv_rescan(
             detail="No se extrajeron filas del CSV. Comprueba que sea export Nessus/Tenable (.csv).",
         )
 
-    enrich_drafts_with_catalog(db, drafts)
-    ensure_drafts_catalog(db, drafts)
+    _ingest_scope_forms(drafts, asset_group, asset_subgroup)
+    fast_rescan = len(drafts) > 1000
+    if not fast_rescan:
+        enrich_drafts_with_catalog(db, drafts, tenant_id=ctx.tenant_id)
+        ensure_drafts_catalog(db, drafts)
 
     scan_run = ScanRun(
         tenant_id=ctx.tenant_id,
@@ -281,8 +372,10 @@ async def ingest_nessus_csv_rescan(
         absent_policy=absent_policy,
         scan_run=scan_run,
         actor=actor_email(ctx),
+        fast_rescan=fast_rescan,
     )
-    _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
+    if not fast_rescan:
+        _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
 
     parts = [
         f"{stats['new_count']} nuevas",
@@ -307,6 +400,8 @@ async def ingest_nessus_csv_rescan(
 async def ingest_acunetix_html(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
+    asset_group: Optional[str] = Form(None),
+    asset_subgroup: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
@@ -319,15 +414,16 @@ async def ingest_acunetix_html(
             status_code=400,
             detail="No se encontraron tablas de alertas reconocibles. Exporta el informe HTML con la tabla de vulnerabilidades.",
         )
-    catalog_hits = enrich_drafts_with_catalog(db, drafts)
-    catalog_stats = ensure_drafts_catalog(db, drafts)
+    _ingest_scope_forms(drafts, asset_group, asset_subgroup)
+    catalog_hits = enrich_drafts_with_catalog(db, drafts, tenant_id=ctx.tenant_id)
+    catalog_stats = ensure_drafts_catalog(db, drafts, fast_mode=len(drafts) > 2000)
     ids = _persist_drafts(db, drafts, engagement_id, ctx.tenant_id)
     _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
     msg = _ingest_catalog_message(len(drafts), catalog_hits, catalog_stats)
     return IngestBatchResponse(
         source="acunetix-html",
         created_count=len(ids),
-        finding_ids=ids,
+        finding_ids=[],
         message=msg,
     )
 
@@ -336,6 +432,8 @@ async def ingest_acunetix_html(
 async def ingest_nmap(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
+    asset_group: Optional[str] = Form(None),
+    asset_subgroup: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
@@ -349,8 +447,9 @@ async def ingest_nmap(
             status_code=400,
             detail="No se detectaron puertos abiertos. Usa salida XML (-oX), .gnmap o texto estándar de Nmap.",
         )
-    catalog_hits = enrich_drafts_with_catalog(db, drafts)
-    catalog_stats = ensure_drafts_catalog(db, drafts)
+    _ingest_scope_forms(drafts, asset_group, asset_subgroup)
+    catalog_hits = enrich_drafts_with_catalog(db, drafts, tenant_id=ctx.tenant_id)
+    catalog_stats = ensure_drafts_catalog(db, drafts, fast_mode=len(drafts) > 2000)
     ids = _persist_drafts(db, drafts, engagement_id, ctx.tenant_id)
     _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
     msg = _ingest_catalog_message(len(drafts), catalog_hits, catalog_stats)
@@ -361,7 +460,7 @@ async def ingest_nmap(
     return IngestBatchResponse(
         source="nmap",
         created_count=len(ids),
-        finding_ids=ids,
+        finding_ids=[],
         message=msg,
     )
 
@@ -383,6 +482,8 @@ async def ingest_universal_csv(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
     column_map: Optional[str] = Form(None),
+    asset_group: Optional[str] = Form(None),
+    asset_subgroup: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
@@ -396,15 +497,16 @@ async def ingest_universal_csv(
             status_code=400,
             detail="No se extrajeron filas del CSV. Comprueba encabezados (se requiere columna de título).",
         )
-    catalog_hits = enrich_drafts_with_catalog(db, drafts)
-    catalog_stats = ensure_drafts_catalog(db, drafts)
+    _ingest_scope_forms(drafts, asset_group, asset_subgroup)
+    catalog_hits = enrich_drafts_with_catalog(db, drafts, tenant_id=ctx.tenant_id)
+    catalog_stats = ensure_drafts_catalog(db, drafts, fast_mode=len(drafts) > 2000)
     ids = _persist_drafts(db, drafts, engagement_id, ctx.tenant_id)
     _refresh_asset_targets_after_ingest(db, engagement_id, ctx.tenant_id)
     msg = _ingest_catalog_message(len(drafts), catalog_hits, catalog_stats)
     return IngestBatchResponse(
         source="universal-csv",
         created_count=len(ids),
-        finding_ids=ids,
+        finding_ids=[],
         message=msg,
         column_map=resolved_map or None,
     )

@@ -47,7 +47,10 @@ _CATALOG_SELECT_COLUMNS = """
   "CVSSVector3_1",
   "StandardVulnerabilityName",
   "NessusPluginId",
-  "SourceDetection"
+  "SourceDetection",
+  "Description",
+  "Danger",
+  "Solution"
 """
 
 _PLUGIN_IN_TEXT_RE = re.compile(r"plugin(?:\s+ID)?[:\s]+(\d+)", re.IGNORECASE)
@@ -131,6 +134,61 @@ class CatalogIngestCache:
         if key not in self._hits:
             self._hits[key] = lookup_catalog_by_tool_index(self.db, src, oid)
         return self._hits[key]
+
+    def preload_catalog_batch(
+        self,
+        source_type: str,
+        original_ids: list[str],
+        *,
+        batch_size: int = 500,
+    ) -> None:
+        """Precarga filas de catálogo con WHERE col = ANY(:oids) en lotes."""
+        src = normalize_tool_source(source_type)
+        col = catalog_column_for_source(src)
+        if not col or col not in TOOL_SOURCE_CATALOG_COLUMNS.values():
+            return
+
+        pending: list[str] = []
+        seen: set[str] = set()
+        for raw in original_ids:
+            oid = (raw or "").strip()
+            if not oid or oid in seen:
+                continue
+            seen.add(oid)
+            if (src, oid) not in self._hits:
+                pending.append(oid)
+
+        for offset in range(0, len(pending), batch_size):
+            batch = pending[offset : offset + batch_size]
+            if not batch:
+                continue
+            try:
+                rows = self.db.execute(
+                    text(
+                        f"""
+                        SELECT {_CATALOG_SELECT_COLUMNS}
+                        FROM core.vulns_catalog
+                        WHERE TRIM("{col}"::text) = ANY(:oids)
+                        """
+                    ),
+                    {"oids": batch},
+                ).mappings().all()
+                found: dict[str, dict] = {}
+                for row in rows:
+                    oid_val = str(row.get(col) or "").strip()
+                    if oid_val:
+                        found[oid_val] = dict(row)
+                for oid in batch:
+                    self._hits[(src, oid)] = found.get(oid)
+            except Exception:
+                for oid in batch:
+                    key = (src, oid)
+                    if key not in self._hits:
+                        self._hits[key] = lookup_catalog_by_tool_index(self.db, src, oid)
+
+    def preload(self, source_type: str, original_ids: list[str], *, batch_size: int = 500) -> None:
+        """Alias de preload_catalog_batch."""
+        self.preload_catalog_batch(source_type, original_ids, batch_size=batch_size)
 
 
 def lookup_catalog_by_tool_index(

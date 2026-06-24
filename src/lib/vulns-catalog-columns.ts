@@ -1,6 +1,11 @@
 /** Columnas del catálogo operativo core.vulns_catalog */
 
 import { VULNS_CATALOG_TOOL_ID_COLUMNS } from '@/lib/catalog-tool-index';
+import {
+  catalogLocaleColumnLabel,
+  catalogLocaleMandatoryColumns,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
 
 export const VULNS_CATALOG_SELECT_COLUMNS = [
   "Id",
@@ -63,6 +68,10 @@ export const VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS = [
 
 export const VULNS_CATALOG_DISPLAY_STORAGE_KEY = "spectre.vulns-catalog.display-columns";
 
+export function displayStorageKeyForLanguage(language: TenantLanguage = 'es'): string {
+  return `${VULNS_CATALOG_DISPLAY_STORAGE_KEY}.${language}`;
+}
+
 export type VulnsCatalogEditableColumn = (typeof VULNS_CATALOG_EDITABLE_COLUMNS)[number];
 export type VulnsCatalogDisplayColumn = (typeof VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS)[number];
 
@@ -91,18 +100,45 @@ const LABEL_OVERRIDES: Record<string, string> = {
   InsightAppSecInsightAppSec: "InsightAppSec",
   NmapScriptName: "Nmap Script",
   FortifyName: "Fortify",
-  EspNombreVulnerabilidadUnificado: "Nombre (ES)",
-  EspSeveridadUnificada: "Severidad (ES)",
-  EspDescripcionUnificada: "Descripción (ES)",
-  EspAmenazaUnificadaGeneral: "Amenaza (ES)",
-  EspAmenazaUnificadaDesdeInternet: "Amenaza Internet (ES)",
-  EspPropuestaRemediacionUnificada: "Remediación (ES)",
-  EspPropuestaRemediacionUnificadaEnRedPrivada: "Remediación red privada (ES)",
-  EspMetodoDeteccion: "Método detección (ES)",
-  EspExplicacionTecnica: "Explicación técnica (ES)",
+  EspNombreVulnerabilidadUnificado: "Nombre unificado",
+  EspSeveridadUnificada: "Severidad",
+  EspDescripcionUnificada: "Descripción",
+  EspAmenazaUnificadaGeneral: "Amenaza",
+  EspAmenazaUnificadaDesdeInternet: "Amenaza (Internet)",
+  EspPropuestaRemediacionUnificada: "Remediación",
+  EspPropuestaRemediacionUnificadaEnRedPrivada: "Remediación (red privada)",
+  EspMetodoDeteccion: "Método de detección",
+  EspExplicacionTecnica: "Explicación técnica",
 };
 
-export function catalogColumnLabel(column: string): string {
+export function defaultDisplayColumnsForLanguage(
+  language: TenantLanguage = 'es'
+): readonly string[] {
+  const mandatory = catalogLocaleMandatoryColumns(language);
+  const titleCol = mandatory[0];
+  const severityCol = mandatory[1];
+  return language === 'en'
+    ? [
+        'Id',
+        titleCol,
+        'Vulnerability',
+        severityCol,
+        'Description',
+        'Danger',
+        'Solution',
+        'SourceDetection',
+        'NessusPluginId',
+        'CVE',
+        'CWE',
+      ]
+    : ['Id', titleCol, 'StandardVulnerabilityName', severityCol, 'SourceDetection', 'NessusPluginId', 'CVE', 'CWE'];
+}
+
+export function catalogColumnLabel(column: string, language?: TenantLanguage): string {
+  if (language) {
+    const localeLabel = catalogLocaleColumnLabel(column, language);
+    if (localeLabel) return localeLabel;
+  }
   if (LABEL_OVERRIDES[column]) return LABEL_OVERRIDES[column];
   if (column.startsWith("Esp")) {
     return column.replace(/^Esp/, "").replace(/([A-Z])/g, " $1").trim();

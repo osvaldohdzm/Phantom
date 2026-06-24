@@ -2,6 +2,8 @@ import { resolveApiUrl } from '@/lib/api-base';
 import { authHeaders, clearSession, persistSession } from '@/lib/auth-storage';
 
 import type { TenantBranding } from '@/lib/tenant-branding';
+import type { TenantLanguage } from '@/lib/tenant-locale';
+import type { UiLanguagePreference } from '@/lib/user-preferences';
 
 export type UserRole =
   | 'platform_admin'
@@ -13,6 +15,8 @@ export interface AuthUser {
   id: string;
   email: string;
   nombre: string;
+  ui_language_preference?: UiLanguagePreference;
+  ui_language?: TenantLanguage;
 }
 
 export interface AuthTenant {
@@ -98,6 +102,32 @@ export async function switchTenant(tenantId: string): Promise<AuthSession> {
   return session;
 }
 
+export async function updateUserPreferences(payload: {
+  ui_language: UiLanguagePreference;
+}): Promise<AuthSession> {
+  const me = await authFetch<{
+    user: AuthUser;
+    active_tenant_id: string;
+    role: UserRole;
+    tenants: AuthTenant[];
+    branding?: TenantBranding | null;
+  }>('/api/v1/auth/me/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  const token = (await import('@/lib/auth-storage')).getStoredToken();
+  if (!token) throw new Error('Sin sesión');
+  return {
+    access_token: token,
+    token_type: 'bearer',
+    user: me.user,
+    active_tenant_id: me.active_tenant_id,
+    role: me.role,
+    tenants: me.tenants,
+    branding: me.branding ?? null,
+  };
+}
+
 export function logout() {
   clearSession();
 }
@@ -121,8 +151,15 @@ export function canAdminTenant(role: UserRole) {
   return role === 'platform_admin' || role === 'tenant_admin';
 }
 
-export function canManageTenants(role: UserRole) {
-  return role === 'platform_admin';
+export function hasPlatformAdminAccess(
+  role: UserRole,
+  tenants?: { role: UserRole }[]
+): boolean {
+  return role === 'platform_admin' || (tenants?.some((t) => t.role === 'platform_admin') ?? false);
+}
+
+export function canManageTenants(role: UserRole, tenants?: { role: UserRole }[]): boolean {
+  return hasPlatformAdminAccess(role, tenants);
 }
 
 export interface AdminTenant {
@@ -145,6 +182,7 @@ export async function createTenant(input: {
   slug: string;
   nombre: string;
   descripcion?: string;
+  default_language?: 'es' | 'en';
   add_me_as_admin?: boolean;
 }): Promise<AdminTenant> {
   return authFetch<AdminTenant>('/api/v1/admin/tenants', {
@@ -168,8 +206,22 @@ export async function updateTenant(
   });
 }
 
-export async function deleteTenant(tenantId: string): Promise<{ deleted: boolean; id: string }> {
-  return authFetch(`/api/v1/admin/tenants/${tenantId}`, { method: 'DELETE' });
+export async function deleteTenant(
+  tenantId: string,
+  options?: { purge?: boolean; confirmSlug?: string }
+): Promise<{
+  deleted: boolean;
+  id: string;
+  purge?: boolean;
+  purge_stats?: Record<string, number>;
+}> {
+  const params = new URLSearchParams();
+  if (options?.purge) params.set('purge', 'true');
+  if (options?.confirmSlug) params.set('confirm_slug', options.confirmSlug);
+  const qs = params.toString();
+  return authFetch(`/api/v1/admin/tenants/${tenantId}${qs ? `?${qs}` : ''}`, {
+    method: 'DELETE',
+  });
 }
 
 export interface AdminUser {
@@ -223,6 +275,9 @@ export interface AdminAuditEvent {
   id: string;
   action: string;
   actor_id?: string | null;
+  actor_email?: string | null;
+  tenant_id?: string | null;
+  tenant_nombre?: string | null;
   resource_type?: string | null;
   resource_id?: string | null;
   ip_address?: string | null;

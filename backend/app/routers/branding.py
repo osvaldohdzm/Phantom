@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps.auth import AuthContext, require_admin
+from app.deps.auth import AuthContext, get_auth_context, is_effective_platform_admin, require_admin
 from app.models.auth import Tenant, UserRole
 from app.schemas import TenantBrandingPublicRead, TenantBrandingRead, TenantBrandingUpdate
 from app.services.audit import log_audit_event
@@ -35,8 +35,8 @@ def _branding_read(tenant: Tenant) -> TenantBrandingRead:
     return TenantBrandingRead(**normalize_branding(tenant.branding))
 
 
-def _ensure_tenant_branding_access(ctx: AuthContext, tenant_id: UUID) -> None:
-    if ctx.role == UserRole.platform_admin:
+def _ensure_tenant_branding_access(ctx: AuthContext, tenant_id: UUID, db: Session) -> None:
+    if is_effective_platform_admin(ctx, db):
         return
     if ctx.role != UserRole.tenant_admin:
         raise HTTPException(status_code=403, detail="Sin permisos de administración")
@@ -77,7 +77,7 @@ def get_tenant_branding(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> TenantBrandingRead:
-    _ensure_tenant_branding_access(ctx, tenant_id)
+    _ensure_tenant_branding_access(ctx, tenant_id, db)
     tenant = db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -91,7 +91,7 @@ def update_tenant_branding(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> TenantBrandingRead:
-    _ensure_tenant_branding_access(ctx, tenant_id)
+    _ensure_tenant_branding_access(ctx, tenant_id, db)
     tenant = db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -123,7 +123,7 @@ async def upload_branding_asset(
     if slot not in BRANDING_ASSET_SLOTS:
         raise HTTPException(status_code=400, detail=f"Slot inválido: {slot}")
 
-    _ensure_tenant_branding_access(ctx, tenant_id)
+    _ensure_tenant_branding_access(ctx, tenant_id, db)
     tenant = db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -175,7 +175,7 @@ def delete_branding_asset(
     if slot not in BRANDING_ASSET_SLOTS:
         raise HTTPException(status_code=400, detail=f"Slot inválido: {slot}")
 
-    _ensure_tenant_branding_access(ctx, tenant_id)
+    _ensure_tenant_branding_access(ctx, tenant_id, db)
     tenant = db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")

@@ -13,14 +13,9 @@ import {
 import { SeverityBadge } from '@/components/severity-badge';
 import type { Severity } from '@/lib/secops-api';
 import type { ReviewFilter } from '@/lib/finding-completeness';
+import { useUiT } from '@/lib/use-ui-locale';
 
 const ALL_SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low', 'Info'];
-
-const REVIEW_FILTER_OPTIONS: { id: ReviewFilter; label: string }[] = [
-  { id: 'all', label: 'Todos' },
-  { id: 'incomplete', label: 'Pendientes' },
-  { id: 'gemini-ready', label: 'Listos' },
-];
 
 type VulnMatrixActionsBarProps = {
   targets: Finding[];
@@ -45,6 +40,8 @@ export function VulnMatrixActionsBar({
   onClearColumnFilters,
   onReload,
 }: VulnMatrixActionsBarProps) {
+  const { t, format, reviewFilters } = useUiT();
+  const reviewFilterOptions = reviewFilters();
   const [busy, setBusy] = useState<'gemini' | 'consolidate' | 'sync' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,14 +143,14 @@ export function VulnMatrixActionsBar({
             className="text-[10px] text-muted-foreground underline"
             onClick={() => onSeverityFilterChange('all')}
           >
-            Quitar severidad
+            {t('matrixRemoveSeverity')}
           </button>
         ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border/60 bg-background p-0.5">
-          {REVIEW_FILTER_OPTIONS.map((opt) => (
+          {reviewFilterOptions.map((opt) => (
             <button
               key={opt.id}
               type="button"
@@ -194,7 +191,7 @@ export function VulnMatrixActionsBar({
           onClick={() => void runConsolidate()}
         >
           {busy === 'consolidate' ? <Loader2 className="size-3.5 animate-spin" /> : <Wrench className="size-3.5" />}
-          Consolidar
+          {t('matrixConsolidate')}
         </Button>
 
         <Button
@@ -217,7 +214,7 @@ export function VulnMatrixActionsBar({
             className="h-7 text-[10px] text-violet-700"
             onClick={onClearColumnFilters}
           >
-            Limpiar {columnFilterCount} filtro(s) columna
+            {format('matrixClearColumnFilters', { n: columnFilterCount })}
           </Button>
         ) : null}
 

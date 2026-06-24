@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -779,10 +779,23 @@ class BulkDeleteRequest(BaseModel):
 
 
 class BulkDeleteByQueryRequest(BaseModel):
-    engagement_id: UUID
+    engagement_id: Optional[UUID] = None
+    # Borrado a nivel repositorio (sin engagement). Flag explícito para evitar
+    # borrados masivos accidentales si engagement_id se omite por error.
+    repository: bool = False
     severidad: Optional[str] = None
     severidades: Optional[str] = None
     q: Optional[str] = None
+    tool_source: Optional[str] = None
+
+
+class PublishToRepositoryRequest(BaseModel):
+    engagement_id: UUID
+
+
+class PublishToRepositoryResponse(BaseModel):
+    published_count: int
+    message: Optional[str] = None
 
 
 # --- Auth / multi-tenant ---
@@ -801,6 +814,7 @@ class AuthSwitchTenantRequest(BaseModel):
 class TenantBrandingRead(BaseModel):
     """Configuración white-label del tenant (logo, colores, informes, login)."""
 
+    language: Optional[str] = "es"
     product_name: Optional[str] = None
     workspace_name: Optional[str] = None
     tagline: Optional[str] = None
@@ -826,9 +840,11 @@ class TenantBrandingRead(BaseModel):
     report_classification: Optional[str] = None
     email_from_name: Optional[str] = None
     email_footer_html: Optional[str] = None
+    official_fields: Optional[dict[str, Any]] = None
 
 
 class TenantBrandingUpdate(BaseModel):
+    language: Optional[str] = Field(None, pattern="^(es|en)$")
     product_name: Optional[str] = Field(None, max_length=120)
     workspace_name: Optional[str] = Field(None, max_length=255)
     tagline: Optional[str] = Field(None, max_length=255)
@@ -854,6 +870,7 @@ class TenantBrandingUpdate(BaseModel):
     report_classification: Optional[str] = Field(None, max_length=120)
     email_from_name: Optional[str] = Field(None, max_length=255)
     email_footer_html: Optional[str] = Field(None, max_length=8000)
+    official_fields: Optional[dict[str, Any]] = None
 
 
 class TenantBrandingPublicRead(BaseModel):
@@ -869,6 +886,12 @@ class AuthUserInfo(BaseModel):
     id: UUID
     email: str
     nombre: str
+    ui_language_preference: str = "auto"
+    ui_language: str = "es"
+
+
+class UserPreferencesUpdate(BaseModel):
+    ui_language: Optional[str] = Field(None, pattern="^(auto|es|en)$")
 
 
 class AuthTenantInfo(BaseModel):
@@ -962,6 +985,9 @@ class AdminAuditEventRead(BaseModel):
     id: UUID
     action: str
     actor_id: Optional[UUID] = None
+    actor_email: Optional[str] = None
+    tenant_id: Optional[UUID] = None
+    tenant_nombre: Optional[str] = None
     resource_type: Optional[str] = None
     resource_id: Optional[str] = None
     ip_address: Optional[str] = None
@@ -987,6 +1013,7 @@ class AdminTenantCreate(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=255)
     descripcion: Optional[str] = None
     tenant_kind: Optional[str] = Field(default="pentest", pattern="^(pentest|av_infra)$")
+    default_language: Optional[str] = Field(default="es", pattern="^(es|en)$")
     add_me_as_admin: bool = True
 
 

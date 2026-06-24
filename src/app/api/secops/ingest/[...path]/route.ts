@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBackendApiV1Url } from '@/lib/secops-backend-url';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const ALLOWED_PATHS = new Set([
   'nessus-csv',
@@ -33,28 +33,35 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const body = await request.arrayBuffer();
   const target = `${getBackendApiV1Url()}/ingest/${endpointPath}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 290_000);
+  const timeout = setTimeout(() => controller.abort(), 590_000);
 
   try {
     const auth = request.headers.get('authorization');
+    const contentLength = request.headers.get('content-length');
+    const headers: Record<string, string> = {
+      'content-type': contentType,
+      ...(auth ? { authorization: auth } : {}),
+    };
+    if (contentLength) headers['content-length'] = contentLength;
+
     const backendRes = await fetch(target, {
       method: 'POST',
-      headers: {
-        'content-type': contentType,
-        ...(auth ? { authorization: auth } : {}),
-      },
-      body,
+      headers,
+      body: request.body,
+      // @ts-expect-error duplex requerido para reenviar body en streaming (Node 18+)
+      duplex: 'half',
       signal: controller.signal,
     });
 
+    // Buffer body: streaming passthrough provoca ECONNRESET si el backend recarga o cierra tarde.
     const responseText = await backendRes.text();
     return new NextResponse(responseText, {
       status: backendRes.status,
       headers: {
         'content-type': backendRes.headers.get('content-type') || 'application/json',
+        'x-spectre-ingest-proxy': 'route-handler',
       },
     });
   } catch (error) {
@@ -63,7 +70,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json(
       {
         detail: aborted
-          ? 'La ingesta tardó demasiado en el servidor. Prueba un CSV más pequeño o revisa que el backend esté en marcha.'
+          ? 'La ingesta tardó demasiado. Si el CSV es muy grande (>50 MB), usa subida directa al puerto 8000 o Herramientas → Network Exposure para el mapa.'
           : `No se pudo contactar al API de ingesta: ${message}`,
       },
       { status: aborted ? 504 : 502 },

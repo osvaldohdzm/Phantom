@@ -7,8 +7,12 @@ import {
   detectionSourceLabels,
   resolveSyncStatusVisual,
   SYNC_STATUS_DOT,
-  SYNC_STATUS_LABEL,
 } from '@/lib/finding-master-catalog';
+import {
+  spreadsheetColumnToCatalogColumn,
+  type TenantLanguage,
+} from '@/lib/tenant-locale';
+import { syncStatusLabel, uiYes } from '@/lib/ui-locale';
 
 export type SpreadsheetColumnId =
   | 'completeness'
@@ -26,7 +30,15 @@ export type SpreadsheetColumnId =
   | 'status'
   | 'created_at';
 
-/** Columna de revisión → campo Español del catálogo (IA + propagación). */
+/** Columna de revisión → columna catálogo según idioma del tenant. */
+export function catalogAiFieldForSpreadsheetColumn(
+  columnId: SpreadsheetColumnId,
+  language: TenantLanguage = 'es'
+): string | null {
+  return spreadsheetColumnToCatalogColumn(columnId, language);
+}
+
+/** @deprecated Usar catalogAiFieldForSpreadsheetColumn */
 export const SPREADSHEET_COLUMN_CATALOG_AI: Partial<
   Record<SpreadsheetColumnId, CatalogSpanishAiField>
 > = {
@@ -38,14 +50,11 @@ export const SPREADSHEET_COLUMN_CATALOG_AI: Partial<
   explicacion_tecnica: 'EspExplicacionTecnica',
 };
 
-export function catalogAiFieldForSpreadsheetColumn(
-  columnId: SpreadsheetColumnId
-): CatalogSpanishAiField | null {
-  return SPREADSHEET_COLUMN_CATALOG_AI[columnId] ?? null;
-}
-
-export function spreadsheetColumnSupportsCatalogGemini(columnId: SpreadsheetColumnId): boolean {
-  return catalogAiFieldForSpreadsheetColumn(columnId) !== null;
+export function spreadsheetColumnSupportsCatalogGemini(
+  columnId: SpreadsheetColumnId,
+  language: TenantLanguage = 'es'
+): boolean {
+  return catalogAiFieldForSpreadsheetColumn(columnId, language) !== null;
 }
 
 export type SpreadsheetColumn = {
@@ -80,11 +89,42 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColumn[] = [
   { id: 'created_at', label: 'Creado', shortLabel: 'Creado', width: 100 },
 ];
 
+const SPREADSHEET_COLUMNS_EN: SpreadsheetColumn[] = [
+  { id: 'completeness', label: '% Complete', shortLabel: '%', width: 52, sticky: true },
+  { id: 'severidad', label: 'Severity', shortLabel: 'Sev.', width: 88, sticky: true, reportField: true },
+  { id: 'titulo', label: 'Title / Name', shortLabel: 'Title', width: 220, sticky: true, reportField: true },
+  { id: 'componente_afectado', label: 'Affected component', shortLabel: 'Component', width: 140, reportField: true },
+  { id: 'descripcion', label: 'Description', shortLabel: 'Desc.', width: 200, reportField: true },
+  { id: 'amenaza_ampliada', label: 'Threat / impact', shortLabel: 'Threat', width: 180, reportField: true },
+  { id: 'propuesta_remediacion', label: 'Remediation', shortLabel: 'Remed.', width: 180, reportField: true },
+  { id: 'explicacion_tecnica', label: 'Technical explanation', shortLabel: 'Tech.', width: 160, reportField: true },
+  { id: 'metodo_deteccion', label: 'Detection method', shortLabel: 'Method', width: 120, reportField: true },
+  { id: 'referencias', label: 'References', shortLabel: 'Refs.', width: 120, reportField: true },
+  { id: 'cve', label: 'CVE', shortLabel: 'CVE', width: 110 },
+  { id: 'cwe', label: 'CWE', shortLabel: 'CWE', width: 90 },
+  { id: 'cvss_score', label: 'CVSS', shortLabel: 'CVSS', width: 56 },
+  { id: 'epss_score', label: 'EPSS', shortLabel: 'EPSS', width: 56 },
+  { id: 'kev_listed', label: 'KEV', shortLabel: 'KEV', width: 48 },
+  { id: 'sync_status', label: 'Sync status', shortLabel: 'Sync', width: 88 },
+  { id: 'detection_source', label: 'Source', shortLabel: 'Source', width: 100 },
+  { id: 'status', label: 'Status', shortLabel: 'Status', width: 100 },
+  { id: 'raw_tool_output', label: 'Tool output', shortLabel: 'Output', width: 140, reportField: true },
+  { id: 'created_at', label: 'Created', shortLabel: 'Created', width: 100 },
+];
+
+export function spreadsheetColumnsForLanguage(language: TenantLanguage = 'es'): SpreadsheetColumn[] {
+  return language === 'en' ? SPREADSHEET_COLUMNS_EN : SPREADSHEET_COLUMNS;
+}
+
 const TITULO_MIN = 5;
 
 export type CellState = 'ok' | 'missing' | 'empty' | 'na';
 
-export function getSpreadsheetCellValue(finding: Finding, columnId: SpreadsheetColumnId): string {
+export function getSpreadsheetCellValue(
+  finding: Finding,
+  columnId: SpreadsheetColumnId,
+  language: TenantLanguage = 'es'
+): string {
   if (columnId === 'completeness') {
     return `${findingCompleteness(finding).percent}%`;
   }
@@ -95,7 +135,10 @@ export function getSpreadsheetCellValue(finding: Finding, columnId: SpreadsheetC
     const d = finding.created_at;
     if (!d) return '';
     try {
-      return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+      return new Date(d).toLocaleDateString(language === 'en' ? 'en-US' : 'es-MX', {
+        day: '2-digit',
+        month: 'short',
+      });
     } catch {
       return d.slice(0, 10);
     }
@@ -105,11 +148,11 @@ export function getSpreadsheetCellValue(finding: Finding, columnId: SpreadsheetC
     return v != null ? `${(v * 100).toFixed(1)}%` : '';
   }
   if (columnId === 'kev_listed') {
-    return finding.kev_listed ? 'Sí' : '';
+    return finding.kev_listed ? uiYes(language) : '';
   }
   if (columnId === 'sync_status') {
     const v = resolveSyncStatusVisual(finding);
-    return `${SYNC_STATUS_DOT[v]} ${SYNC_STATUS_LABEL[v]}`;
+    return `${SYNC_STATUS_DOT[v]} ${syncStatusLabel(v, language)}`;
   }
   if (columnId === 'detection_source') {
     return detectionSourceLabels(finding).join(', ');
@@ -148,10 +191,15 @@ export function getSpreadsheetCellState(finding: Finding, columnId: SpreadsheetC
   return 'na';
 }
 
-export function findingMatchesSpreadsheetSearch(finding: Finding, query: string): boolean {
+export function findingMatchesSpreadsheetSearch(
+  finding: Finding,
+  query: string,
+  language: TenantLanguage = 'es'
+): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const haystack = SPREADSHEET_COLUMNS.map((col) => getSpreadsheetCellValue(finding, col.id))
+  const cols = spreadsheetColumnsForLanguage(language);
+  const haystack = cols.map((col) => getSpreadsheetCellValue(finding, col.id, language))
     .join(' ')
     .toLowerCase();
   return haystack.includes(q);
@@ -192,9 +240,10 @@ export function sourceFromCharCountColumn(
 
 export function getSpreadsheetCellCharCount(
   finding: Finding,
-  columnId: SpreadsheetColumnId
+  columnId: SpreadsheetColumnId,
+  language: TenantLanguage = 'es'
 ): number {
-  return getSpreadsheetCellValue(finding, columnId).length;
+  return getSpreadsheetCellValue(finding, columnId, language).length;
 }
 
 /** Color de alerta según longitud (vista detalles). */

@@ -20,15 +20,18 @@ import {
   DEFAULT_CATALOG_FIELD_CONFIG,
   loadCatalogFieldConfig,
   type CatalogFieldConfig,
+  resolveDisplayColumns,
 } from "@/lib/catalog-field-config";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from "@/contexts/auth-context";
 import {
   VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS,
-  VULNS_CATALOG_DISPLAY_STORAGE_KEY,
   catalogColumnLabel,
+  defaultDisplayColumnsForLanguage,
+  displayStorageKeyForLanguage,
 } from "@/lib/vulns-catalog-columns";
 import type { CsvEncoding } from "@/lib/text-encoding";
 import { EXPLICACION_TECNICA_MAX_PARAGRAPHS } from "@/lib/truncate-paragraphs";
@@ -44,17 +47,18 @@ type CatalogResponse = {
   };
 };
 
-function loadDisplayColumns(): string[] {
-  if (typeof window === "undefined") return [...VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS];
+function loadDisplayColumns(language: import('@/lib/tenant-locale').TenantLanguage): string[] {
+  const defaults = [...defaultDisplayColumnsForLanguage(language)];
+  if (typeof window === "undefined") return defaults;
   try {
-    const raw = localStorage.getItem(VULNS_CATALOG_DISPLAY_STORAGE_KEY);
-    if (!raw) return [...VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS];
+    const raw = localStorage.getItem(displayStorageKeyForLanguage(language));
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || !parsed.length) return [...VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS];
+    if (!Array.isArray(parsed) || !parsed.length) return defaults;
     const cols = parsed.filter((c): c is string => typeof c === "string" && c.trim() !== "");
     return cols.includes("Id") ? cols : ["Id", ...cols];
   } catch {
-    return [...VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS];
+    return defaults;
   }
 }
 
@@ -74,6 +78,7 @@ function catalogRowKey(row: CatalogRow, index: number): string {
 }
 
 export function VulnsCatalog() {
+  const { tenantLanguage, branding } = useAuth();
   const searchParams = useSearchParams();
   const editIdParam = searchParams.get("editId");
   const fromFindingParam = searchParams.get("fromFinding");
@@ -107,14 +112,19 @@ export function VulnsCatalog() {
   const [replaceOnImport, setReplaceOnImport] = useState(false);
   const [importEncoding, setImportEncoding] = useState<CsvEncoding>("auto");
   const [repairBusy, setRepairBusy] = useState(false);
-  const [displayColumns, setDisplayColumns] = useState<string[]>(() => loadDisplayColumns());
+  const [displayColumns, setDisplayColumns] = useState<string[]>(() =>
+    loadDisplayColumns('es')
+  );
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [fieldConfig, setFieldConfig] = useState<CatalogFieldConfig>(DEFAULT_CATALOG_FIELD_CONFIG);
 
   useEffect(() => {
-    void loadCatalogFieldConfig().then(setFieldConfig);
-  }, []);
+    void loadCatalogFieldConfig(tenantLanguage, { branding }).then((cfg) => {
+      setFieldConfig(cfg);
+      setDisplayColumns(resolveDisplayColumns(cfg, tenantLanguage));
+    });
+  }, [tenantLanguage, branding]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -238,15 +248,15 @@ export function VulnsCatalog() {
     setDisplayColumns((prev) => {
       const next = prev.includes(column) ? prev.filter((c) => c !== column) : [...prev, column];
       const withId = next.includes("Id") ? next : ["Id", ...next];
-      localStorage.setItem(VULNS_CATALOG_DISPLAY_STORAGE_KEY, JSON.stringify(withId));
+      localStorage.setItem(displayStorageKeyForLanguage(tenantLanguage), JSON.stringify(withId));
       return withId;
     });
   };
 
   const resetDisplayColumns = () => {
-    const defaults = [...VULNS_CATALOG_DEFAULT_DISPLAY_COLUMNS];
+    const defaults = [...defaultDisplayColumnsForLanguage(tenantLanguage)];
     setDisplayColumns(defaults);
-    localStorage.setItem(VULNS_CATALOG_DISPLAY_STORAGE_KEY, JSON.stringify(defaults));
+    localStorage.setItem(displayStorageKeyForLanguage(tenantLanguage), JSON.stringify(defaults));
   };
 
   // Fetch values for the selected filter column
@@ -636,7 +646,7 @@ export function VulnsCatalog() {
                           onChange={() => toggleDisplayColumn(col)}
                           className="rounded border-input"
                         />
-                        <span className="truncate">{catalogColumnLabel(col)}</span>
+                        <span className="truncate">{catalogColumnLabel(col, tenantLanguage)}</span>
                         <span className="text-[9px] text-muted-foreground ml-auto font-mono">{col}</span>
                       </label>
                     ))}
@@ -664,7 +674,7 @@ export function VulnsCatalog() {
                 <TableRow>
                   {displayColumns.map((column) => (
                     <TableHead key={column} className="whitespace-nowrap">
-                      {catalogColumnLabel(column)}
+                      {catalogColumnLabel(column, tenantLanguage)}
                     </TableHead>
                   ))}
                   <TableHead className="text-right">Acciones</TableHead>

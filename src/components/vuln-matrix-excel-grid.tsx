@@ -34,6 +34,7 @@ import {
   type MatrixColumnFilters,
   type MatrixSort,
 } from '@/lib/vuln-matrix-filters';
+import { useUiT } from '@/lib/use-ui-locale';
 
 export type MatrixTableRow = {
   finding: Finding;
@@ -44,6 +45,7 @@ export type MatrixTableRow = {
 type VulnMatrixExcelGridProps = {
   rows: MatrixTableRow[];
   loading?: boolean;
+  streaming?: boolean;
   searchQuery?: string;
   onSaved?: () => void;
   columnFilters?: MatrixColumnFilters;
@@ -55,6 +57,7 @@ type VulnMatrixExcelGridProps = {
 export function VulnMatrixExcelGrid({
   rows,
   loading,
+  streaming = false,
   searchQuery = '',
   onSaved,
   columnFilters: columnFiltersProp,
@@ -62,6 +65,7 @@ export function VulnMatrixExcelGrid({
   sort: sortProp,
   onSortChange,
 }: VulnMatrixExcelGridProps) {
+  const { t } = useUiT();
   const [columns, setColumns] = useState<AssetGridColumn[]>(() =>
     loadVulnMatrixGridColumns(isMatrixColumnEditable)
   );
@@ -126,11 +130,15 @@ export function VulnMatrixExcelGrid({
 
   const uniqueByColumn = useMemo(() => {
     const map = new Map<string, string[]>();
+    // Scanning every row for distinct values is 16×O(n); while the repository is
+    // still streaming in (loading) we skip it so each batch flush stays cheap.
+    // The column-filter dropdowns populate once the load settles.
+    if (loading) return map;
     for (const col of columns.slice(0, 16)) {
       map.set(col.key, uniqueMatrixColumnValues(rows, col.key));
     }
     return map;
-  }, [columns, rows]);
+  }, [columns, rows, loading]);
 
   const evidenceColumnVisible = useMemo(
     () => columns.some((c) => c.key.startsWith('evidencia_')),
@@ -323,7 +331,7 @@ export function VulnMatrixExcelGrid({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
         <Loader2 className="size-6 animate-spin mb-2" />
-        <p className="text-xs">Cargando matriz…</p>
+        <p className="text-xs">{t('matrixLoadingGrid')}</p>
       </div>
     );
   }
@@ -331,14 +339,20 @@ export function VulnMatrixExcelGrid({
   if (!loading && gridRows.length === 0) {
     return (
       <p className="py-12 text-center text-sm text-muted-foreground">
-        Sin hallazgos en esta vista. Importa scanners, cambia filtros o quita filtros de columna
-        {activeFilterCount > 0 ? ` (${activeFilterCount} activo(s))` : ''}.
+        {t('matrixEmpty')}
+        {activeFilterCount > 0 ? ` (${activeFilterCount} ${t('matrixEmptyFiltersActive')})` : ''}.
       </p>
     );
   }
 
   return (
     <div className="space-y-2">
+      {streaming ? (
+        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+          <Loader2 className="size-3 animate-spin shrink-0" />
+          {t('matrixStreamingBanner')}
+        </p>
+      ) : null}
       <p className="text-[10px] text-muted-foreground leading-snug">
         Excel: clic / Shift+arrastrar selección · Ctrl+C copiar · Ctrl+X cortar · Ctrl+V pegar ·
         Ctrl+Z deshacer · Ctrl+A todo · F2 o Enter editar · Delete vaciar · arrastra ⋮⋮ en encabezado

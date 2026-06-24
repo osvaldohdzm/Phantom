@@ -154,7 +154,7 @@ export function TableroDashboard() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Link href="/reports" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Reportes Word · flujo pentest
+              Servicio pentest · 7 pasos
             </Link>
             <Link href="/assets" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
               Inventario de activos
@@ -177,11 +177,11 @@ export function TableroDashboard() {
       <div className="space-y-3">
         <h2 className="text-lg font-semibold">Módulos de la plataforma</h2>
         <p className="text-sm text-muted-foreground max-w-3xl">
-          Roadmap alineado a la especificación. El flujo de pentest (M10) en{' '}
+          Roadmap alineado a la especificación. El servicio de pentest (M10) en{' '}
           <Link href="/reports" className="text-primary underline-offset-2 hover:underline">
-            Reportes Word
+            Servicios
           </Link>{' '}
-          no se modifica: 7 pasos, revisión por tipo y desglosada, generación CYB001.
+          incluye 7 pasos, revisión por tipo y desglosada, y exportación CYB001.
         </p>
         <PlatformModulesGrid compact />
       </div>

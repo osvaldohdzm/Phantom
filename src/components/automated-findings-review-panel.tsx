@@ -33,7 +33,6 @@ import {
   type FindingsOrderBy,
   type FindingsUiPageSize,
   listAllFindingsForEngagement,
-  listAllFindingsInRepository,
   listFindings,
   repairFindingsText,
   updateFinding,
@@ -678,25 +677,16 @@ export function AutomatedFindingsReviewPanel({
     try {
       let deleted = 0;
       if (selectAllInQuery) {
-        if (isRepository) {
-          const { findings: all } = await listAllFindingsInRepository({
-            severidad:
-              !severidadesMulti?.length && severityFilter !== 'all' ? severityFilter : undefined,
-            severidades: severidadesMulti,
-            q: deferredSearch || undefined,
-            tool_source: toolSourceFilterApiValue(toolSourceFilter),
-          });
-          deleted = await bulkDeleteFindingsBatched(all.map((f) => f.id));
-        } else {
-          const result = await bulkDeleteFindingsByQuery({
-            engagement_id: engagementId!,
-            severidad:
-              !severidadesMulti?.length && severityFilter !== 'all' ? severityFilter : undefined,
-            severidades: severidadesMulti,
-            q: deferredSearch || undefined,
-          });
-          deleted = result.deleted_count;
-        }
+        const result = await bulkDeleteFindingsByQuery({
+          ...(isRepository
+            ? { repository: true, tool_source: toolSourceFilterApiValue(toolSourceFilter) }
+            : { engagement_id: engagementId! }),
+          severidad:
+            !severidadesMulti?.length && severityFilter !== 'all' ? severityFilter : undefined,
+          severidades: severidadesMulti,
+          q: deferredSearch || undefined,
+        });
+        deleted = result.deleted_count;
       } else {
         deleted = await bulkDeleteFindingsBatched([...selected]);
       }

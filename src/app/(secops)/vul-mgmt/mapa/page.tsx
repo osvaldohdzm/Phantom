@@ -7,8 +7,8 @@ export default function VulnMgmtMapaPage() {
       <CardHeader className="px-4 py-3 border-b border-border/60 bg-muted/10">
         <CardTitle className="text-base">Mapa de red y vulnerabilidades</CardTitle>
         <CardDescription className="text-xs">
-          Visualización en vivo del último Nessus o del inventario + hallazgos del servicio. Ideal
-          para AV Infraestructura tras el re-escaneo.
+          Visualización en vivo del último Nessus o del inventario + hallazgos del servicio. Ideal para AV
+          Infraestructura tras el re-escaneo. Requiere hallazgos publicados en gestión o un import reciente.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4">

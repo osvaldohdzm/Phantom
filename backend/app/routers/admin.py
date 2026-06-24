@@ -3,11 +3,17 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps.auth import AuthContext, actor_email, require_admin, require_platform_admin
+from app.deps.auth import (
+    AuthContext,
+    actor_email,
+    is_effective_platform_admin,
+    require_admin,
+    require_platform_admin,
+)
 from app.models.auth import AuditEvent, Tenant, TenantMembership, User, UserRole
 from app.models.core import Engagement
 from app.models.scan import TenantKind
@@ -26,10 +32,14 @@ from app.schemas import (
     AdminUserWithMembershipsRead,
     AdminMembershipAssign,
     AdminUserMembershipsSet,
+    UserRoleEnum,
 )
 from app.services.audit import log_audit_event
 from app.services.default_engagement import ensure_default_engagement
 from app.services.passwords import hash_password
+from app.services.rbac import Capability, role_has_capability
+from app.services.tenant_cleanup import purge_tenant_vuln_data
+from app.services.tenant_branding import merge_branding_update, normalize_branding
 from app.services.tenant_utils import normalize_tenant_slug
 from app.services.database_config import (
     build_env_template,
@@ -123,6 +133,10 @@ def create_tenant(
         descripcion=(payload.descripcion or "").strip() or None,
         is_active=True,
         tenant_kind=TenantKind(payload.tenant_kind or "pentest"),
+        branding=merge_branding_update(
+            None,
+            {"language": payload.default_language or "es"},
+        ),
     )
     db.add(tenant)
     db.flush()
@@ -209,6 +223,14 @@ def update_tenant(
 def delete_tenant(
     tenant_id: UUID,
     request: Request,
+    purge: bool = Query(
+        False,
+        description="Si true, borra proyectos y datos de gestión vulnerable antes de eliminar el tenant.",
+    ),
+    confirm_slug: Optional[str] = Query(
+        None,
+        description="Slug exacto del tenant; obligatorio cuando purge=true.",
+    ),
     ctx: AuthContext = Depends(require_platform_admin),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -217,17 +239,28 @@ def delete_tenant(
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
 
     engagements = db.query(Engagement).filter(Engagement.tenant_id == tenant_id).count()
-    if engagements > 0:
+    if engagements > 0 and not purge:
         raise HTTPException(
             status_code=409,
-            detail=f"No se puede eliminar: el tenant tiene {engagements} proyecto(s). Desactívalo en su lugar.",
+            detail=(
+                f"No se puede eliminar: el tenant tiene {engagements} proyecto(s). "
+                "Usa purge=true y confirm_slug para borrar también la gestión vulnerable "
+                "(el catálogo global no se modifica)."
+            ),
         )
 
-    memberships = db.query(TenantMembership).filter(TenantMembership.tenant_id == tenant_id).count()
-    if memberships > 0:
-        db.query(TenantMembership).filter(TenantMembership.tenant_id == tenant_id).delete(
-            synchronize_session=False
-        )
+    purge_stats: dict[str, int] = {}
+    if purge:
+        if not confirm_slug or confirm_slug.strip().lower() != tenant.slug.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Confirmación inválida: escribe el slug exacto del tenant para borrar con datos.",
+            )
+        purge_stats = purge_tenant_vuln_data(db, tenant_id)
+
+    db.query(TenantMembership).filter(TenantMembership.tenant_id == tenant_id).delete(
+        synchronize_session=False
+    )
 
     slug = tenant.slug
     db.delete(tenant)
@@ -239,10 +272,10 @@ def delete_tenant(
         resource_type="tenant",
         resource_id=str(tenant_id),
         ip_address=request.client.host if request.client else None,
-        details={"slug": slug},
+        details={"slug": slug, "purge": purge, "purge_stats": purge_stats},
     )
     db.commit()
-    return {"deleted": True, "id": str(tenant_id)}
+    return {"deleted": True, "id": str(tenant_id), "purge": purge, "purge_stats": purge_stats}
 
 
 def _ensure_membership(db: Session, user_id: UUID, tenant_id: UUID, role: UserRole) -> None:
@@ -299,17 +332,18 @@ def _user_with_memberships(
 def _resolve_tenant_ids_for_create(
     payload_tenant_ids: Optional[List[UUID]],
     ctx: AuthContext,
+    db: Session,
 ) -> List[UUID]:
     ids = list(payload_tenant_ids or [ctx.tenant_id])
-    if ctx.role != UserRole.platform_admin:
+    if not is_effective_platform_admin(ctx, db):
         ids = [tid for tid in ids if tid == ctx.tenant_id]
         if not ids:
             ids = [ctx.tenant_id]
     return ids
 
 
-def _assert_role_assignable(role: UserRoleEnum, ctx: AuthContext) -> None:
-    if role == UserRoleEnum.platform_admin and ctx.role != UserRole.platform_admin:
+def _assert_role_assignable(role: UserRoleEnum, ctx: AuthContext, db: Session) -> None:
+    if role == UserRoleEnum.platform_admin and not is_effective_platform_admin(ctx, db):
         raise HTTPException(status_code=403, detail="Solo platform_admin puede asignar ese rol")
 
 
@@ -318,7 +352,7 @@ def list_users_with_memberships(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> List[AdminUserWithMembershipsRead]:
-    if ctx.role == UserRole.platform_admin:
+    if is_effective_platform_admin(ctx, db):
         users = db.query(User).order_by(User.nombre).all()
         return [_user_with_memberships(db, u) for u in users]
 
@@ -405,8 +439,8 @@ def add_user_membership(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserWithMembershipsRead:
-    _assert_role_assignable(payload.role, ctx)
-    if ctx.role != UserRole.platform_admin and payload.tenant_id != ctx.tenant_id:
+    _assert_role_assignable(payload.role, ctx, db)
+    if not is_effective_platform_admin(ctx, db) and payload.tenant_id != ctx.tenant_id:
         raise HTTPException(status_code=403, detail="Solo puedes asignar usuarios al tenant activo")
 
     user = db.get(User, user_id)
@@ -446,7 +480,7 @@ def add_user_membership(
         details={"email": user.email, "role": payload.role.value},
     )
     db.commit()
-    scope = None if ctx.role == UserRole.platform_admin else ctx.tenant_id
+    scope = None if is_effective_platform_admin(ctx, db) else ctx.tenant_id
     return _user_with_memberships(db, user, scope_tenant_id=scope)
 
 
@@ -458,7 +492,7 @@ def remove_user_membership(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> dict:
-    if ctx.role != UserRole.platform_admin and tenant_id != ctx.tenant_id:
+    if not is_effective_platform_admin(ctx, db) and tenant_id != ctx.tenant_id:
         raise HTTPException(status_code=403, detail="Solo puedes quitar usuarios del tenant activo")
     if user_id == ctx.user.id and tenant_id == ctx.tenant_id:
         other = (
@@ -543,8 +577,8 @@ def create_tenant_user(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserRead:
-    _assert_role_assignable(payload.role, ctx)
-    tenant_ids = _resolve_tenant_ids_for_create(payload.tenant_ids, ctx)
+    _assert_role_assignable(payload.role, ctx, db)
+    tenant_ids = _resolve_tenant_ids_for_create(payload.tenant_ids, ctx, db)
     for tid in tenant_ids:
         tenant = db.get(Tenant, tid)
         if not tenant or not tenant.is_active:
@@ -616,12 +650,12 @@ def update_tenant_user_role(
     ctx: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserRead:
-    _assert_role_assignable(payload.role, ctx)
+    _assert_role_assignable(payload.role, ctx, db)
     if user_id == ctx.user.id:
         raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
 
     tenant_id = payload.tenant_id or ctx.tenant_id
-    if ctx.role != UserRole.platform_admin and tenant_id != ctx.tenant_id:
+    if not is_effective_platform_admin(ctx, db) and tenant_id != ctx.tenant_id:
         raise HTTPException(status_code=403, detail="Solo puedes cambiar roles en el tenant activo")
 
     membership = (
@@ -657,19 +691,35 @@ def list_audit_events(
     db: Session = Depends(get_db),
     limit: int = 50,
 ) -> List[AdminAuditEventRead]:
+    if not role_has_capability(ctx.role, Capability.tenant_audit_view):
+        raise HTTPException(status_code=403, detail="Sin permiso para ver auditoría")
+
     safe = min(max(limit, 1), 200)
-    rows = (
-        db.query(AuditEvent)
-        .filter(AuditEvent.tenant_id == ctx.tenant_id)
-        .order_by(AuditEvent.created_at.desc())
-        .limit(safe)
-        .all()
-    )
+    platform_view = is_effective_platform_admin(ctx, db)
+    query = db.query(AuditEvent)
+    if not platform_view:
+        query = query.filter(AuditEvent.tenant_id == ctx.tenant_id)
+    rows = query.order_by(AuditEvent.created_at.desc()).limit(safe).all()
+
+    tenant_ids = {r.tenant_id for r in rows if r.tenant_id}
+    actor_ids = {r.actor_id for r in rows if r.actor_id}
+    tenant_names: dict[UUID, str] = {}
+    if tenant_ids:
+        for t in db.query(Tenant).filter(Tenant.id.in_(tenant_ids)).all():
+            tenant_names[t.id] = t.nombre
+    actor_emails: dict[UUID, str] = {}
+    if actor_ids:
+        for u in db.query(User).filter(User.id.in_(actor_ids)).all():
+            actor_emails[u.id] = u.email
+
     return [
         AdminAuditEventRead(
             id=r.id,
             action=r.action,
             actor_id=r.actor_id,
+            actor_email=actor_emails.get(r.actor_id) if r.actor_id else None,
+            tenant_id=r.tenant_id,
+            tenant_nombre=tenant_names.get(r.tenant_id) if r.tenant_id else None,
             resource_type=r.resource_type,
             resource_id=r.resource_id,
             ip_address=r.ip_address,

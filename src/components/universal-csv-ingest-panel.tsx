@@ -18,8 +18,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { resolveIngestApiUrl } from '@/lib/api-base';
-import { authHeaders } from '@/lib/auth-storage';
+import { postIngestMultipart } from '@/lib/ingest-upload';
 import {
   CORE_FIELD_KEYS,
   OPTIONAL_FIELD_KEYS,
@@ -44,6 +43,7 @@ import {
   getFieldDef,
 } from '@/lib/universal-csv-field-catalog';
 import { SEGUIMIENTO_FIELD_BRIDGE } from '@/lib/csv-field-bridge';
+import { appendAssetScopeToFormData, type IngestAssetScope } from '@/components/ingest-asset-scope-fields';
 
 type IngestResult = {
   source: string;
@@ -57,9 +57,11 @@ type WizardStep = 'upload' | 'map' | 'done';
 
 export function UniversalCsvIngestPanel({
   engagementId,
+  importScope,
   onComplete,
 }: {
   engagementId: string;
+  importScope?: IngestAssetScope;
   onComplete?: (result: IngestResult) => void;
 }) {
   const [step, setStep] = useState<WizardStep>('upload');
@@ -183,13 +185,10 @@ export function UniversalCsvIngestPanel({
     fd.append('file', file);
     fd.append('engagement_id', eg);
     fd.append('column_map', JSON.stringify(mapToApiPayload(fieldMap)));
+    if (importScope) appendAssetScopeToFormData(fd, importScope);
 
     try {
-      const res = await fetch(resolveIngestApiUrl('/api/v1/ingest/universal-csv'), {
-        method: 'POST',
-        headers: authHeaders(),
-        body: fd,
-      });
+      const res = await postIngestMultipart('/api/v1/ingest/universal-csv', fd);
       const data = (await res.json().catch(() => ({}))) as IngestResult & { detail?: unknown };
       if (!res.ok) {
         const detail =

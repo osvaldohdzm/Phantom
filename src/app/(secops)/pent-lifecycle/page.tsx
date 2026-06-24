@@ -37,19 +37,19 @@ export default function PentLifecyclePage() {
       <div className="space-y-4">
         <h1 className="text-3xl font-bold">PENT-Lifecycle</h1>
         <p className="text-muted-foreground">
-          Metodología de pentest y enlace al flujo operativo de Spectre. El wizard de{' '}
-          <strong className="text-foreground font-medium">7 pasos</strong> vive en Reportes Word — no
+          Metodología de pentest y enlace al servicio operativo de Spectre. El wizard de{' '}
+          <strong className="text-foreground font-medium">7 pasos</strong> vive en Servicios — no
           duplicamos esa UI aquí.
         </p>
         <Link href="/reports" className={buttonVariants()}>
-          Abrir flujo de pentest (Reportes Word)
+          Abrir flujo de servicio pentest
         </Link>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Wizard operativo (M10)</CardTitle>
-          <CardDescription>Pasos actuales del flujo pentest infra/red/aplicación</CardDescription>
+          <CardDescription>Pasos del servicio pentest infra/red/aplicación</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {PENTEST_REPORT_FLOW.steps.map((step) => (

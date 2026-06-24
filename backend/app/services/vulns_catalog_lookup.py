@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Optional, TYPE_CHECKING
+from uuid import UUID
 
 if TYPE_CHECKING:
     from app.services.catalog_tool_index import CatalogIngestCache
@@ -15,7 +16,16 @@ from app.models.core import Finding, Severity
 from app.services.catalog_tool_index import (
     CatalogIngestCache,
     lookup_catalog_by_tool_index,
+    normalize_tool_source,
     resolve_finding_tool_identity,
+)
+from app.services.tenant_locale import (
+    DEFAULT_TENANT_LANGUAGE,
+    TenantLanguage,
+    catalog_column,
+    catalog_remediation_columns,
+    catalog_title_columns,
+    tenant_language_for_id,
 )
 from app.services.ingest_common import map_scanner_severity, parse_float_maybe
 from app.services.text_encoding import extract_nessus_plugin_id, fix_text_encoding
@@ -37,7 +47,10 @@ _CATALOG_SELECT = """
                   "CVSSOverallScore3_1",
                   "CVSSVector3_1",
                   "StandardVulnerabilityName",
-                  "NessusPluginId"
+                  "NessusPluginId",
+                  "Description",
+                  "Danger",
+                  "Solution"
 """
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
@@ -234,6 +247,76 @@ def _txt(value: object) -> str:
     return (fix_text_encoding(str(value)) or str(value)).strip()
 
 
+def _usable_locale_field(
+    cat: dict[str, Any],
+    column: str,
+    *,
+    language: TenantLanguage = DEFAULT_TENANT_LANGUAGE,
+) -> Optional[str]:
+    """Campo localizado del catálogo si cumple longitud mínima y no es copia redundante."""
+    min_lens = {
+        catalog_column("es", "description"): 30,
+        catalog_column("es", "threat_general"): 30,
+        catalog_column("es", "threat_internet"): 20,
+        catalog_column("es", "remediation"): 15,
+        catalog_column("es", "remediation_private"): 15,
+        catalog_column("es", "technical_explanation"): 10,
+        catalog_column("es", "detection_method"): 5,
+        catalog_column("en", "description"): 30,
+        catalog_column("en", "threat_general"): 30,
+        catalog_column("en", "remediation"): 15,
+        catalog_column("en", "detection_method"): 5,
+    }
+    min_len = min_lens.get(column, 1)
+    raw = _txt(cat.get(column))
+    if not raw or len(raw) < min_len:
+        return None
+    if language == "es":
+        desc_en = _txt(cat.get("Description"))
+        if column == catalog_column("es", "description") and desc_en and raw.casefold() == desc_en.casefold():
+            return None
+        sol_en = _txt(cat.get("Solution"))
+        if column.startswith("EspPropuesta") and sol_en and raw.casefold() == sol_en.casefold():
+            return None
+        danger_en = _txt(cat.get("Danger"))
+        if column.startswith("EspAmenaza") and danger_en and raw.casefold() == danger_en.casefold():
+            return None
+    return raw[:32000]
+
+
+def _usable_esp_field(cat: dict[str, Any], esp_key: str) -> Optional[str]:
+    return _usable_locale_field(cat, esp_key, language="es")
+
+
+_CATALOG_PROPAGATE_KEYS = (
+    "titulo",
+    "severidad",
+    "descripcion",
+    "amenaza_ampliada",
+    "propuesta_remediacion",
+    "metodo_deteccion",
+    "explicacion_tecnica",
+    "referencias",
+    "catalog_vulns_id",
+    "cve",
+    "cwe",
+    "cvss_score",
+    "cvss_vector",
+)
+
+
+def propagate_catalog_fields(template: dict[str, Any], draft: dict[str, Any]) -> None:
+    """Copia campos de catálogo de un draft representante al resto del mismo plugin."""
+    cid = draft.get("catalog_vulns_id") or template.get("catalog_vulns_id")
+    if cid:
+        draft["catalog_vulns_id"] = cid
+    for key in _CATALOG_PROPAGATE_KEYS:
+        if key == "catalog_vulns_id":
+            continue
+        if not draft.get(key) and template.get(key) is not None:
+            draft[key] = template[key]
+
+
 def build_componente_afectado(host: str, port: str, proto: str) -> str:
     host = (host or "").strip()
     port = (port or "").strip()
@@ -248,33 +331,51 @@ def build_componente_afectado(host: str, port: str, proto: str) -> str:
     return host
 
 
-def _apply_catalog_to_draft(draft: dict[str, Any], cat: dict[str, Any]) -> None:
-
-    titulo = catalog_text(cat, "EspNombreVulnerabilidadUnificado", "StandardVulnerabilityName")
+def _apply_catalog_to_draft(
+    draft: dict[str, Any],
+    cat: dict[str, Any],
+    *,
+    language: TenantLanguage = DEFAULT_TENANT_LANGUAGE,
+) -> None:
+    title_col, title_fallback = catalog_title_columns(language)
+    titulo = catalog_text(cat, title_col, title_fallback)
     if titulo:
         draft["titulo"] = titulo[:500]
 
-    sev = cat.get("EspSeveridadUnificada")
+    sev = cat.get(catalog_column(language, "severity"))
     if sev:
         draft["severidad"] = _map_catalog_severity(str(sev))
 
-    if cat.get("EspDescripcionUnificada"):
-        draft["descripcion"] = _txt(cat["EspDescripcionUnificada"])[:32000]
+    desc = _usable_locale_field(cat, catalog_column(language, "description"), language=language)
+    if desc:
+        draft["descripcion"] = desc
 
-    if cat.get("EspAmenazaUnificadaGeneral"):
-        draft["amenaza_ampliada"] = _txt(cat["EspAmenazaUnificadaGeneral"])[:32000]
+    threat = _usable_locale_field(cat, catalog_column(language, "threat_general"), language=language)
+    if not threat and language == "es":
+        threat = _usable_locale_field(
+            cat, catalog_column(language, "threat_internet"), language=language
+        )
+    if threat:
+        draft["amenaza_ampliada"] = threat
 
-    rem = cat.get("EspPropuestaRemediacionUnificadaEnRedPrivada") or cat.get(
-        "EspPropuestaRemediacionUnificada"
+    rem_private, rem_general = catalog_remediation_columns(language)
+    rem = _usable_locale_field(cat, rem_private, language=language) or _usable_locale_field(
+        cat, rem_general, language=language
     )
     if rem:
-        draft["propuesta_remediacion"] = _txt(rem)[:32000]
+        draft["propuesta_remediacion"] = rem
 
-    if cat.get("EspMetodoDeteccion"):
-        draft["metodo_deteccion"] = _txt(cat["EspMetodoDeteccion"])[:32000]
+    metodo = _usable_locale_field(
+        cat, catalog_column(language, "detection_method"), language=language
+    )
+    if metodo:
+        draft["metodo_deteccion"] = metodo
 
-    if cat.get("EspExplicacionTecnica"):
-        draft["explicacion_tecnica"] = _txt(cat["EspExplicacionTecnica"])[:32000]
+    tecnica = _usable_locale_field(
+        cat, catalog_column(language, "technical_explanation"), language=language
+    )
+    if tecnica and tecnica != desc:
+        draft["explicacion_tecnica"] = tecnica
 
     if cat.get("References"):
         draft["referencias"] = _txt(cat["References"])[:32000]
@@ -306,6 +407,7 @@ def enrich_draft_with_catalog(
     draft: dict[str, Any],
     *,
     cache: Optional["CatalogIngestCache"] = None,
+    language: Optional[TenantLanguage] = None,
 ) -> bool:
     """Rellena campos del hallazgo desde catálogo por índice herramienta (tipo origen + id)."""
     source = str(draft.get("tool_source") or "Nessus").strip()
@@ -323,20 +425,76 @@ def enrich_draft_with_catalog(
     if not cat:
         return False
 
-    _apply_catalog_to_draft(draft, cat)
+    lang = language
+    if lang is None:
+        tenant_raw = draft.get("tenant_id")
+        if tenant_raw:
+            try:
+                lang = tenant_language_for_id(db, UUID(str(tenant_raw)))
+            except (TypeError, ValueError):
+                lang = DEFAULT_TENANT_LANGUAGE
+        else:
+            lang = DEFAULT_TENANT_LANGUAGE
+
+    _apply_catalog_to_draft(draft, cat, language=lang)
     return True
 
 
 def enrich_drafts_with_catalog(
     db: Session,
     drafts: list[dict[str, Any]],
+    *,
+    tenant_id: Optional[UUID] = None,
 ) -> int:
-    """Enriquece un lote de drafts con una sola cache de catálogo."""
+    """Enriquece drafts por Plugin ID único y propaga a filas duplicadas."""
+    if not drafts:
+        return 0
+    lang = tenant_language_for_id(db, tenant_id) if tenant_id else DEFAULT_TENANT_LANGUAGE
+    if tenant_id:
+        tid = str(tenant_id)
+        for draft in drafts:
+            draft.setdefault("tenant_id", tid)
     cache = CatalogIngestCache(db)
-    hits = 0
+    by_source: dict[str, set[str]] = {}
     for draft in drafts:
-        if enrich_draft_with_catalog(db, draft, cache=cache):
+        source = str(draft.get("tool_source") or "Nessus").strip()
+        original_id = str(
+            draft.get("tool_vuln_id") or draft.get("nessus_plugin_id") or ""
+        ).strip()
+        if original_id:
+            by_source.setdefault(source, set()).add(original_id)
+    for source, ids in by_source.items():
+        cache.preload_catalog_batch(source, sorted(ids))
+
+    representatives: dict[tuple[str, str], dict[str, Any]] = {}
+    for draft in drafts:
+        source = str(draft.get("tool_source") or "Nessus").strip()
+        original_id = str(
+            draft.get("tool_vuln_id") or draft.get("nessus_plugin_id") or ""
+        ).strip()
+        if not original_id:
+            continue
+        key = (source, original_id)
+        if key not in representatives:
+            representatives[key] = draft
+
+    hits = 0
+    templates: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, rep in representatives.items():
+        if enrich_draft_with_catalog(db, rep, cache=cache, language=lang):
             hits += 1
+        templates[key] = rep
+
+    for draft in drafts:
+        source = str(draft.get("tool_source") or "Nessus").strip()
+        original_id = str(
+            draft.get("tool_vuln_id") or draft.get("nessus_plugin_id") or ""
+        ).strip()
+        if not original_id:
+            continue
+        template = templates.get((source, original_id))
+        if template and template is not draft:
+            propagate_catalog_fields(template, draft)
     return hits
 
 

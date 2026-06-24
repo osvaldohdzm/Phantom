@@ -20,6 +20,7 @@ from app.services.vulns_catalog_lookup import (
     _extract_lookup_tokens,
     lookup_catalog_by_id,
     lookup_catalog_by_token,
+    propagate_catalog_fields,
 )
 
 _SEVERITY_ES: dict[str, str] = {
@@ -103,13 +104,19 @@ def draft_to_catalog_payload(draft: dict[str, Any]) -> dict[str, Optional[str]]:
     amenaza = _txt(draft.get("amenaza_ampliada"))
     tecnica = _txt(draft.get("explicacion_tecnica"))
 
+    ctx = draft.get("import_context")
+    synopsis_en = None
+    if isinstance(ctx, dict):
+        synopsis_en = _txt(ctx.get("synopsis"), 4000)
+
     payload: dict[str, Optional[str]] = {
         "StandardVulnerabilityName": titulo,
         "Vulnerability": titulo,
         "Severity": sev_en,
         "SourceDetection": _SOURCE_LABELS.get(src, src.title() or "Manual"),
+        # Inglés (fuente Nessus / scanners) — no copiar a Esp*
         "Description": descripcion,
-        "Danger": amenaza,
+        "Danger": amenaza or synopsis_en,
         "Solution": remediacion,
         "NessusPluginId": str(plugin_id).strip() if plugin_id else None,
         "CVE": _txt(draft.get("cve"), 64),
@@ -117,14 +124,15 @@ def draft_to_catalog_payload(draft: dict[str, Any]) -> dict[str, Optional[str]]:
         "CVSSOverallScore3_1": (
             str(draft["cvss_score"]) if draft.get("cvss_score") is not None else None
         ),
-        "EspNombreVulnerabilidadUnificado": titulo,
+        # Español informe: solo severidad y método si ya vienen en español del catálogo
+        "EspNombreVulnerabilidadUnificado": None,
         "EspSeveridadUnificada": sev_es,
-        "EspDescripcionUnificada": descripcion,
-        "EspAmenazaUnificadaGeneral": amenaza,
-        "EspPropuestaRemediacionUnificada": remediacion,
-        "EspPropuestaRemediacionUnificadaEnRedPrivada": remediacion,
-        "EspMetodoDeteccion": metodo,
-        "EspExplicacionTecnica": tecnica,
+        "EspDescripcionUnificada": None,
+        "EspAmenazaUnificadaGeneral": None,
+        "EspPropuestaRemediacionUnificada": None,
+        "EspPropuestaRemediacionUnificadaEnRedPrivada": None,
+        "EspMetodoDeteccion": metodo if metodo and "escaneo" in metodo.lower() else None,
+        "EspExplicacionTecnica": None,
     }
 
     if tool_col and vid and tool_col != "NessusPluginId":
@@ -142,7 +150,13 @@ def _next_catalog_id(db: Session) -> str:
     return str(row["next_id"] if row else "1")
 
 
+_TABLE_COLUMNS_CACHE: Optional[set[str]] = None
+
+
 def _table_columns(db: Session) -> set[str]:
+    global _TABLE_COLUMNS_CACHE
+    if _TABLE_COLUMNS_CACHE is not None:
+        return _TABLE_COLUMNS_CACHE
     rows = db.execute(
         text(
             """
@@ -152,10 +166,35 @@ def _table_columns(db: Session) -> set[str]:
             """
         )
     ).mappings().all()
-    return {str(r["column_name"]) for r in rows}
+    _TABLE_COLUMNS_CACHE = {str(r["column_name"]) for r in rows}
+    return _TABLE_COLUMNS_CACHE
 
 
-def insert_catalog_from_draft(db: Session, draft: dict[str, Any]) -> dict[str, Any]:
+class CatalogIdAllocator:
+    """Asigna IDs de catálogo sin MAX() por cada inserción."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._next: Optional[int] = None
+
+    def allocate(self) -> str:
+        if self._next is None:
+            row = self.db.execute(
+                text('SELECT COALESCE(MAX("Id"::int), 0) + 1 AS next_id FROM core.vulns_catalog')
+            ).mappings().first()
+            self._next = int(row["next_id"] if row else 1)
+        value = str(self._next)
+        self._next += 1
+        return value
+
+
+def insert_catalog_from_draft(
+    db: Session,
+    draft: dict[str, Any],
+    *,
+    commit: bool = False,
+    allocator: Optional[CatalogIdAllocator] = None,
+) -> dict[str, Any]:
     payload = draft_to_catalog_payload(draft)
     table_cols = _table_columns(db)
     entries = {
@@ -163,7 +202,7 @@ def insert_catalog_from_draft(db: Session, draft: dict[str, Any]) -> dict[str, A
         for col, val in payload.items()
         if col in table_cols and val is not None and str(val).strip()
     }
-    new_id = _next_catalog_id(db)
+    new_id = allocator.allocate() if allocator is not None else _next_catalog_id(db)
     cols = ['"Id"'] + [f'"{c}"' for c in entries]
     values = [new_id] + [fix_text_encoding(str(v)) for v in entries.values()]
     placeholders = ", ".join(f":p{i}" for i in range(len(values)))
@@ -186,7 +225,8 @@ def insert_catalog_from_draft(db: Session, draft: dict[str, Any]) -> dict[str, A
         ),
         params,
     ).mappings().first()
-    db.commit()
+    if commit:
+        db.commit()
     return dict(row) if row else {"Id": new_id, **entries}
 
 
@@ -194,6 +234,8 @@ def merge_draft_into_catalog(
     db: Session,
     cat: dict[str, Any],
     draft: dict[str, Any],
+    *,
+    commit: bool = False,
 ) -> bool:
     """Rellena columnas vacías del catálogo con datos del escáner."""
     payload = draft_to_catalog_payload(draft)
@@ -226,7 +268,8 @@ def merge_draft_into_catalog(
         ),
         {**updates, "cid": cid},
     )
-    db.commit()
+    if commit:
+        db.commit()
     cat.update(updates)
     return True
 
@@ -249,10 +292,14 @@ def ensure_draft_catalog(
     cache: CatalogEnsureCache,
     *,
     create_if_missing: bool = True,
+    commit: bool = False,
+    allocator: Optional[CatalogIdAllocator] = None,
+    resolve_tokens: bool = True,
 ) -> str:
     """
     Vincula draft con catálogo operativo.
     Retorna: linked | created | merged | skipped
+    `resolve_tokens=False` omite la búsqueda ILIKE por tokens (modo rápido masivo).
     """
     if draft.get("catalog_vulns_id"):
         return "linked"
@@ -263,11 +310,11 @@ def ensure_draft_catalog(
     if vid:
         cat = cache.resolve(src, vid)
 
-    if not cat:
+    if not cat and resolve_tokens:
         cat = _resolve_by_tokens(db, draft)
 
     if cat:
-        merged = merge_draft_into_catalog(db, cat, draft)
+        merged = merge_draft_into_catalog(db, cat, draft, commit=commit)
         _apply_catalog_to_draft(draft, cat)
         draft["catalog_vulns_id"] = cat.get("Id")
         if vid:
@@ -280,7 +327,7 @@ def ensure_draft_catalog(
     if not vid and len(str(draft.get("titulo") or "").strip()) < 12:
         return "skipped"
 
-    row = insert_catalog_from_draft(db, draft)
+    row = insert_catalog_from_draft(db, draft, commit=False, allocator=allocator)
     _apply_catalog_to_draft(draft, row)
     draft["catalog_vulns_id"] = row.get("Id")
     if vid:
@@ -288,22 +335,89 @@ def ensure_draft_catalog(
     return "created"
 
 
-def ensure_drafts_catalog(db: Session, drafts: list[dict[str, Any]]) -> dict[str, int]:
-    """Asegura catálogo para todos los drafts (crear o enlazar + merge)."""
+def ensure_drafts_catalog(
+    db: Session,
+    drafts: list[dict[str, Any]],
+    *,
+    create_if_missing: bool = True,
+    fast_mode: bool = False,
+) -> dict[str, int]:
+    """Asegura catálogo por plugin único y propaga vínculo al resto de filas.
+
+    `fast_mode=True` (lotes grandes):
+      - no relee el catálogo por cada fila ya vinculada (evita N consultas SQL),
+      - omite la búsqueda ILIKE por tokens,
+      - no fusiona datos del escáner en el catálogo fila por fila.
+    """
+    if not drafts:
+        return {"linked": 0, "created": 0, "merged": 0, "skipped": 0, "already": 0}
     cache = CatalogEnsureCache(db)
+    allocator = CatalogIdAllocator(db)
     stats = {"linked": 0, "created": 0, "merged": 0, "skipped": 0, "already": 0}
+    by_tool: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    preload_by_source: dict[str, set[str]] = {}
+    pending_existing: list[dict[str, Any]] = []
+    pending_unindexed: list[dict[str, Any]] = []
 
     for draft in drafts:
-        existing_id = draft.get("catalog_vulns_id")
-        if existing_id:
-            cat = lookup_catalog_by_id(db, str(existing_id))
-            if cat:
-                if merge_draft_into_catalog(db, cat, draft):
-                    stats["merged"] += 1
-                _apply_catalog_to_draft(draft, cat)
-            stats["already"] += 1
+        if draft.get("catalog_vulns_id"):
+            pending_existing.append(draft)
             continue
-        result = ensure_draft_catalog(db, draft, cache)
+        src, vid = draft_tool_identity(draft)
+        if not vid:
+            pending_unindexed.append(draft)
+            continue
+        key = (src, vid)
+        by_tool.setdefault(key, []).append(draft)
+        preload_by_source.setdefault(src, set()).add(vid)
+
+    for source, oids in preload_by_source.items():
+        cache.lookup.preload_catalog_batch(source, list(oids))
+
+    if fast_mode:
+        # Ya enriquecidos por enrich_drafts_with_catalog: no releer ni fusionar.
+        stats["already"] += len(pending_existing)
+    else:
+        # Deduplicar por Id de catálogo: 1 lookup + 1 merge por Id único, no por fila.
+        by_cat: dict[str, list[dict[str, Any]]] = {}
+        for draft in pending_existing:
+            by_cat.setdefault(str(draft["catalog_vulns_id"]), []).append(draft)
+        for cid, group in by_cat.items():
+            cat = lookup_catalog_by_id(db, cid)
+            if cat:
+                if merge_draft_into_catalog(db, cat, group[0], commit=False):
+                    stats["merged"] += 1
+                for draft in group:
+                    _apply_catalog_to_draft(draft, cat)
+            stats["already"] += len(group)
+
+    for group in by_tool.values():
+        rep = group[0]
+        result = ensure_draft_catalog(
+            db,
+            rep,
+            cache,
+            create_if_missing=create_if_missing,
+            commit=False,
+            allocator=allocator,
+            resolve_tokens=not fast_mode,
+        )
+        stats[result] = stats.get(result, 0) + 1
+        for draft in group[1:]:
+            propagate_catalog_fields(rep, draft)
+            stats["linked"] += 1
+
+    for draft in pending_unindexed:
+        result = ensure_draft_catalog(
+            db,
+            draft,
+            cache,
+            create_if_missing=create_if_missing,
+            commit=False,
+            allocator=allocator,
+            resolve_tokens=not fast_mode,
+        )
         stats[result] = stats.get(result, 0) + 1
 
+    db.commit()
     return stats

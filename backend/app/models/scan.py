@@ -26,7 +26,7 @@ class ScanRun(Base):
     id: Mapped[uuid.UUID] = mapped_column(PortableUUID, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PortableUUID, ForeignKey("tenants.id"), nullable=False)
     engagement_id: Mapped[uuid.UUID] = mapped_column(
-        PortableUUID, ForeignKey("engagements.id"), nullable=False
+        PortableUUID, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False
     )
     tool_source: Mapped[str] = mapped_column(String(64), nullable=False, default="Nessus")
     label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -83,7 +83,7 @@ class AssetScanTarget(Base):
     id: Mapped[uuid.UUID] = mapped_column(PortableUUID, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PortableUUID, ForeignKey("tenants.id"), nullable=False)
     engagement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PortableUUID, ForeignKey("engagements.id"), nullable=True
+        PortableUUID, ForeignKey("engagements.id", ondelete="SET NULL"), nullable=True
     )
     target_key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(512), nullable=False)

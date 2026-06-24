@@ -3,22 +3,23 @@ import {
   Layers,
   LayoutDashboard,
   Pencil,
-  RefreshCw,
+  ScanSearch,
   Table2,
   FolderKanban,
 } from 'lucide-react';
 import type { ReportFlow } from '@/lib/reports-flows/types';
 
-/** Flujo para tenants AV / infraestructura recurrente (Nessus trimestral, etc.). */
+/** Servicio AV / infraestructura recurrente (Nessus trimestral, etc.). */
 export const AV_INFRA_REPORT_FLOW: ReportFlow = {
   id: 'av-infra',
   label: 'AV Infraestructura',
-  subtitle: 'Re-escaneos Nessus — actualiza estados sin duplicar hallazgos.',
+  subtitle:
+    'Servicio de análisis de vulnerabilidades en infraestructura — primer escaneo o re-escaneos Nessus periódicos.',
   serviceTypes: ['AV Infraestructura'],
   ingest: {
-    cardTitle: 'Re-escaneo Nessus (modo comparación)',
+    cardTitle: 'Ingesta Nessus (CSV)',
     cardDescription:
-      'CSV Nessus en modo diff (atendido / remediado / reaparecido). Tras importar, abre el mapa en Repositorio → Mapa.',
+      'Primer escaneo: carga inicial al repositorio. Re-escaneo: compara con hallazgos existentes (atendido / remediado / reaparecido). Hasta 150 MB por archivo.',
     optionalBadge: false,
     onCompleteGotoStep: 4,
   },
@@ -34,10 +35,10 @@ export const AV_INFRA_REPORT_FLOW: ReportFlow = {
     {
       n: 2,
       key: 'import',
-      label: 'Re-escaneo',
-      shortLabel: 'Re-scan',
-      description: 'CSV Nessus en modo diff (atendido / remediado / reaparecido).',
-      icon: RefreshCw,
+      label: 'Ingesta Nessus',
+      shortLabel: 'Ingesta',
+      description: 'CSV Nessus — primer escaneo o re-escaneo con comparación al repositorio.',
+      icon: ScanSearch,
     },
     {
       n: 3,
