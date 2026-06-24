@@ -29,17 +29,20 @@ Eso regenera el certificado con la IP del host, abre el puerto en `ufw` si aplic
 
 **Primer inicio de sesión:** el sistema exige cambiar la contraseña con una política robusta (mín. 12 caracteres, mayúsculas, números y símbolos). No podrás usar la app hasta completar este paso.
 
-Cambiar credenciales desde servidor: `./change.sh`
+Cambiar credenciales desde servidor: `./phantom change`
 
 ### Comandos habituales
 
 ```bash
-cp .env.example .env          # si no existe
-make up                       # levantar stack
-make logs                     # ver logs
-make down                     # parar
-docker compose ps             # estado
+./phantom install              # preparar .env + build
+./phantom start                # levantar stack Docker
+./phantom update               # git pull + despliegue
+./phantom logs                 # ver logs
+./phantom stop                 # parar
+./phantom health               # estado web + API
 ```
+
+Ver todos: `./phantom help` — scripts en `ops/`.
 
 Compatible con **Podman Compose** (`podman compose up -d --build`).
 
@@ -63,10 +66,10 @@ brew install mkcert && mkcert -install   # macOS
 ./scripts/generate-certs.sh
 
 # 5. Arrancar
-./start-dev.sh
+./phantom dev
 ```
 
-Producción nativa (sin Docker): `./start-prod.sh`
+Producción nativa (sin Docker): `./phantom prod`
 
 ## Estructura
 
@@ -75,7 +78,8 @@ Producción nativa (sin Docker): `./start-prod.sh`
 | `src/` | Frontend Next.js (App Router) |
 | `backend/app/` | API FastAPI |
 | `docker-compose.yml` | PostgreSQL + Redis + API + Web |
-| `scripts/install-ubuntu.sh` | Instalación automatizada en Ubuntu |
+| `ops/` | Scripts operativos (`./phantom …`) |
+| `scripts/` | Infra Docker, certs, instalación Ubuntu |
 | `docs/` | Manual técnico y API |
 
 ## Variables de entorno

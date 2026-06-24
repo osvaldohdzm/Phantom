@@ -104,7 +104,7 @@ else
 fi
 echo "   Usuario: phantom  |  Contraseña: phantom (cambio obligatorio en primer login)"
 echo ""
-echo "   Cambiar credenciales: cd $ROOT && ./change.sh"
+echo "   Cambiar credenciales: cd $ROOT && ./phantom change"
 echo "   Logs: docker compose logs -f"
 echo "   Parar: docker compose down"
 echo "============================================================"

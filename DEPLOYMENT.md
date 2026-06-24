@@ -57,7 +57,20 @@ Con stack Docker en marcha:
 docker compose exec api python -m scripts.change_credentials
 ```
 
-O en instalación nativa: `./change.sh`
+O en instalación nativa: `./phantom change`
+
+### Catálogo operativo de vulnerabilidades
+
+El catálogo (`core.vulns_catalog`) puede versionarse en el repo bajo `backend/catalog/`:
+
+| Paso | Comando |
+|------|---------|
+| Exportar desde tu Phantom (con datos) | `./phantom catalog-export v2026.06.1` |
+| Commit + push | `git add backend/catalog/ && git commit && git push` |
+| Cliente actualiza BD tras pull | `./phantom update` (importa catálogo si hay revisión nueva) |
+| Forzar reimportación | `PHANTOM_CATALOG_FORCE_IMPORT=1 docker compose up -d --force-recreate api` |
+
+Detalle: `backend/catalog/README.md`. Si el CSV comprimido supera ~50 MB, usa Git LFS.
 
 ---
 
@@ -89,8 +102,8 @@ CERT_EXTRA_HOSTS="100.x.x.x 192.168.0.10" ./scripts/generate-certs.sh
 
 | Modo | Comando | Notas |
 |------|---------|-------|
-| Desarrollo | `./start-dev.sh` | Hot-reload, HTTPS :3000 |
-| Producción | `./start-prod.sh` | Build Next + workers Uvicorn |
+| Desarrollo | `./phantom dev` | Hot-reload, HTTPS :3000 |
+| Producción | `./phantom prod` | Build Next + workers Uvicorn |
 
 ---
 
@@ -115,7 +128,7 @@ O termina TLS en el proxy y reenvía HTTP a un listener HTTP (requiere ajustar `
 ## 4. Seguridad
 
 1. Tras el primer login con `phantom` / `phantom`, la UI obliga a definir una contraseña robusta.
-2. Cambia credenciales desde servidor cuando quieras: `./change.sh` (misma política).
+2. Cambia credenciales desde servidor cuando quieras: `./phantom change` (misma política).
 3. Usa `JWT_SECRET` y `POSTGRES_PASSWORD` fuertes (`.env` nunca en git).
 3. Restringe el puerto 3000 con firewall (`ufw allow from 10.0.0.0/8 to any port 3000`).
 4. `AUTH_REQUIRED=true` en producción.
@@ -149,6 +162,8 @@ Plantillas Word se suben desde la UI o se restauran en `backend/storage/template
 | `PR_CONNECT_RESET` en `localhost:8080` | Phantom usa **puerto 3000**, no 8080. Túnel SSH: `ssh -L 3000:127.0.0.1:3000 user@servidor` → `https://localhost:3000`. |
 | Login muestra **Internal Server Error** | El proxy API apuntaba a `127.0.0.1:8000` dentro del contenedor web. Actualiza (`git pull`) y `docker compose up -d --build web`. Prueba: `curl -k https://127.0.0.1:3000/api/secops-health` y `docker compose logs api --tail 40` (desde `~/Phantom`). |
 | **NetworkError** al subir CSV / importar escaneos | El navegador intentaba `http://:8000` (puerto no publicado + mixed content HTTPS→HTTP). Actualiza y reconstruye web: `git pull && docker compose up -d --build web`. Las subidas van por `https://…:3000/api/secops/…`. |
+| Postgres `current transaction is aborted` durante ingesta Nessus | El catálogo (`core.vulns_catalog`) no tenía alguna columna del SELECT (p. ej. `SourceDetection`) y la transacción quedó abortada. Actualiza API (`git pull && docker compose up -d --build api`) y reintenta la ingesta. |
+| Mismo error con **Nmap XML** (`NmapScriptName`) | Igual: actualiza API. El arranque crea la tabla/columnas del catálogo si faltan; sin catálogo cargado la ingesta Nmap sigue pero sin enriquecer desde CFR. |
 | Certificado no válido / advertencia TLS | Normal con cert autofirmado: **Avanzado → aceptar riesgo**. Añade la IP en `.env`: `PHANTOM_TLS_SANS=localhost,127.0.0.1,TU_IP` y `docker compose up -d --force-recreate web`. |
 | `Auth seed: UniqueViolation` | Actualiza a última versión; seed es idempotente |
 | Puerto 3000 ocupado | `PHANTOM_HTTP_PORT=3443` en `.env` |

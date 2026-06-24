@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.models.core import Finding
 from app.services.text_encoding import extract_nessus_plugin_id
+from app.services.vulns_catalog_schema import (
+    catalog_column_available,
+    rollback_db_on_error,
+    vulns_catalog_lookup_select_clause,
+    vulns_catalog_table_columns,
+)
 
 # Tipo de origen → columna en core.vulns_catalog (Tbl_Catalogo_vulnerabilidades)
 TOOL_SOURCE_CATALOG_COLUMNS: dict[str, str] = {
@@ -29,29 +35,9 @@ TOOL_SOURCE_CATALOG_COLUMNS: dict[str, str] = {
     "manual": "StandardVulnerabilityName",
 }
 
-_CATALOG_SELECT_COLUMNS = """
-  "Id",
-  "EspNombreVulnerabilidadUnificado",
-  "EspSeveridadUnificada",
-  "EspDescripcionUnificada",
-  "EspAmenazaUnificadaGeneral",
-  "EspAmenazaUnificadaDesdeInternet",
-  "EspPropuestaRemediacionUnificadaEnRedPrivada",
-  "EspPropuestaRemediacionUnificada",
-  "EspMetodoDeteccion",
-  "EspExplicacionTecnica",
-  "References",
-  "CVE",
-  "CWE",
-  "CVSSOverallScore3_1",
-  "CVSSVector3_1",
-  "StandardVulnerabilityName",
-  "NessusPluginId",
-  "SourceDetection",
-  "Description",
-  "Danger",
-  "Solution"
-"""
+
+def _catalog_select(db: Session) -> str:
+    return vulns_catalog_lookup_select_clause(db)
 
 _PLUGIN_IN_TEXT_RE = re.compile(r"plugin(?:\s+ID)?[:\s]+(\d+)", re.IGNORECASE)
 _NMAP_SCRIPT_RE = re.compile(r"\[Nmap[^\]]*\]\s*(.+)", re.IGNORECASE)
@@ -158,6 +144,14 @@ class CatalogIngestCache:
             if (src, oid) not in self._hits:
                 pending.append(oid)
 
+        if not pending:
+            return
+
+        if not catalog_column_available(self.db, col):
+            for oid in pending:
+                self._hits[(src, oid)] = None
+            return
+
         for offset in range(0, len(pending), batch_size):
             batch = pending[offset : offset + batch_size]
             if not batch:
@@ -166,7 +160,7 @@ class CatalogIngestCache:
                 rows = self.db.execute(
                     text(
                         f"""
-                        SELECT {_CATALOG_SELECT_COLUMNS}
+                        SELECT {_catalog_select(self.db)}
                         FROM core.vulns_catalog
                         WHERE TRIM("{col}"::text) = ANY(:oids)
                         """
@@ -181,6 +175,7 @@ class CatalogIngestCache:
                 for oid in batch:
                     self._hits[(src, oid)] = found.get(oid)
             except Exception:
+                rollback_db_on_error(self.db)
                 for oid in batch:
                     key = (src, oid)
                     if key not in self._hits:
@@ -203,11 +198,15 @@ def lookup_catalog_by_tool_index(
         return None
     if col not in TOOL_SOURCE_CATALOG_COLUMNS.values():
         return None
+    if not catalog_column_available(db, col):
+        return None
+    if not vulns_catalog_table_columns(db):
+        return None
     try:
         row = db.execute(
             text(
                 f"""
-                SELECT {_CATALOG_SELECT_COLUMNS}
+                SELECT {_catalog_select(db)}
                 FROM core.vulns_catalog
                 WHERE TRIM("{col}"::text) = :oid
                 LIMIT 1
@@ -217,6 +216,7 @@ def lookup_catalog_by_tool_index(
         ).mappings().first()
         return dict(row) if row else None
     except Exception:
+        rollback_db_on_error(db)
         return None
 
 

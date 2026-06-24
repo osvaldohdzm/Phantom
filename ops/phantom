@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Phantom — CLI operativo (punto de entrada único).
+# Uso: ./phantom <comando> [opciones]
+#      ./phantom help
+set -euo pipefail
+
+OPS_DIR="$(cd "$(dirname "$0")" && pwd)"
+PHANTOM_ROOT="$(cd "$OPS_DIR/.." && pwd)"
+export PHANTOM_ROOT
+
+CMD="${1:-help}"
+shift || true
+
+run() {
+  local script="$1"
+  shift || true
+  exec "$OPS_DIR/$script" "$@"
+}
+
+case "$CMD" in
+  help|-h|--help|"")
+    cat <<EOF
+Phantom — operaciones
+
+  Docker (servidor)
+    install          Preparar .env y build imágenes
+    install --system Instalar Docker en Ubuntu (sudo)
+    start            Levantar stack Docker
+    stop             Detener stack (conserva datos)
+    restart [svc]    Reiniciar contenedores
+    update           git pull + build + recreate (alias: deploy)
+    build            Solo construir imágenes
+    logs [svc]       Ver logs
+    health           Comprobar web y API
+    backup [dir]     Respaldo BD + storage
+    verify-env       Validar .env
+    clean            Limpiar artefactos locales
+    uninstall        Desinstalar (ver --help)
+
+  Base de datos / catálogo
+    change           Cambiar credenciales admin
+    catalog-export   Exportar catálogo → backend/catalog/
+    catalog-import   Importar catálogo empaquetado
+
+  Desarrollo nativo (sin Docker app)
+    dev              HTTPS + hot-reload
+    prod             Producción nativa
+    native           Arranque nativo (vía PHANTOM_MODE)
+    debug            Dev con diagnóstico de puertos
+
+  Otros
+    fix-docker       Cert TLS + firewall (scripts/fix-docker-access.sh)
+
+Ejemplos:
+  ./phantom install && ./phantom start
+  ./phantom update
+  ./phantom catalog-export v2026.06.1
+  ./phantom backup /var/backups
+
+Scripts individuales en: ops/
+EOF
+    ;;
+  install) run install.sh "$@" ;;
+  uninstall) run uninstall.sh "$@" ;;
+  start) run start.sh "$@" ;;
+  stop) run stop.sh "$@" ;;
+  restart) run restart.sh "$@" ;;
+  update|deploy) run update.sh "$@" ;;
+  build) run build.sh "$@" ;;
+  logs) run logs.sh "$@" ;;
+  health|healthcheck) run healthcheck.sh "$@" ;;
+  backup|db-backup) run backup.sh "$@" ;;
+  verify-env|env|verify) run verify-env.sh "$@" ;;
+  clean) run clean.sh "$@" ;;
+  change|change-password|credentials) run change.sh "$@" ;;
+  catalog-export) run catalog-export.sh "$@" ;;
+  catalog-import|db-catalog) run catalog-import.sh "$@" ;;
+  dev|start-dev) run dev.sh "$@" ;;
+  prod|start-prod) run prod.sh "$@" ;;
+  native) run native.sh "$@" ;;
+  debug) run debug.sh "$@" ;;
+  fix-docker) exec "$PHANTOM_ROOT/scripts/fix-docker-access.sh" "$@" ;;
+  *)
+    echo "[!] Comando desconocido: $CMD" >&2
+    echo "    Usa: ./phantom help" >&2
+    exit 1
+    ;;
+esac

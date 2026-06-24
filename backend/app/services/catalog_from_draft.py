@@ -22,6 +22,7 @@ from app.services.vulns_catalog_lookup import (
     lookup_catalog_by_token,
     propagate_catalog_fields,
 )
+from app.services.vulns_catalog_schema import vulns_catalog_table_columns
 
 _SEVERITY_ES: dict[str, str] = {
     "Critical": "Crítica",
@@ -150,24 +151,8 @@ def _next_catalog_id(db: Session) -> str:
     return str(row["next_id"] if row else "1")
 
 
-_TABLE_COLUMNS_CACHE: Optional[set[str]] = None
-
-
 def _table_columns(db: Session) -> set[str]:
-    global _TABLE_COLUMNS_CACHE
-    if _TABLE_COLUMNS_CACHE is not None:
-        return _TABLE_COLUMNS_CACHE
-    rows = db.execute(
-        text(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'core' AND table_name = 'vulns_catalog'
-            """
-        )
-    ).mappings().all()
-    _TABLE_COLUMNS_CACHE = {str(r["column_name"]) for r in rows}
-    return _TABLE_COLUMNS_CACHE
+    return vulns_catalog_table_columns(db)
 
 
 class CatalogIdAllocator:

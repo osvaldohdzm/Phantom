@@ -1,0 +1,10 @@
+{
+  "version": "0.0.0",
+  "revision": 0,
+  "filename": "",
+  "encoding": "utf-8",
+  "row_count": 0,
+  "sha256": "",
+  "published_at": null,
+  "notes": "Sin catálogo empaquetado. Exporta desde tu BD con ./catalog-export.sh y haz commit de operational-catalog.csv.gz + este manifest."
+}

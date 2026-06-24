@@ -29,29 +29,11 @@ from app.services.tenant_locale import (
 )
 from app.services.ingest_common import map_scanner_severity, parse_float_maybe
 from app.services.text_encoding import extract_nessus_plugin_id, fix_text_encoding
-
-_CATALOG_SELECT = """
-                  "Id",
-                  "EspNombreVulnerabilidadUnificado",
-                  "EspSeveridadUnificada",
-                  "EspDescripcionUnificada",
-                  "EspAmenazaUnificadaGeneral",
-                  "EspAmenazaUnificadaDesdeInternet",
-                  "EspPropuestaRemediacionUnificadaEnRedPrivada",
-                  "EspPropuestaRemediacionUnificada",
-                  "EspMetodoDeteccion",
-                  "EspExplicacionTecnica",
-                  "References",
-                  "CVE",
-                  "CWE",
-                  "CVSSOverallScore3_1",
-                  "CVSSVector3_1",
-                  "StandardVulnerabilityName",
-                  "NessusPluginId",
-                  "Description",
-                  "Danger",
-                  "Solution"
-"""
+from app.services.vulns_catalog_schema import (
+    rollback_db_on_error,
+    vulns_catalog_lookup_select_clause,
+    vulns_catalog_table_columns,
+)
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
 _ADVISORY_RE = re.compile(r"\(([a-z]{2,}-[a-z0-9][-a-z0-9]*)\)", re.IGNORECASE)
@@ -87,11 +69,13 @@ def lookup_catalog_by_id(db: Session, catalog_id: str) -> Optional[dict[str, Any
     cid = (catalog_id or "").strip()
     if not cid:
         return None
+    if not vulns_catalog_table_columns(db):
+        return None
     try:
         row = db.execute(
             text(
                 f"""
-                SELECT {_CATALOG_SELECT}
+                SELECT {vulns_catalog_lookup_select_clause(db)}
                 FROM core.vulns_catalog
                 WHERE TRIM("Id"::text) = :cid
                 LIMIT 1
@@ -101,6 +85,7 @@ def lookup_catalog_by_id(db: Session, catalog_id: str) -> Optional[dict[str, Any
         ).mappings().first()
         return _row_to_dict(row)
     except Exception:
+        rollback_db_on_error(db)
         return None
 
 
@@ -109,24 +94,49 @@ def lookup_catalog_by_token(db: Session, token: str) -> Optional[dict[str, Any]]
     if len(t) < 4:
         return None
     like = f"%{t}%"
+    cols = vulns_catalog_table_columns(db)
+    if not cols:
+        return None
+    token_filters = [
+        '"StandardVulnerabilityName" ILIKE :like',
+        '"EspNombreVulnerabilidadUnificado" ILIKE :like',
+    ]
+    if "CVE" in cols:
+        token_filters.insert(0, '"CVE" ILIKE :like')
+    if "Vulnerability" in cols:
+        token_filters.append('"Vulnerability" ILIKE :like')
+    if "Description" in cols:
+        token_filters.append('"Description" ILIKE :like')
+    if not token_filters:
+        return None
+    where_sql = " OR ".join(token_filters)
+    order_cases: list[str] = []
+    if "CVE" in cols:
+        order_cases.append('WHEN "CVE" ILIKE :exact THEN 0')
+    if "StandardVulnerabilityName" in cols:
+        order_cases.append(
+            f'WHEN "StandardVulnerabilityName" ILIKE :exact THEN {len(order_cases)}'
+        )
+    if "EspNombreVulnerabilidadUnificado" in cols:
+        order_cases.append(
+            f'WHEN "EspNombreVulnerabilidadUnificado" ILIKE :exact THEN {len(order_cases)}'
+        )
+    order_sql = (
+        "CASE\n                    "
+        + "\n                    ".join(order_cases)
+        + f"\n                    ELSE {len(order_cases)}\n                  END"
+        if order_cases
+        else f"{len(order_cases)}"
+    )
     try:
         row = db.execute(
             text(
                 f"""
-                SELECT {_CATALOG_SELECT}
+                SELECT {vulns_catalog_lookup_select_clause(db)}
                 FROM core.vulns_catalog
-                WHERE "CVE" ILIKE :like
-                   OR "StandardVulnerabilityName" ILIKE :like
-                   OR "EspNombreVulnerabilidadUnificado" ILIKE :like
-                   OR "Vulnerability" ILIKE :like
-                   OR "Description" ILIKE :like
+                WHERE {where_sql}
                 ORDER BY
-                  CASE
-                    WHEN "CVE" ILIKE :exact THEN 0
-                    WHEN "StandardVulnerabilityName" ILIKE :exact THEN 1
-                    WHEN "EspNombreVulnerabilidadUnificado" ILIKE :exact THEN 2
-                    ELSE 3
-                  END,
+                  {order_sql},
                   "Id"::int DESC NULLS LAST
                 LIMIT 1
                 """
@@ -135,6 +145,7 @@ def lookup_catalog_by_token(db: Session, token: str) -> Optional[dict[str, Any]]
         ).mappings().first()
         return _row_to_dict(row)
     except Exception:
+        rollback_db_on_error(db)
         return None
 
 

@@ -368,6 +368,44 @@ def _migrate_user_must_change_password() -> None:
         conn.commit()
 
 
+def _migrate_vulns_catalog_schema() -> None:
+    """Crea core.vulns_catalog + columnas de herramientas (Nmap, Nessus, etc.) si faltan."""
+    db = SessionLocal()
+    try:
+        from app.services.catalog_bundle import ensure_catalog_meta_table, ensure_vulns_catalog_table
+        from app.services.vulns_catalog_schema import invalidate_vulns_catalog_schema_cache
+
+        ensure_vulns_catalog_table(db)
+        ensure_catalog_meta_table(db)
+        invalidate_vulns_catalog_schema_cache()
+    except Exception as exc:
+        print(f"[vulns_catalog schema] {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _migrate_vulns_catalog_columns() -> None:
+    """Columnas inglesas opcionales en core.vulns_catalog (importaciones CSV antiguas)."""
+    _migrate_vulns_catalog_schema()
+    sql = """
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'core' AND table_name = 'vulns_catalog'
+      ) THEN
+        ALTER TABLE core.vulns_catalog ADD COLUMN IF NOT EXISTS "SourceDetection" VARCHAR(128);
+        ALTER TABLE core.vulns_catalog ADD COLUMN IF NOT EXISTS "Severity" VARCHAR(64);
+        ALTER TABLE core.vulns_catalog ADD COLUMN IF NOT EXISTS "Vulnerability" VARCHAR(512);
+      END IF;
+    END $$;
+    """
+    with engine.connect() as conn:
+        conn.execute(text(sql))
+        conn.commit()
+
+
 def run_schema_migrations() -> None:
     if settings.is_sqlite:
         Base.metadata.create_all(bind=engine)
@@ -402,6 +440,7 @@ def run_schema_migrations() -> None:
     _migrate_tenant_branding()
     _migrate_user_preferences()
     _migrate_user_must_change_password()
+    _migrate_vulns_catalog_columns()
     _migrate_audit_events_indexes()
     db = SessionLocal()
     try:
@@ -465,6 +504,12 @@ def run_startup_seeds() -> None:
         seed_auth_data(SessionLocal())
     except Exception as e:
         print(f"Auth seed: {e}")
+    try:
+        from app.services.catalog_bundle import seed_operational_catalog_if_needed
+
+        seed_operational_catalog_if_needed(SessionLocal())
+    except Exception as e:
+        print(f"Catalog seed: {e}")
     try:
         from app.services.user_preferences import backfill_initial_setup_complete
 

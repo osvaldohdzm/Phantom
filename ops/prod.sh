@@ -2,7 +2,8 @@
 # Phantom — production launcher (HTTPS frontend, optimized backend, no hot-reload)
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+PHANTOM_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$PHANTOM_ROOT"
 cd "$ROOT"
 
 # shellcheck disable=SC1091

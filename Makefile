@@ -1,21 +1,24 @@
-.PHONY: help setup up down logs restart build ps shell-api change-credentials install deploy health backup clean verify
+.PHONY: help setup up down logs restart build ps shell-api change-credentials install deploy health backup clean verify phantom
 
 help:
-	@echo "Phantom SecOps — comandos"
-	@echo "  ./install.sh       Preparar .env y build imágenes"
-	@echo "  ./start.sh         Levantar stack Docker"
-	@echo "  ./stop.sh          Detener stack"
-	@echo "  ./restart.sh       Reiniciar servicios"
-	@echo "  ./deploy.sh        git pull + build + recreate"
-	@echo "  ./healthcheck.sh   Comprobar web y API"
-	@echo "  ./logs.sh          Seguir logs"
-	@echo "  ./backup.sh        Respaldo BD + storage"
-	@echo "  ./verify-env.sh    Validar .env"
-	@echo "  ./clean.sh         Limpiar artefactos locales"
-	@echo "  ./debug.sh         Dev nativo + diagnóstico de puertos"
-	@echo "  ./uninstall.sh     Desinstalar (ver --help)"
+	@echo "Phantom SecOps — comandos (ver también: ./phantom help)"
+	@echo "  ./phantom install    Preparar .env y build imágenes"
+	@echo "  ./phantom start      Levantar stack Docker"
+	@echo "  ./phantom stop       Detener stack"
+	@echo "  ./phantom restart    Reiniciar servicios"
+	@echo "  ./phantom update     git pull + build + recreate"
+	@echo "  ./phantom health     Comprobar web y API"
+	@echo "  ./phantom logs       Seguir logs"
+	@echo "  ./phantom backup     Respaldo BD + storage"
+	@echo "  ./phantom verify-env Validar .env"
+	@echo "  ./phantom clean      Limpiar artefactos locales"
+	@echo "  ./phantom debug      Dev nativo + diagnóstico de puertos"
+	@echo "  ./phantom uninstall  Desinstalar (ver --help)"
 	@echo ""
-	@echo "  make up / down     Atajos Docker (equivalente a start/stop)"
+	@echo "  make up / down       Atajos Docker (equivalente a start/stop)"
+
+phantom:
+	@./phantom help
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -44,22 +47,22 @@ ps:
 	docker compose ps
 
 change-credentials:
-	./change.sh
+	./phantom change
 
 install:
-	./install.sh
+	./phantom install
 
 deploy:
-	./deploy.sh
+	./phantom update
 
 health:
-	./healthcheck.sh
+	./phantom health
 
 backup:
-	./backup.sh
+	./phantom backup
 
 clean:
-	./clean.sh
+	./phantom clean
 
 verify:
-	./verify-env.sh
+	./phantom verify-env
