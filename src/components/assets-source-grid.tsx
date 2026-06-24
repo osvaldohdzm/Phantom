@@ -22,6 +22,7 @@ import {
 } from '@/lib/asset-row-utils';
 import { AssetExcelGrid } from '@/components/asset-excel-grid';
 import { bulkUpsertAssets, listAssets } from '@/lib/secops-api';
+import { useUiT } from '@/lib/use-ui-locale';
 
 type Props = {
   sourceType: AssetSourceType;
@@ -39,6 +40,7 @@ function remapRows(rows: AssetGridRow[], columns: AssetGridColumn[]): AssetGridR
 }
 
 export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
+  const { t } = useUiT();
   const baseColumns = useMemo(() => columnsForSource(sourceType), [sourceType]);
   const [columns, setColumns] = useState<AssetGridColumn[]>(() =>
     loadColumnLayout(sourceType, baseColumns)
@@ -75,12 +77,12 @@ export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
       const gridRows = assets.map((a) => assetToGridRow(a, columns));
       setRows(gridRows.length ? gridRows : [emptyGridRow(columns)]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar activos');
+      setError(e instanceof Error ? e.message : t('assetsLoadError'));
       setRows([emptyGridRow(columns)]);
     } finally {
       setLoading(false);
     }
-  }, [columns, engagementId, sourceType]);
+  }, [columns, engagementId, sourceType, t]);
 
   useEffect(() => {
     void load();
@@ -108,17 +110,17 @@ export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
           onClick={() => updateColumns([...columns, createCustomColumn()])}
         >
           <Plus className="size-3.5 mr-1" />
-          Columna extra
+          {t('assetsExtraColumn')}
         </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={() => updateColumns(prependReconPreset(columns))}
-          title="Fuente, Tipo, SubTipo, FQDN, IP, Fecha — ideal para SOCRadar / recon"
+          title="Fuente, Tipo, SubTipo, FQDN, IP, Fecha"
         >
           <Columns3 className="size-3.5 mr-1" />
-          + columnas recon
+          {t('assetsReconColumns')}
         </Button>
       </div>
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}

@@ -131,6 +131,67 @@ const MESSAGES = {
     navExposureReport: 'Network Exposure Live Report',
     navClientPortal: 'Portal cliente',
     navAdministration: 'Administración',
+    // Assets (M2)
+    assetsTitle: 'Activos',
+    assetsSubtitle:
+      'Inventario central o superficies de ataque (M2). Desde escaneos puedes decidir qué objetivos entran al inventario; cada fuente tiene además un grid Excel editable.',
+    assetsSourceCardTitle: 'Fuente de activos',
+    assetsSourceCardDesc:
+      'Inventario manual, objetivos detectados en escaneos, o hojas de recon interno/externo.',
+    assetsTabFromScans: 'Desde escaneos',
+    assetsProjectLabel: 'Proyecto / engagement',
+    assetsNoProject: 'Sin proyecto (inventario global)',
+    assetsProjectRecommended: 'Recomendado: selecciona un proyecto para {source}',
+    assetsScanTargetsCardTitle: 'Objetivos desde escaneos',
+    assetsScanTargetsCardDesc:
+      'Revisa hosts/activos detectados en Nessus, Nmap, etc. Agregar al inventario o pasar (omitir).',
+    assetsGridCardDesc:
+      'Ctrl+V desde Excel · Shift+flechas o arrastrar · Guardar solo filas modificadas',
+    assetsViewGrid: 'Tabla',
+    assetsViewTargetMap: 'Mapa de objetivos',
+    assetsTargetMapCardDesc:
+      'Topología de hosts y puertos abiertos de este inventario — vista de exposición, sin vulnerabilidades.',
+    assetsTargetMapEmpty:
+      'Sin hosts ni puertos en este inventario. Pega filas en la tabla o importa un escaneo.',
+    assetsTargetMapBuilding: 'Generando mapa…',
+    assetsTargetMapStats: '{hosts} host(s) · {ports} puerto(s)',
+    assetSourceInventory: 'Inventario',
+    assetSourceExternalRecon: 'Reconocimiento externo',
+    assetSourceExternalAttackSurface: 'Superficie de ataque externa',
+    assetSourceInternalRecon: 'Reconocimiento interno',
+    assetSourceInternalAttackSurface: 'Superficie de ataque interna',
+    assetsMapRootLabel: 'RED OBJETIVO',
+    assetsMapHosts: 'Hosts',
+    assetsMapPorts: 'Puertos',
+    assetsMapServices: 'Servicios',
+    assetsMapFilterPlaceholder: 'Filtrar…',
+    assetsMapFit: 'Ajustar',
+    assetsMapPhysics: 'Física',
+    assetsMapTogglePorts: 'Puertos',
+    assetsLoadError: 'Error al cargar activos',
+    assetsExtraColumn: 'Columna extra',
+    assetsReconColumns: '+ columnas recon',
+    assetsScanIntro:
+      'Importa Nessus CSV o Nmap (XML, GNMAP, TXT) aquí, o actualiza desde hallazgos ya cargados. Elige qué objetivos entran al inventario y cuáles se omiten.',
+    assetsScanStatusPending: 'Pendientes',
+    assetsScanStatusAccepted: 'En inventario',
+    assetsScanStatusPassed: 'Omitidos',
+    assetsScanStatusAll: 'Todos',
+    assetsScanRefresh: 'Actualizar desde hallazgos',
+    assetsScanDestination: 'Destino',
+    assetsScanAdd: 'Agregar ({count})',
+    assetsScanPass: 'Pasar / omitir ({count})',
+    assetsScanEmpty:
+      'Sin objetivos en esta vista. Importa un escaneo o pulsa «Actualizar desde hallazgos».',
+    assetsScanColTarget: 'Objetivo',
+    assetsScanColComponent: 'Componente',
+    assetsScanColSource: 'Fuente',
+    assetsScanColFindings: 'Hallazgos',
+    assetsScanColStatus: 'Estado',
+    assetsScanStatusPendingRow: 'Pendiente',
+    assetsScanStatusAcceptedRow: 'Inventario',
+    assetsScanStatusPassedRow: 'Omitido',
+    assetsScanSelectAll: 'Seleccionar todos',
     // Dashboard (tablero)
     dashTitle: 'Tablero',
     dashSubtitle: 'Vista ejecutiva con datos reales de hallazgos, proyectos y activos.',
@@ -628,6 +689,67 @@ const MESSAGES = {
     navExposureReport: 'Network Exposure Live Report',
     navClientPortal: 'Client portal',
     navAdministration: 'Administration',
+    // Assets (M2)
+    assetsTitle: 'Assets',
+    assetsSubtitle:
+      'Central inventory or attack surfaces (M2). From scans you decide which targets join inventory; each source also has an editable Excel-style grid.',
+    assetsSourceCardTitle: 'Asset source',
+    assetsSourceCardDesc:
+      'Manual inventory, scan-detected targets, or internal/external recon sheets.',
+    assetsTabFromScans: 'From scans',
+    assetsProjectLabel: 'Project / engagement',
+    assetsNoProject: 'No project (global inventory)',
+    assetsProjectRecommended: 'Recommended: select a project for {source}',
+    assetsScanTargetsCardTitle: 'Targets from scans',
+    assetsScanTargetsCardDesc:
+      'Review hosts/assets from Nessus, Nmap, etc. Add to inventory or pass (skip).',
+    assetsGridCardDesc:
+      'Ctrl+V from Excel · Shift+arrows or drag · Save modified rows only',
+    assetsViewGrid: 'Grid',
+    assetsViewTargetMap: 'Target map',
+    assetsTargetMapCardDesc:
+      'Topology of hosts and open ports in this inventory — exposure view, not vulnerabilities.',
+    assetsTargetMapEmpty:
+      'No hosts or ports in this inventory yet. Paste rows in the grid or import a scan.',
+    assetsTargetMapBuilding: 'Building map…',
+    assetsTargetMapStats: '{hosts} host(s) · {ports} port(s)',
+    assetSourceInventory: 'Inventory',
+    assetSourceExternalRecon: 'External Reconnaissance',
+    assetSourceExternalAttackSurface: 'External Attack Surface',
+    assetSourceInternalRecon: 'Internal Reconnaissance',
+    assetSourceInternalAttackSurface: 'Internal Attack Surface',
+    assetsMapRootLabel: 'TARGET NETWORK',
+    assetsMapHosts: 'Hosts',
+    assetsMapPorts: 'Ports',
+    assetsMapServices: 'Services',
+    assetsMapFilterPlaceholder: 'Filter…',
+    assetsMapFit: 'Fit',
+    assetsMapPhysics: 'Physics',
+    assetsMapTogglePorts: 'Ports',
+    assetsLoadError: 'Failed to load assets',
+    assetsExtraColumn: 'Extra column',
+    assetsReconColumns: '+ recon columns',
+    assetsScanIntro:
+      'Import Nessus CSV or Nmap (XML, GNMAP, TXT) here, or refresh from findings already loaded. Choose which targets join inventory and which to skip.',
+    assetsScanStatusPending: 'Pending',
+    assetsScanStatusAccepted: 'In inventory',
+    assetsScanStatusPassed: 'Skipped',
+    assetsScanStatusAll: 'All',
+    assetsScanRefresh: 'Refresh from findings',
+    assetsScanDestination: 'Destination',
+    assetsScanAdd: 'Add ({count})',
+    assetsScanPass: 'Pass / skip ({count})',
+    assetsScanEmpty:
+      'No targets in this view. Import a scan or click «Refresh from findings».',
+    assetsScanColTarget: 'Target',
+    assetsScanColComponent: 'Component',
+    assetsScanColSource: 'Source',
+    assetsScanColFindings: 'Findings',
+    assetsScanColStatus: 'Status',
+    assetsScanStatusPendingRow: 'Pending',
+    assetsScanStatusAcceptedRow: 'Inventory',
+    assetsScanStatusPassedRow: 'Skipped',
+    assetsScanSelectAll: 'Select all',
     dashTitle: 'Dashboard',
     dashSubtitle: 'Executive view with live findings, projects and assets.',
     dashPentestBtn: 'Pentest (7 steps)',
@@ -1006,6 +1128,28 @@ export type UiMessageKey = keyof typeof MESSAGES.es;
 export function uiT(key: UiMessageKey, language: TenantLanguage | unknown): string {
   const lang = coerceTenantLanguage(language);
   return MESSAGES[lang][key] ?? MESSAGES.es[key];
+}
+
+type AssetSourceKey =
+  | 'inventory'
+  | 'external_recon'
+  | 'external_attack_surface'
+  | 'internal_recon'
+  | 'internal_attack_surface';
+
+const ASSET_SOURCE_I18N: Record<AssetSourceKey, UiMessageKey> = {
+  inventory: 'assetSourceInventory',
+  external_recon: 'assetSourceExternalRecon',
+  external_attack_surface: 'assetSourceExternalAttackSurface',
+  internal_recon: 'assetSourceInternalRecon',
+  internal_attack_surface: 'assetSourceInternalAttackSurface',
+};
+
+export function assetSourceLabel(
+  source: AssetSourceKey,
+  language: TenantLanguage | unknown
+): string {
+  return uiT(ASSET_SOURCE_I18N[source], language);
 }
 
 const ROLE_LABELS_I18N: Record<TenantLanguage, Record<UserRole, string>> = {

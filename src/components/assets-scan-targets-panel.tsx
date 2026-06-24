@@ -4,10 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, RefreshCw, ScanSearch, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  ASSET_SOURCE_LABELS,
-  type AssetSourceType,
-} from '@/lib/asset-spreadsheet-columns';
+import { type AssetSourceType } from '@/lib/asset-spreadsheet-columns';
+import { assetSourceLabel } from '@/lib/ui-locale';
+import { useUiT } from '@/lib/use-ui-locale';
 import {
   listAssetScanTargets,
   passAssetScanTargets,
@@ -22,14 +21,16 @@ type AssetsScanTargetsPanelProps = {
   onPromoted?: () => void;
 };
 
-const STATUS_FILTER = [
-  { id: 'pending' as const, label: 'Pendientes' },
-  { id: 'accepted' as const, label: 'En inventario' },
-  { id: 'passed' as const, label: 'Omitidos' },
-  { id: 'all' as const, label: 'Todos' },
+const SOURCE_OPTIONS: AssetSourceType[] = [
+  'inventory',
+  'external_recon',
+  'external_attack_surface',
+  'internal_recon',
+  'internal_attack_surface',
 ];
 
 export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanTargetsPanelProps) {
+  const { t, uiLanguage, format } = useUiT();
   const [statusFilter, setStatusFilter] = useState<'pending' | 'accepted' | 'passed' | 'all'>(
     'pending'
   );
@@ -40,6 +41,17 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
   const [busy, setBusy] = useState<'refresh' | 'promote' | 'pass' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const statusFilters = useMemo(
+    () =>
+      [
+        { id: 'pending' as const, label: t('assetsScanStatusPending') },
+        { id: 'accepted' as const, label: t('assetsScanStatusAccepted') },
+        { id: 'passed' as const, label: t('assetsScanStatusPassed') },
+        { id: 'all' as const, label: t('assetsScanStatusAll') },
+      ] as const,
+    [t]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,19 +64,19 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
       setTargets(rows);
       setSelected(new Set());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar objetivos');
+      setError(e instanceof Error ? e.message : t('assetsLoadError'));
       setTargets([]);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, engagementId]);
+  }, [statusFilter, engagementId, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const pendingSelectable = useMemo(
-    () => targets.filter((t) => t.status === 'pending'),
+    () => targets.filter((row) => row.status === 'pending'),
     [targets]
   );
 
@@ -72,7 +84,7 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
     if (selected.size === pendingSelectable.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(pendingSelectable.map((t) => t.id)));
+      setSelected(new Set(pendingSelectable.map((row) => row.id)));
     }
   };
 
@@ -91,10 +103,10 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
     setError(null);
     try {
       const res = await refreshAssetScanTargets(engagementId || undefined);
-      setNotice(res.message ?? `Actualizado · ${res.pending} pendientes`);
+      setNotice(res.message ?? `${res.pending}`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al actualizar');
+      setError(e instanceof Error ? e.message : t('errorGeneric'));
     } finally {
       setBusy(null);
     }
@@ -112,11 +124,11 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
         source_type: promoteSource,
         engagement_id: engagementId,
       });
-      setNotice(res.message ?? `${res.processed} agregados`);
+      setNotice(res.message ?? String(res.processed));
       onPromoted?.();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al agregar al inventario');
+      setError(e instanceof Error ? e.message : t('errorGeneric'));
     } finally {
       setBusy(null);
     }
@@ -130,10 +142,10 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
     setError(null);
     try {
       const res = await passAssetScanTargets(ids);
-      setNotice(res.message ?? `${res.processed} omitidos`);
+      setNotice(res.message ?? String(res.processed));
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al omitir');
+      setError(e instanceof Error ? e.message : t('errorGeneric'));
     } finally {
       setBusy(null);
     }
@@ -141,16 +153,13 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground max-w-3xl">
-        Importa Nessus CSV o Nmap (XML, GNMAP, TXT) aquí, o actualiza desde hallazgos ya cargados.
-        Elige qué objetivos entran al inventario y cuáles se omiten; la decisión queda guardada.
-      </p>
+      <p className="text-xs text-muted-foreground max-w-3xl">{t('assetsScanIntro')}</p>
 
       <AssetsScanImportZone engagementId={engagementId} onImported={() => void load()} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border/60 bg-background p-0.5">
-          {STATUS_FILTER.map((opt) => (
+          {statusFilters.map((opt) => (
             <button
               key={opt.id}
               type="button"
@@ -180,21 +189,21 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
           ) : (
             <RefreshCw className="size-3.5" />
           )}
-          Actualizar desde hallazgos
+          {t('assetsScanRefresh')}
         </Button>
 
         {statusFilter === 'pending' || statusFilter === 'all' ? (
           <>
             <label className="text-[10px] text-muted-foreground flex items-center gap-1">
-              Destino
+              {t('assetsScanDestination')}
               <select
                 className="h-7 rounded border border-input bg-background px-1.5 text-[10px]"
                 value={promoteSource}
                 onChange={(e) => setPromoteSource(e.target.value as AssetSourceType)}
               >
-                {(Object.keys(ASSET_SOURCE_LABELS) as AssetSourceType[]).map((k) => (
+                {SOURCE_OPTIONS.map((k) => (
                   <option key={k} value={k}>
-                    {ASSET_SOURCE_LABELS[k].replace(/ \(.*\)/, '')}
+                    {assetSourceLabel(k, uiLanguage)}
                   </option>
                 ))}
               </select>
@@ -212,7 +221,7 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
               ) : (
                 <Check className="size-3.5" />
               )}
-              Agregar ({selected.size})
+              {format('assetsScanAdd', { count: selected.size })}
             </Button>
 
             <Button
@@ -228,7 +237,7 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
               ) : (
                 <X className="size-3.5" />
               )}
-              Pasar / omitir ({selected.size})
+              {format('assetsScanPass', { count: selected.size })}
             </Button>
           </>
         ) : null}
@@ -244,7 +253,7 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
       ) : targets.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
           <ScanSearch className="size-8 mx-auto mb-2 opacity-40" />
-          Sin objetivos en esta vista. Importa un escaneo o pulsa &quot;Actualizar desde hallazgos&quot;.
+          {t('assetsScanEmpty')}
         </div>
       ) : (
         <div className="overflow-auto max-h-[min(50vh,480px)] rounded-lg border border-border">
@@ -260,49 +269,49 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
                         selected.size === pendingSelectable.length
                       }
                       onChange={toggleAll}
-                      aria-label="Seleccionar todos"
+                      aria-label={t('assetsScanSelectAll')}
                     />
                   </th>
                 ) : (
                   <th className="w-8" />
                 )}
-                <th className="border-b border-border px-2 py-1.5 text-left">Objetivo</th>
-                <th className="border-b border-border px-2 py-1.5 text-left">Componente</th>
-                <th className="border-b border-border px-2 py-1.5 text-left">Fuente</th>
-                <th className="border-b border-border px-2 py-1.5 text-right">Hallazgos</th>
-                <th className="border-b border-border px-2 py-1.5 text-left">Estado</th>
+                <th className="border-b border-border px-2 py-1.5 text-left">{t('assetsScanColTarget')}</th>
+                <th className="border-b border-border px-2 py-1.5 text-left">{t('assetsScanColComponent')}</th>
+                <th className="border-b border-border px-2 py-1.5 text-left">{t('assetsScanColSource')}</th>
+                <th className="border-b border-border px-2 py-1.5 text-right">{t('assetsScanColFindings')}</th>
+                <th className="border-b border-border px-2 py-1.5 text-left">{t('assetsScanColStatus')}</th>
               </tr>
             </thead>
             <tbody>
-              {targets.map((t) => (
-                <tr key={t.id} className="hover:bg-muted/40">
+              {targets.map((row) => (
+                <tr key={row.id} className="hover:bg-muted/40">
                   <td className="border-b border-border/50 px-2 py-1">
-                    {t.status === 'pending' ? (
+                    {row.status === 'pending' ? (
                       <input
                         type="checkbox"
-                        checked={selected.has(t.id)}
-                        onChange={() => toggleOne(t.id)}
-                        aria-label={`Seleccionar ${t.display_name}`}
+                        checked={selected.has(row.id)}
+                        onChange={() => toggleOne(row.id)}
+                        aria-label={row.display_name}
                       />
                     ) : null}
                   </td>
-                  <td className="border-b border-border/50 px-2 py-1 font-medium">{t.display_name}</td>
+                  <td className="border-b border-border/50 px-2 py-1 font-medium">{row.display_name}</td>
                   <td className="border-b border-border/50 px-2 py-1 text-muted-foreground font-mono text-[10px]">
-                    {t.componente_afectado}
+                    {row.componente_afectado}
                   </td>
                   <td className="border-b border-border/50 px-2 py-1">
-                    {(t.tool_sources ?? []).join(', ') || '—'}
+                    {(row.tool_sources ?? []).join(', ') || '—'}
                   </td>
                   <td className="border-b border-border/50 px-2 py-1 text-right tabular-nums">
-                    {t.finding_count}
+                    {row.finding_count}
                   </td>
                   <td className="border-b border-border/50 px-2 py-1">
-                    {t.status === 'pending' ? (
-                      <span className="text-amber-700 dark:text-amber-400">Pendiente</span>
-                    ) : t.status === 'accepted' ? (
-                      <span className="text-emerald-700 dark:text-emerald-400">Inventario</span>
+                    {row.status === 'pending' ? (
+                      <span className="text-amber-700 dark:text-amber-400">{t('assetsScanStatusPendingRow')}</span>
+                    ) : row.status === 'accepted' ? (
+                      <span className="text-emerald-700 dark:text-emerald-400">{t('assetsScanStatusAcceptedRow')}</span>
                     ) : (
-                      <span className="text-muted-foreground">Omitido</span>
+                      <span className="text-muted-foreground">{t('assetsScanStatusPassedRow')}</span>
                     )}
                   </td>
                 </tr>
