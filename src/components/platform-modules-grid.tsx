@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/auth-context';
+import { coerceTenantLanguage } from '@/lib/tenant-locale';
 import {
-  MODULE_STATUS_LABEL,
-  PLATFORM_MODULES,
+  moduleStatusLabel,
+  platformModules,
   type ModuleStatus,
   type PlatformModule,
 } from '@/lib/platform-modules';
@@ -15,7 +17,7 @@ const STATUS_STYLES: Record<ModuleStatus, string> = {
   planned: 'border-border bg-muted/40 text-muted-foreground',
 };
 
-function ModuleCard({ mod }: { mod: PlatformModule }) {
+function ModuleCard({ mod, lang }: { mod: PlatformModule; lang: 'es' | 'en' }) {
   const inner = (
     <>
       <div className="flex items-start justify-between gap-2">
@@ -26,7 +28,7 @@ function ModuleCard({ mod }: { mod: PlatformModule }) {
             STATUS_STYLES[mod.status]
           )}
         >
-          {MODULE_STATUS_LABEL[mod.status]}
+          {moduleStatusLabel(mod.status, lang)}
         </span>
       </div>
       <p className="text-sm font-medium text-foreground leading-snug">{mod.name}</p>
@@ -56,6 +58,10 @@ function ModuleCard({ mod }: { mod: PlatformModule }) {
 }
 
 export function PlatformModulesGrid({ compact }: { compact?: boolean }) {
+  const { uiLanguage } = useAuth();
+  const lang = coerceTenantLanguage(uiLanguage);
+  const modules = platformModules(lang);
+
   return (
     <div
       className={cn(
@@ -63,8 +69,8 @@ export function PlatformModulesGrid({ compact }: { compact?: boolean }) {
         compact ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
       )}
     >
-      {PLATFORM_MODULES.map((mod) => (
-        <ModuleCard key={mod.id} mod={mod} />
+      {modules.map((mod) => (
+        <ModuleCard key={mod.id} mod={mod} lang={lang} />
       ))}
     </div>
   );

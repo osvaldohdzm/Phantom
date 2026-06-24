@@ -9,52 +9,69 @@ import { RiskPriorityPanel } from '@/components/risk-priority-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { getPlatformStats, type PlatformStats } from '@/lib/secops-api';
+import { useUiT } from '@/lib/use-ui-locale';
 import { cn } from '@/lib/utils';
 
-const SEVERITY_ORDER = [
-  { key: 'Critical', label: 'Crítico', className: 'bg-rose-500' },
-  { key: 'High', label: 'Alto', className: 'bg-orange-500' },
-  { key: 'Medium', label: 'Medio', className: 'bg-amber-400' },
-  { key: 'Low', label: 'Bajo', className: 'bg-slate-500' },
-  { key: 'Info', label: 'Info', className: 'bg-sky-500' },
-] as const;
-
 export function TableroDashboard() {
+  const { t, format } = useUiT();
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const severityOrder = useMemo(
+    () => [
+      { key: 'Critical', label: t('dashSeverityCritical'), className: 'bg-rose-500' },
+      { key: 'High', label: t('dashSeverityHigh'), className: 'bg-orange-500' },
+      { key: 'Medium', label: t('dashSeverityMedium'), className: 'bg-amber-400' },
+      { key: 'Low', label: t('dashSeverityLow'), className: 'bg-slate-500' },
+      { key: 'Info', label: t('dashSeverityInfo'), className: 'bg-sky-500' },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     void (async () => {
       try {
         setStats(await getPlatformStats());
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudieron cargar métricas');
+        setError(e instanceof Error ? e.message : t('dashErrorMetrics'));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [t]);
 
   const severityBars = useMemo(() => {
     if (!stats) return [];
     const total = Object.values(stats.by_severity).reduce((a, b) => a + b, 0) || 1;
-    return SEVERITY_ORDER.map((s) => ({
+    return severityOrder.map((s) => ({
       ...s,
       count: stats.by_severity[s.key] ?? 0,
       pct: Math.round(((stats.by_severity[s.key] ?? 0) / total) * 100),
     }));
-  }, [stats]);
+  }, [stats, severityOrder]);
 
   const kpis = stats
     ? [
-        { label: 'Hallazgos abiertos', value: String(stats.findings_open), hint: 'Todos los proyectos' },
-        { label: 'Proyectos', value: String(stats.engagements_total), hint: 'Engagements' },
-        { label: 'Activos', value: String(stats.assets_total), hint: 'Inventario M2' },
         {
-          label: 'Críticos abiertos',
+          label: t('dashKpiOpenFindings'),
+          value: String(stats.findings_open),
+          hint: t('dashKpiAllProjects'),
+        },
+        {
+          label: t('dashKpiProjects'),
+          value: String(stats.engagements_total),
+          hint: t('dashKpiEngagements'),
+        },
+        {
+          label: t('dashKpiAssets'),
+          value: String(stats.assets_total),
+          hint: t('dashKpiInventoryM2'),
+        },
+        {
+          label: t('dashKpiCriticalOpen'),
           value: String(stats.findings_critical_open),
-          hint: 'Prioridad inmediata',
+          hint: t('dashKpiImmediatePriority'),
         },
       ]
     : [];
@@ -64,17 +81,15 @@ export function TableroDashboard() {
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
         <div className="space-y-4">
           <LastExcelIngestHint />
-          <h1 className="type-h1">Tablero</h1>
-          <p className="type-body text-muted-foreground max-w-2xl">
-            Vista ejecutiva con datos reales de hallazgos, proyectos y activos.
-          </p>
+          <h1 className="type-h1">{t('dashTitle')}</h1>
+          <p className="type-body text-muted-foreground max-w-2xl">{t('dashSubtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           <Link href="/reports" className={buttonVariants({ variant: 'default' })}>
-            Pentest (7 pasos)
+            {t('dashPentestBtn')}
           </Link>
           <Link href="/vul-mgmt" className={buttonVariants({ variant: 'outline' })}>
-            Vulnerabilities
+            {t('navVulnerabilities')}
           </Link>
         </div>
       </div>
@@ -110,11 +125,11 @@ export function TableroDashboard() {
           <CardHeader className="flex flex-row items-center gap-2">
             <BarChart3 className="size-5 text-violet-500" />
             <div>
-              <CardTitle>Distribución por severidad</CardTitle>
+              <CardTitle>{t('dashSeverityTitle')}</CardTitle>
               <CardDescription>
                 {stats
-                  ? `${stats.findings_total} hallazgos en base de datos`
-                  : 'Cargando…'}
+                  ? format('dashFindingsInDb', { count: stats.findings_total })
+                  : t('loading')}
               </CardDescription>
             </div>
           </CardHeader>
@@ -148,25 +163,25 @@ export function TableroDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="size-5 text-emerald-500" />
-              Accesos rápidos
+              {t('dashQuickAccess')}
             </CardTitle>
-            <CardDescription>Ciclo operativo sin salir del tablero.</CardDescription>
+            <CardDescription>{t('dashQuickAccessDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Link href="/reports" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Servicio pentest · 7 pasos
+              {t('dashLinkPentest7')}
             </Link>
             <Link href="/assets" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Inventario de activos
+              {t('dashLinkAssets')}
             </Link>
             <Link href="/compliance" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Compliance (M17)
+              {t('dashLinkCompliance')}
             </Link>
             <Link href="/portal" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Portal cliente (M13)
+              {t('dashLinkPortal')}
             </Link>
             <Link href="/sec-services" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              Mapa de módulos M1–M17
+              {t('dashLinkModules')}
             </Link>
           </CardContent>
         </Card>
@@ -175,13 +190,13 @@ export function TableroDashboard() {
       <RiskPriorityPanel />
 
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Módulos de la plataforma</h2>
+        <h2 className="text-lg font-semibold">{t('dashModulesTitle')}</h2>
         <p className="text-sm text-muted-foreground max-w-3xl">
-          Roadmap alineado a la especificación. El servicio de pentest (M10) en{' '}
+          {t('dashModulesDescBefore')}
           <Link href="/reports" className="text-primary underline-offset-2 hover:underline">
-            Servicios
-          </Link>{' '}
-          incluye 7 pasos, revisión por tipo y desglosada, y exportación CYB001.
+            {t('dashModulesServices')}
+          </Link>
+          {t('dashModulesDescAfter')}
         </p>
         <PlatformModulesGrid compact />
       </div>

@@ -11,8 +11,10 @@ import {
   sortByContextualRisk,
 } from '@/lib/risk-priority';
 import { SeverityBadge } from '@/components/severity-badge';
+import { useUiT } from '@/lib/use-ui-locale';
 
 export function RiskPriorityPanel({ engagementId }: { engagementId?: string } = {}) {
+  const { t, format } = useUiT();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +29,12 @@ export function RiskPriorityPanel({ engagementId }: { engagementId?: string } = 
         });
         setFindings(data);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudieron cargar hallazgos');
+        setError(e instanceof Error ? e.message : t('riskErrorLoad'));
       } finally {
         setLoading(false);
       }
     })();
-  }, [engagementId]);
+  }, [engagementId, t]);
 
   const stats = useMemo(() => {
     const open = findings.filter((f) => f.status !== 'Cerrado' && f.status !== 'Falso Positivo');
@@ -42,16 +44,20 @@ export function RiskPriorityPanel({ engagementId }: { engagementId?: string } = 
     return { kevCount, highEpssCount, top, openTotal: open.length };
   }, [findings]);
 
+  const scope = engagementId ? t('riskScopeActiveProject') : t('riskScopeAllProjects');
+
   return (
     <Card className="bg-card border-border">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldAlert className="size-4 text-amber-500" />
-          Priorización contextual (CVSS · EPSS · KEV)
+          {t('riskTitle')}
         </CardTitle>
         <CardDescription>
-          EPSS alto ≥ {(EPSS_HIGH_THRESHOLD * 100).toFixed(0)}% · KEV = catálogo CISA
-          {engagementId ? ' · proyecto activo' : ' · todos los proyectos'}
+          {format('riskDesc', {
+            pct: (EPSS_HIGH_THRESHOLD * 100).toFixed(0),
+            scope,
+          })}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -65,11 +71,11 @@ export function RiskPriorityPanel({ engagementId }: { engagementId?: string } = 
           <>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg border px-3 py-2">
-                <p className="text-xs text-muted-foreground">En KEV (abiertos)</p>
+                <p className="text-xs text-muted-foreground">{t('riskKevOpen')}</p>
                 <p className="text-xl font-mono font-semibold">{stats.kevCount}</p>
               </div>
               <div className="rounded-lg border px-3 py-2">
-                <p className="text-xs text-muted-foreground">EPSS alto</p>
+                <p className="text-xs text-muted-foreground">{t('riskEpssHigh')}</p>
                 <p className="text-xl font-mono font-semibold">{stats.highEpssCount}</p>
               </div>
             </div>
@@ -106,9 +112,7 @@ export function RiskPriorityPanel({ engagementId }: { engagementId?: string } = 
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Sin hallazgos abiertos con datos EPSS/KEV. Importa CSV universal o enriquece desde catálogo.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('riskEmpty')}</p>
             )}
           </>
         )}
