@@ -143,6 +143,7 @@ async def import_scan_targets_file(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
     promote_source_type: Optional[AssetSourceTypeEnum] = Form(None),
+    targets_only: bool = Form(True),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> AssetScanTargetImportResponse:
@@ -166,6 +167,7 @@ async def import_scan_targets_file(
         engagement_id=engagement_id,
         refresh_engagement_id=engagement_id,
         promote_source_type=promote_type,
+        targets_only=targets_only,
     )
     return AssetScanTargetImportResponse(**result)
 

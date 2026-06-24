@@ -213,6 +213,10 @@ const MESSAGES = {
     assetsScanImportResultDefaultEngagement: '(almacenados en el espacio interno del tenant)',
     assetsScanImportSourceNmap: 'Nmap',
     assetsScanImportSourceNessus: 'Nessus CSV',
+    assetsScanImportTargetsOnly: 'Solo objetivos (rápido, sin hallazgos de vulnerabilidad)',
+    assetsScanImportTargetsOnlyHint:
+      'Recomendado para CSV Nessus grandes: extrae host:puerto únicos e inventario sin cargar el repositorio de vulnerabilidades.',
+    assetsScanImportResultTargets: '{count} objetivo(s) único(s) desde {source}',
     // Dashboard (tablero)
     dashTitle: 'Tablero',
     dashSubtitle: 'Vista ejecutiva con datos reales de hallazgos, proyectos y activos.',
@@ -792,6 +796,10 @@ const MESSAGES = {
     assetsScanImportResultDefaultEngagement: '(stored in tenant internal space)',
     assetsScanImportSourceNmap: 'Nmap',
     assetsScanImportSourceNessus: 'Nessus CSV',
+    assetsScanImportTargetsOnly: 'Targets only (fast, no vulnerability findings)',
+    assetsScanImportTargetsOnlyHint:
+      'Recommended for large Nessus CSVs: extracts unique host:ports and inventory without loading the vulnerability repository.',
+    assetsScanImportResultTargets: '{count} unique target(s) from {source}',
     dashTitle: 'Dashboard',
     dashSubtitle: 'Executive view with live findings, projects and assets.',
     dashPentestBtn: 'Pentest (7 steps)',

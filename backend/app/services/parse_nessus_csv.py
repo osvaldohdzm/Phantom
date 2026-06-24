@@ -10,6 +10,7 @@ from app.services.ingest_common import clamp_title, map_scanner_severity, parse_
 from app.services.report_text_preprocess import preprocess_report_field
 from app.services.text_encoding import decode_bytes_smart, fix_text_encoding
 from app.services.vulns_catalog_lookup import build_componente_afectado
+from app.services.finding_duplicates import normalize_affected_component
 
 DEFAULT_NESSUS_METODO = "Escaneo automatizado con Nessus"
 
@@ -144,4 +145,43 @@ def parse_nessus_csv_bytes(data: bytes, encoding: str | None = None) -> list[dic
                 },
             }
         )
+    return out
+
+
+def parse_nessus_scan_targets_csv_bytes(data: bytes, encoding: str | None = None) -> list[dict[str, Any]]:
+    """Extrae host:puerto únicos de un CSV Nessus — sin hallazgos de vulnerabilidad (rápido)."""
+    text = data.decode(encoding, errors="replace") if encoding else decode_bytes_smart(data)
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return []
+
+    header_index = _build_header_index(list(reader.fieldnames))
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    for raw in reader:
+        row = {k or "": v or "" for k, v in raw.items()}
+        host = _get_indexed(row, header_index, "host", "dns name", "fqdn", "ip")
+        if not host:
+            continue
+        port = _get_indexed(row, header_index, "port", "puerto")
+        proto = _get_indexed(row, header_index, "protocol", "protocolo")
+        service = _get_indexed(row, header_index, "service", "servicio")
+        comp = build_componente_afectado(host, port, proto) or host
+        key = normalize_affected_component(comp)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        draft: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "proto": proto,
+            "componente_afectado": comp,
+            "tool_source": "Nessus",
+            "titulo": f"Target {comp}",
+        }
+        if service:
+            draft["servicio"] = service
+            draft["tool_vuln_id"] = f"{service}/{port or '0'}"
+        out.append(draft)
     return out

@@ -13,14 +13,15 @@ from app.models.auth import Tenant
 from app.models.core import AssetSourceType
 from app.models.scan import AssetScanTarget
 from app.services.asset_scan_targets import (
+    dedupe_target_drafts,
+    ensure_scan_targets_from_target_drafts,
     promote_scan_targets,
     refresh_scan_targets,
     upsert_assets_from_scan_drafts,
 )
 from app.services.catalog_from_draft import ensure_drafts_catalog
 from app.services.default_engagement import ensure_default_engagement
-from app.services.finding_duplicates import normalize_affected_component
-from app.services.parse_nessus_csv import parse_nessus_csv_bytes
+from app.services.parse_nessus_csv import parse_nessus_csv_bytes, parse_nessus_scan_targets_csv_bytes
 from app.services.parse_nmap_scan import parse_nmap_bytes
 from app.services.vulns_catalog_lookup import enrich_drafts_with_catalog
 
@@ -31,11 +32,29 @@ _ATTACK_SURFACE_TYPES = frozenset(
     }
 )
 
+_INVENTORY_DESTINATIONS = frozenset(
+    {
+        AssetSourceType.inventory,
+        AssetSourceType.external_recon,
+        AssetSourceType.internal_recon,
+        AssetSourceType.external_attack_surface,
+        AssetSourceType.internal_attack_surface,
+    }
+)
 
-def _detect_and_parse(data: bytes, filename: str) -> tuple[str, list[dict[str, Any]]]:
+
+def _detect_and_parse(
+    data: bytes,
+    filename: str,
+    *,
+    targets_only: bool,
+) -> tuple[str, list[dict[str, Any]]]:
     low = (filename or "scan").lower()
     if low.endswith(".csv"):
-        drafts = parse_nessus_csv_bytes(data)
+        if targets_only:
+            drafts = parse_nessus_scan_targets_csv_bytes(data)
+        else:
+            drafts = parse_nessus_csv_bytes(data)
         if drafts:
             return "nessus-csv", drafts
         raise HTTPException(
@@ -64,10 +83,9 @@ def import_scan_file_for_targets(
     engagement_id: Optional[UUID],
     refresh_engagement_id: Optional[UUID] = None,
     promote_source_type: Optional[AssetSourceType] = None,
+    targets_only: bool = True,
 ) -> dict[str, Any]:
-    """Persiste hallazgos del escaneo y actualiza la cola de objetivos pendientes."""
-    from app.routers.ingest import _persist_drafts
-
+    """Importa escaneo para Activos M2. Por defecto solo objetivos (sin hallazgos de vulnerabilidad)."""
     tenant = db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
@@ -80,75 +98,80 @@ def import_scan_file_for_targets(
     else:
         require_engagement_tenant(db, import_engagement_id, tenant_id)
 
-    source, drafts = _detect_and_parse(data, filename)
-    bulk = len(drafts) > 2000
-
-    if not bulk:
-        enrich_drafts_with_catalog(db, drafts, tenant_id=tenant_id)
-        ensure_drafts_catalog(db, drafts, fast_mode=False)
-
-    ids = _persist_drafts(
-        db,
-        drafts,
-        import_engagement_id,
-        tenant_id,
-        fast_bulk=bulk,
-    )
-
-    import_keys: set[str] = set()
-    for draft in drafts:
-        comp = (draft.get("componente_afectado") or "").strip()
-        if not comp:
-            continue
-        key = normalize_affected_component(comp)
-        if key:
-            import_keys.add(key)
-
+    source, drafts = _detect_and_parse(data, filename, targets_only=targets_only)
+    unique = dedupe_target_drafts(drafts)
+    import_keys = set(unique.keys())
     refresh_filter = refresh_engagement_id if refresh_engagement_id is not None else import_engagement_id
-    stats = refresh_scan_targets(
-        db,
-        tenant_id=tenant_id,
-        engagement_id=refresh_filter,
-        only_keys=import_keys if import_keys else None,
-    )
+
+    created_count = 0
+    if targets_only:
+        stats = ensure_scan_targets_from_target_drafts(
+            db,
+            tenant_id=tenant_id,
+            drafts=list(unique.values()),
+            engagement_id=refresh_filter,
+        )
+    else:
+        from app.routers.ingest import _persist_drafts
+
+        bulk = len(drafts) > 2000
+        if not bulk:
+            enrich_drafts_with_catalog(db, drafts, tenant_id=tenant_id)
+            ensure_drafts_catalog(db, drafts, fast_mode=False)
+
+        ids = _persist_drafts(
+            db,
+            drafts,
+            import_engagement_id,
+            tenant_id,
+            fast_bulk=bulk,
+        )
+        created_count = len(ids) if ids else len(drafts)
+        stats = refresh_scan_targets(
+            db,
+            tenant_id=tenant_id,
+            engagement_id=refresh_filter,
+            only_keys=import_keys if import_keys else None,
+        )
 
     assets_created = 0
     assets_updated = 0
     promoted = 0
-    if promote_source_type is not None:
-        if promote_source_type in _ATTACK_SURFACE_TYPES:
-            upsert = upsert_assets_from_scan_drafts(
+    if promote_source_type is not None and promote_source_type in _INVENTORY_DESTINATIONS:
+        upsert = upsert_assets_from_scan_drafts(
+            db,
+            tenant_id=tenant_id,
+            drafts=list(unique.values()),
+            source_type=promote_source_type,
+            engagement_id=import_engagement_id,
+        )
+        assets_created = upsert["created"]
+        assets_updated = upsert["updated"]
+    elif promote_source_type is not None and import_keys and not targets_only:
+        pending_rows = (
+            db.query(AssetScanTarget)
+            .filter(
+                AssetScanTarget.tenant_id == tenant_id,
+                AssetScanTarget.status == "pending",
+                AssetScanTarget.target_key.in_(list(import_keys)),
+            )
+            .all()
+        )
+        if pending_rows:
+            result = promote_scan_targets(
                 db,
                 tenant_id=tenant_id,
-                drafts=drafts,
+                target_ids=[r.id for r in pending_rows],
                 source_type=promote_source_type,
                 engagement_id=import_engagement_id,
             )
-            assets_created = upsert["created"]
-            assets_updated = upsert["updated"]
-        elif import_keys:
-            pending_rows = (
-                db.query(AssetScanTarget)
-                .filter(
-                    AssetScanTarget.tenant_id == tenant_id,
-                    AssetScanTarget.status == "pending",
-                    AssetScanTarget.target_key.in_(list(import_keys)),
-                )
-                .all()
-            )
-            if pending_rows:
-                result = promote_scan_targets(
-                    db,
-                    tenant_id=tenant_id,
-                    target_ids=[r.id for r in pending_rows],
-                    source_type=promote_source_type,
-                    engagement_id=import_engagement_id,
-                )
-                promoted = int(result.get("processed") or 0)
+            promoted = int(result.get("processed") or 0)
 
     return {
         "source": source,
-        "created_count": len(ids) if ids else len(drafts),
+        "created_count": created_count,
+        "unique_targets": len(unique),
+        "targets_only": targets_only,
         "discovered": stats["discovered"],
         "reopened": stats.get("reopened", 0),
         "pending": stats["pending"],

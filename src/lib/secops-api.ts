@@ -1076,6 +1076,8 @@ export async function refreshAssetScanTargets(engagement_id?: string): Promise<{
 export type AssetScanTargetImportResult = {
   source: string;
   created_count: number;
+  unique_targets: number;
+  targets_only: boolean;
   discovered: number;
   reopened: number;
   pending: number;
@@ -1094,6 +1096,7 @@ export async function importAssetScanTargets(
   options?: {
     engagement_id?: string;
     promote_source_type?: AssetSourceType;
+    targets_only?: boolean;
   }
 ): Promise<AssetScanTargetImportResult> {
   const { postMultipartUpload } = await import('@/lib/ingest-upload');
@@ -1102,6 +1105,11 @@ export async function importAssetScanTargets(
   if (options?.engagement_id?.trim()) form.append('engagement_id', options.engagement_id.trim());
   if (options?.promote_source_type) {
     form.append('promote_source_type', options.promote_source_type);
+  }
+  if (options?.targets_only !== false) {
+    form.append('targets_only', 'true');
+  } else {
+    form.append('targets_only', 'false');
   }
   const res = await postMultipartUpload('/api/v1/assets/scan-targets/import', form);
   const data = (await res.json().catch(() => ({}))) as AssetScanTargetImportResult & {

@@ -43,8 +43,11 @@ function formatImportNotice(
 ): string {
   const source =
     result.source === 'nmap' ? t('assetsScanImportSourceNmap') : t('assetsScanImportSourceNessus');
+  const count = result.targets_only ? result.unique_targets : result.created_count;
   const parts = [
-    format('assetsScanImportResultFindings', { count: result.created_count, source }),
+    result.targets_only
+      ? format('assetsScanImportResultTargets', { count, source })
+      : format('assetsScanImportResultFindings', { count, source }),
   ];
 
   if (result.assets_created > 0 || result.assets_updated > 0) {
@@ -86,6 +89,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
   const [estimateSec, setEstimateSec] = useState(30);
   const [directDestination, setDirectDestination] =
     useState<AssetSourceType>('internal_attack_surface');
+  const [targetsOnly, setTargetsOnly] = useState(true);
 
   const destLabel = useMemo(
     () => assetSourceLabel(directDestination, uiLanguage),
@@ -113,6 +117,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
           const result = await importAssetScanTargets(file, {
             engagement_id: engagementId ?? undefined,
             promote_source_type: directDestination,
+            targets_only: targetsOnly,
           });
           lastMsg = formatImportNotice(result, t, format, destLabel);
         }
@@ -125,7 +130,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
         setActiveFile(null);
       }
     },
-    [busy, engagementId, onImported, directDestination, t, format, destLabel]
+    [busy, engagementId, onImported, directDestination, targetsOnly, t, format, destLabel]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -155,6 +160,19 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
       <p className="text-[10px] text-muted-foreground max-w-3xl leading-snug">
         {t('assetsScanImportDirectHint')}
       </p>
+      <label className="flex items-start gap-2 text-[10px] text-muted-foreground max-w-3xl cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={targetsOnly}
+          onChange={(e) => setTargetsOnly(e.target.checked)}
+          disabled={busy}
+        />
+        <span>
+          <strong className="text-foreground">{t('assetsScanImportTargetsOnly')}</strong>
+          <span className="block mt-0.5">{t('assetsScanImportTargetsOnlyHint')}</span>
+        </span>
+      </label>
 
       <div
         {...getRootProps()}

@@ -224,6 +224,144 @@ def refresh_scan_targets(
     return {"discovered": discovered, "reopened": reopened, "pending": total_pending}
 
 
+def dedupe_target_drafts(drafts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Un draft por host:puerto normalizado."""
+    out: dict[str, dict[str, Any]] = {}
+    for draft in drafts:
+        comp = (draft.get("componente_afectado") or "").strip()
+        if not comp:
+            host = (draft.get("host") or "").strip()
+            port = str(draft.get("port") or "").strip()
+            proto = str(draft.get("proto") or "").strip()
+            if host:
+                comp = build_componente_afectado(host, port, proto) if port else host
+        if not comp:
+            continue
+        key = normalize_affected_component(comp)
+        if not key:
+            continue
+        prev = out.get(key)
+        if prev:
+            if draft.get("servicio") and not prev.get("servicio"):
+                prev["servicio"] = draft["servicio"]
+            continue
+        merged = dict(draft)
+        merged["componente_afectado"] = comp
+        out[key] = merged
+    return out
+
+
+def _sync_scan_target_buckets(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    buckets: dict[str, dict[str, Any]],
+    engagement_id: Optional[UUID],
+    requeue_passed: bool,
+) -> dict[str, int]:
+    assets = db.query(Asset).filter(Asset.tenant_id == tenant_id).all()
+    discovered = 0
+    reopened = 0
+
+    for key, meta in buckets.items():
+        if _inventory_has_target(assets, key, meta["display"], meta["component"]):
+            continue
+
+        row = (
+            db.query(AssetScanTarget)
+            .filter(AssetScanTarget.tenant_id == tenant_id, AssetScanTarget.target_key == key)
+            .first()
+        )
+        tools = sorted(meta["tools"])
+        target_engagement = engagement_id or meta.get("engagement_id")
+
+        if row:
+            if row.status == "pending":
+                row.display_name = meta["display"]
+                row.componente_afectado = meta["component"]
+                row.finding_count = meta["count"]
+                merged_tools = set(row.tool_sources or [])
+                merged_tools.update(meta["tools"])
+                row.tool_sources = sorted(merged_tools)
+                if target_engagement and not row.engagement_id:
+                    row.engagement_id = target_engagement
+            elif row.status == "passed" and requeue_passed:
+                row.status = "pending"
+                row.display_name = meta["display"]
+                row.componente_afectado = meta["component"]
+                row.finding_count = meta["count"]
+                merged_tools = set(row.tool_sources or [])
+                merged_tools.update(meta["tools"])
+                row.tool_sources = sorted(merged_tools)
+                row.promoted_asset_id = None
+                row.target_source_type = None
+                if target_engagement:
+                    row.engagement_id = target_engagement
+                reopened += 1
+            continue
+
+        db.add(
+            AssetScanTarget(
+                tenant_id=tenant_id,
+                engagement_id=target_engagement,
+                target_key=key,
+                display_name=meta["display"],
+                componente_afectado=meta["component"],
+                tool_sources=tools,
+                finding_count=meta["count"],
+                status="pending",
+            )
+        )
+        discovered += 1
+
+    db.commit()
+    total_pending = (
+        db.query(AssetScanTarget)
+        .filter(
+            AssetScanTarget.tenant_id == tenant_id,
+            AssetScanTarget.status == "pending",
+        )
+        .count()
+    )
+    return {"discovered": discovered, "reopened": reopened, "pending": total_pending}
+
+
+def ensure_scan_targets_from_target_drafts(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    drafts: list[dict[str, Any]],
+    engagement_id: Optional[UUID] = None,
+) -> dict[str, int]:
+    """Cola de objetivos desde drafts host:puerto (sin hallazgos en BD)."""
+    unique = dedupe_target_drafts(drafts)
+    buckets: dict[str, dict[str, Any]] = {}
+    for key, draft in unique.items():
+        component = draft["componente_afectado"]
+        display = _display_from_component(component) or key
+        bucket = buckets.setdefault(
+            key,
+            {
+                "display": display,
+                "component": component,
+                "tools": set(),
+                "count": 0,
+                "engagement_id": engagement_id,
+            },
+        )
+        bucket["count"] += 1
+        tool = draft.get("tool_source") or "Scan"
+        bucket["tools"].add(tool)
+
+    return _sync_scan_target_buckets(
+        db,
+        tenant_id=tenant_id,
+        buckets=buckets,
+        engagement_id=engagement_id,
+        requeue_passed=True,
+    )
+
+
 def _findings_for_target(db: Session, tenant_id: UUID, target_key: str) -> list[Finding]:
     query = tenant_findings_filter(db.query(Finding), tenant_id).filter(Finding.asset_id.is_(None))
     out: list[Finding] = []
@@ -314,39 +452,38 @@ def upsert_assets_from_scan_drafts(
         AssetSourceType.internal_attack_surface,
         AssetSourceType.internal_recon,
     )
+    unique = dedupe_target_drafts(drafts)
+
     q = db.query(Asset).filter(
         Asset.tenant_id == tenant_id,
         Asset.source_type == source_type,
     )
     if engagement_id is not None:
         q = q.filter(Asset.engagement_id == engagement_id)
-    existing = list(q.all())
+    existing_by_key: dict[str, Asset] = {}
+    for asset in q.all():
+        meta = asset.extra_metadata or {}
+        tk = (meta.get("target_key") or "").strip()
+        if tk:
+            existing_by_key[normalize_affected_component(tk)] = asset
 
     created = 0
     updated = 0
-    for draft in drafts:
-        comp = (draft.get("componente_afectado") or "").strip()
-        if not comp:
-            host = (draft.get("host") or "").strip()
-            port = str(draft.get("port") or "").strip()
-            proto = str(draft.get("proto") or "").strip()
-            if host:
-                comp = build_componente_afectado(host, port, proto) if port else host
-        if not comp:
-            continue
-        key = normalize_affected_component(comp)
-        if not key:
-            continue
+    pending_new: list[Asset] = []
+    chunk = 500
 
+    for key, draft in unique.items():
+        comp = draft["componente_afectado"]
         host, port, transport = _split_component(comp)
         if not host:
             continue
         port = port or str(draft.get("port") or "").strip() or None
         transport = transport or str(draft.get("proto") or "").strip().lower() or None
-        service = ""
-        tool_id = str(draft.get("tool_vuln_id") or "")
-        if "/" in tool_id:
-            service = tool_id.split("/", 1)[0]
+        service = str(draft.get("servicio") or "").strip()
+        if not service:
+            tool_id = str(draft.get("tool_vuln_id") or "")
+            if "/" in tool_id:
+                service = tool_id.split("/", 1)[0]
 
         fields = _parse_asset_fields(host, comp)
         ip = fields["ip_publica"]
@@ -358,18 +495,13 @@ def upsert_assets_from_scan_drafts(
         if service:
             meta["servicio"] = service[:255]
 
-        row = None
-        for asset in existing:
-            if _asset_covers_target(asset, key, comp):
-                row = asset
-                break
-
+        row = existing_by_key.get(key)
         if row:
             merged = dict(row.extra_metadata or {})
             merged.update({k: v for k, v in meta.items() if v})
             row.extra_metadata = merged
             if service and not row.discovery_method:
-                row.discovery_method = draft.get("tool_source") or "Nmap"
+                row.discovery_method = str(draft.get("tool_source") or "Scan")
             updated += 1
             continue
 
@@ -386,10 +518,16 @@ def upsert_assets_from_scan_drafts(
             discovery_method=str(draft.get("tool_source") or "Scan"),
             extra_metadata=meta,
         )
-        db.add(asset)
-        existing.append(asset)
+        pending_new.append(asset)
+        existing_by_key[key] = asset
         created += 1
+        if len(pending_new) >= chunk:
+            db.add_all(pending_new)
+            db.flush()
+            pending_new.clear()
 
+    if pending_new:
+        db.add_all(pending_new)
     db.commit()
     return {"created": created, "updated": updated}
 

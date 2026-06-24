@@ -112,6 +112,8 @@ class AssetScanTargetRefreshResponse(BaseModel):
 class AssetScanTargetImportResponse(BaseModel):
     source: str
     created_count: int
+    unique_targets: int = 0
+    targets_only: bool = True
     discovered: int
     reopened: int = 0
     pending: int
