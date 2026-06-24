@@ -12,6 +12,9 @@ from app.services.text_encoding import extract_nessus_plugin_id
 
 _HOST_RE = re.compile(r"^Host:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 _PORT_RE = re.compile(r"^Puerto:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+_NMAP_RAW_HOST_RE = re.compile(r"\bhost=([^\s]+)", re.IGNORECASE)
+_NMAP_RAW_PORT_RE = re.compile(r"\bport=(\d+)", re.IGNORECASE)
+_TITULO_HOST_PORT_RE = re.compile(r"en\s+([\d.]+):(\d+)", re.IGNORECASE)
 
 
 def _resolve_componente(finding: Finding) -> str:
@@ -20,15 +23,30 @@ def _resolve_componente(finding: Finding) -> str:
         return direct
     raw = finding.raw_tool_output or ""
     host_m = _HOST_RE.search(raw)
-    if not host_m:
-        return ""
-    host = host_m.group(1).strip()
-    port_m = _PORT_RE.search(raw)
-    if port_m:
-        port = port_m.group(1).strip()
-        if port and port not in ("0", "none"):
-            return f"{host}:{port}"
-    return host
+    if host_m:
+        host = host_m.group(1).strip()
+        port_m = _PORT_RE.search(raw)
+        if port_m:
+            port = port_m.group(1).strip()
+            if port and port not in ("0", "none"):
+                return f"{host}:{port}"
+        return host
+
+    nmap_host = _NMAP_RAW_HOST_RE.search(raw)
+    if nmap_host:
+        host = nmap_host.group(1).strip()
+        nmap_port = _NMAP_RAW_PORT_RE.search(raw)
+        if nmap_port:
+            return f"{host}:{nmap_port.group(1)}"
+        return host
+
+    titulo = (finding.titulo or "").strip()
+    if titulo:
+        m = _TITULO_HOST_PORT_RE.search(titulo)
+        if m:
+            return f"{m.group(1)}:{m.group(2)}"
+
+    return ""
 
 
 def normalize_affected_component(raw: str) -> str:

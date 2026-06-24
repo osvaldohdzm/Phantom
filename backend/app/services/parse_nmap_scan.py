@@ -8,6 +8,37 @@ from typing import Any, Optional
 
 from app.models.core import Severity
 from app.services.ingest_common import clamp_title
+from app.services.vulns_catalog_lookup import build_componente_afectado
+
+
+def _nmap_draft(
+    *,
+    host: str,
+    port_id: str,
+    proto: str,
+    service: str,
+    titulo: str,
+    desc: str,
+    raw: str,
+) -> dict[str, Any]:
+    """Draft con host:puerto para cola de objetivos (Activos M2)."""
+    comp = build_componente_afectado(host, port_id, proto) or None
+    return {
+        "titulo": clamp_title(titulo),
+        "descripcion": desc,
+        "severidad": Severity.info,
+        "cvss_score": None,
+        "cvss_vector": None,
+        "cve": None,
+        "cwe": None,
+        "host": host,
+        "port": port_id,
+        "proto": proto,
+        "componente_afectado": comp,
+        "raw_tool_output": raw[:32000],
+        "tool_source": "Nmap",
+        "tool_vuln_id": f"{service}/{port_id}"[:512],
+    }
 
 
 def _parse_gnmap(text: str, filename: str) -> list[dict[str, Any]]:
@@ -31,20 +62,17 @@ def _parse_gnmap(text: str, filename: str) -> list[dict[str, Any]]:
             version = parts[6].strip() if len(parts) > 6 else ""
             titulo = f"Puerto abierto: {servicio} en {ip}:{port_id}"
             desc = f"Servicio: {servicio}\nVersión: {version or 'N/A'}\nArchivo: {filename}"
-            raw = f"[Nmap GNMAP] {entry[:4000]}"
+            raw = f"Host: {ip}\nPuerto: {port_id}\n[Nmap GNMAP] {entry[:4000]}"
             rows.append(
-                {
-                    "titulo": clamp_title(titulo),
-                    "descripcion": desc,
-                    "severidad": Severity.info,
-                    "cvss_score": None,
-                    "cvss_vector": None,
-                    "cve": None,
-                    "cwe": None,
-                    "raw_tool_output": raw,
-                    "tool_source": "Nmap",
-                    "tool_vuln_id": f"{servicio}/{port_id}"[:512],
-                }
+                _nmap_draft(
+                    host=ip,
+                    port_id=port_id,
+                    proto="tcp",
+                    service=servicio,
+                    titulo=titulo,
+                    desc=desc,
+                    raw=raw,
+                )
             )
     return rows
 
@@ -81,22 +109,23 @@ def _parse_nmap_xml(text: str, filename: str) -> list[dict[str, Any]]:
             version = (svc_el.get("version") or "") if svc_el is not None else ""
             extra = (svc_el.get("extrainfo") or "") if svc_el is not None else ""
             ver = " ".join(x for x in (product, version, extra) if x).strip() or "N/A"
+            proto = port.get("protocol") or "tcp"
             titulo = f"Puerto abierto: {name} en {addr}:{port_id}"
             desc = f"Servicio: {name}\nVersión: {ver}\nArchivo: {filename}"
-            raw = f"[Nmap XML] host={addr} port={port_id}/{port.get('protocol','tcp')} service={name} version={ver}"
+            raw = (
+                f"Host: {addr}\nPuerto: {port_id}\n"
+                f"[Nmap XML] host={addr} port={port_id}/{proto} service={name} version={ver}"
+            )
             rows.append(
-                {
-                    "titulo": clamp_title(titulo),
-                    "descripcion": desc,
-                    "severidad": Severity.info,
-                    "cvss_score": None,
-                    "cvss_vector": None,
-                    "cve": None,
-                    "cwe": None,
-                    "raw_tool_output": raw[:32000],
-                    "tool_source": "Nmap",
-                    "tool_vuln_id": f"{name}/{port_id}"[:512],
-                }
+                _nmap_draft(
+                    host=addr,
+                    port_id=port_id,
+                    proto=proto,
+                    service=name,
+                    titulo=titulo,
+                    desc=desc,
+                    raw=raw,
+                )
             )
     return rows
 
@@ -111,24 +140,23 @@ def _parse_normal_nmap(text: str, filename: str) -> list[dict[str, Any]]:
         m_port = re.match(r"^\s*(\d+)/(\w+)\s+(\w+)\s+([\w.-]+)\s*(.*)$", line)
         if not m_port:
             continue
-        _port_num, _proto, state, svc, rest = m_port.groups()
+        _port_num, proto, state, svc, rest = m_port.groups()
         if state != "open":
             continue
-        titulo = f"Puerto abierto: {svc} en {current_ip}:{m_port.group(1)}"
+        port_id = m_port.group(1)
+        titulo = f"Puerto abierto: {svc} en {current_ip}:{port_id}"
         desc = f"Servicio: {svc}\nVersión: {rest.strip() or 'N/A'}\nArchivo: {filename}"
+        raw = f"Host: {current_ip}\nPuerto: {port_id}\n[Nmap texto] {line.strip()[:8000]}"
         rows.append(
-            {
-                "titulo": clamp_title(titulo),
-                "descripcion": desc,
-                "severidad": Severity.info,
-                "cvss_score": None,
-                "cvss_vector": None,
-                "cve": None,
-                "cwe": None,
-                "raw_tool_output": f"[Nmap texto] {line.strip()[:8000]}",
-                "tool_source": "Nmap",
-                "tool_vuln_id": f"{svc}/{m_port.group(1)}"[:512],
-            }
+            _nmap_draft(
+                host=current_ip,
+                port_id=port_id,
+                proto=proto or "tcp",
+                service=svc,
+                titulo=titulo,
+                desc=desc,
+                raw=raw,
+            )
         )
     return rows
 
