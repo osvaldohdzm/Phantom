@@ -1,15 +1,20 @@
-.PHONY: help setup up down logs restart build ps shell-api change-credentials
+.PHONY: help setup up down logs restart build ps shell-api change-credentials install deploy health backup clean verify
 
 help:
 	@echo "Phantom SecOps — comandos"
-	@echo "  make setup     Copia .env.example → .env"
-	@echo "  make up        docker compose up -d --build"
-	@echo "  make down      docker compose down"
-	@echo "  make logs      Seguir logs de todos los servicios"
-	@echo "  make restart   Reiniciar stack"
-	@echo "  make build     Reconstruir imágenes"
-	@echo "  make ps        Estado de contenedores"
-	@echo "  make change-credentials  Cambiar usuario/contraseña admin"
+	@echo "  ./install.sh       Preparar .env y build imágenes"
+	@echo "  ./start.sh         Levantar stack Docker"
+	@echo "  ./stop.sh          Detener stack"
+	@echo "  ./restart.sh       Reiniciar servicios"
+	@echo "  ./deploy.sh        git pull + build + recreate"
+	@echo "  ./healthcheck.sh   Comprobar web y API"
+	@echo "  ./logs.sh          Seguir logs"
+	@echo "  ./backup.sh        Respaldo BD + storage"
+	@echo "  ./verify-env.sh    Validar .env"
+	@echo "  ./clean.sh         Limpiar artefactos locales"
+	@echo "  ./uninstall.sh     Desinstalar (ver --help)"
+	@echo ""
+	@echo "  make up / down     Atajos Docker (equivalente a start/stop)"
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -39,3 +44,21 @@ ps:
 
 change-credentials:
 	./change.sh
+
+install:
+	./install.sh
+
+deploy:
+	./deploy.sh
+
+health:
+	./healthcheck.sh
+
+backup:
+	./backup.sh
+
+clean:
+	./clean.sh
+
+verify:
+	./verify-env.sh
