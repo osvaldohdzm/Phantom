@@ -61,6 +61,11 @@ backend/.pytest_cache/
 
 # datos de runtime (no versionar)
 uploads/
+storage/uploads/*
+storage/backups/*
+storage/logs/*
+!storage/**/.gitkeep
+/backups/
 backend/storage/branding/
 backend/storage/reports/
 # plantillas Word subidas por usuarios (mantener directorio vacío)

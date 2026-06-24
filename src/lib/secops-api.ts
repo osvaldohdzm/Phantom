@@ -18,7 +18,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch {
     throw new Error(
-      `No se pudo conectar al API (${getApiBaseUrl()}). Ejecuta ./start.sh y recarga la página.`
+      `No se pudo conectar al API (${getApiBaseUrl()}). Ejecuta ./phantom start (o make start) y recarga la página.`
     );
   }
   if (!res.ok) {
@@ -1271,7 +1271,7 @@ export async function uploadDocxTemplate(
     });
   } catch {
     throw new Error(
-      `No se pudo conectar al API (${getApiBaseUrl()}). Ejecuta ./start.sh y recarga la página.`
+      `No se pudo conectar al API (${getApiBaseUrl()}). Ejecuta ./phantom start (o make start) y recarga la página.`
     );
   }
   if (!res.ok) {

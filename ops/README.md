@@ -6,13 +6,18 @@ Scripts esenciales para instalar, arrancar, actualizar, respaldar y mantener Pha
 
 ```bash
 ./phantom help
+# o
+make help
+```
+
+```bash
 ./phantom install
 ./phantom start
 ./phantom update          # git pull + build + recreate
 ./phantom health
 ```
 
-Los scripts en la raíz (`./start.sh`, `./deploy.sh`, …) siguen funcionando: delegan aquí.
+Los scripts sueltos en `ops/*.sh` son implementación interna; no dupliques lógica en la raíz del repo.
 
 ## Docker / servidor
 
@@ -23,7 +28,7 @@ Los scripts en la raíz (`./start.sh`, `./deploy.sh`, …) siguen funcionando: d
 | `./phantom start` | `start.sh` | `docker compose up -d --build` |
 | `./phantom stop` | `stop.sh` | Detener (conserva volúmenes) |
 | `./phantom restart` | `restart.sh` | Reiniciar servicios |
-| `./phantom update` | `update.sh` | Actualizar despliegue (`deploy.sh`) |
+| `./phantom update` | `update.sh` | Actualizar despliegue |
 | `./phantom build` | `build.sh` | Solo build imágenes |
 | `./phantom logs` | `logs.sh` | Logs en vivo |
 | `./phantom health` | `healthcheck.sh` | Web + API |

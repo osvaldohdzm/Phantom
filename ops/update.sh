@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Phantom — desplegar actualización (pull + build + restart).
-# Uso: ./phantom update  |  ./deploy.sh (alias)
+# Uso: ./phantom update  |  make update
 #      ./phantom update --no-pull
 set -euo pipefail
 

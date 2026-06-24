@@ -1,68 +1,65 @@
-.PHONY: help setup up down logs restart build ps shell-api change-credentials install deploy health backup clean verify phantom
+# Phantom — entrypoints operativos (delegan en ./phantom).
+# Uso: make help | make start | make update
+
+.PHONY: help install start stop restart update build logs health backup clean \
+        dev prod debug verify-env uninstall change catalog-export catalog-import fix-docker
 
 help:
-	@echo "Phantom SecOps — comandos (ver también: ./phantom help)"
-	@echo "  ./phantom install    Preparar .env y build imágenes"
-	@echo "  ./phantom start      Levantar stack Docker"
-	@echo "  ./phantom stop       Detener stack"
-	@echo "  ./phantom restart    Reiniciar servicios"
-	@echo "  ./phantom update     git pull + build + recreate"
-	@echo "  ./phantom health     Comprobar web y API"
-	@echo "  ./phantom logs       Seguir logs"
-	@echo "  ./phantom backup     Respaldo BD + storage"
-	@echo "  ./phantom verify-env Validar .env"
-	@echo "  ./phantom clean      Limpiar artefactos locales"
-	@echo "  ./phantom debug      Dev nativo + diagnóstico de puertos"
-	@echo "  ./phantom uninstall  Desinstalar (ver --help)"
-	@echo ""
-	@echo "  make up / down       Atajos Docker (equivalente a start/stop)"
-
-phantom:
 	@./phantom help
 
-setup:
-	@test -f .env || cp .env.example .env
-	@echo "[+] .env listo — edita POSTGRES_PASSWORD y JWT_SECRET antes de make up"
+install:
+	@./phantom install
 
-up: setup
-	docker compose up -d --build
-	@echo ""
-	@echo "[+] Phantom en https://localhost:$${PHANTOM_HTTP_PORT:-3000}"
-	@echo "    Usuario: phantom  |  Contraseña: phantom"
-	@echo "    Certificado autofirmado en Docker (acepta advertencia del navegador)."
+start:
+	@./phantom start
 
-down:
-	docker compose down
-
-logs:
-	docker compose logs -f
+stop:
+	@./phantom stop
 
 restart:
-	docker compose restart
+	@./phantom restart
+
+update deploy:
+	@./phantom update
 
 build:
-	docker compose build --no-cache
+	@./phantom build
 
-ps:
-	docker compose ps
-
-change-credentials:
-	./phantom change
-
-install:
-	./phantom install
-
-deploy:
-	./phantom update
+logs:
+	@./phantom logs
 
 health:
-	./phantom health
+	@./phantom health
 
 backup:
-	./phantom backup
+	@./phantom backup $(ARGS)
 
 clean:
-	./phantom clean
+	@./phantom clean
 
-verify:
-	./phantom verify-env
+dev:
+	@./phantom dev
+
+prod:
+	@./phantom prod
+
+debug:
+	@./phantom debug
+
+verify-env:
+	@./phantom verify-env
+
+uninstall:
+	@./phantom uninstall
+
+change:
+	@./phantom change
+
+catalog-export:
+	@./phantom catalog-export $(ARGS)
+
+catalog-import:
+	@./phantom catalog-import
+
+fix-docker:
+	@./phantom fix-docker

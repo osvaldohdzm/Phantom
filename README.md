@@ -42,7 +42,12 @@ Cambiar credenciales desde servidor: `./phantom change`
 ./phantom health               # estado web + API
 ```
 
-Ver todos: `./phantom help` — scripts en `ops/`.
+Ver todos: `./phantom help` o `make help` — detalle en [`ops/README.md`](./ops/README.md) y [`docs/architecture/repository-layout.md`](./docs/architecture/repository-layout.md).
+
+```bash
+make start    # equivalente a ./phantom start
+make update
+```
 
 Compatible con **Podman Compose** (`podman compose up -d --build`).
 
@@ -77,10 +82,13 @@ Producción nativa (sin Docker): `./phantom prod`
 |------|-------------|
 | `src/` | Frontend Next.js (App Router) |
 | `backend/app/` | API FastAPI |
-| `docker-compose.yml` | PostgreSQL + Redis + API + Web |
-| `ops/` | Scripts operativos (`./phantom …`) |
-| `scripts/` | Infra Docker, certs, instalación Ubuntu |
-| `docs/` | Manual técnico y API |
+| `docker-compose.yml` | Stack PostgreSQL + Redis + API + Web |
+| `infra/docker/` | Dockerfiles (`api.Dockerfile`, `web.Dockerfile`) |
+| `ops/` | Operaciones — fuente de verdad (`./phantom …`) |
+| `scripts/` | Setup Ubuntu, TLS, entrypoints Docker |
+| `storage/` | Datos runtime locales (uploads, backups, logs) |
+| `docs/` | Manual técnico y arquitectura |
+| `Makefile` | Atajos (`make start`, `make update`, …) |
 
 ## Variables de entorno
 
