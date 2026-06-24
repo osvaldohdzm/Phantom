@@ -19,7 +19,9 @@ Abre **https://&lt;IP-del-servidor&gt;:3000** (certificado autofirmado → acept
 | Usuario     | `phantom`         |
 | Contraseña  | `phantom`         |
 
-Cambiar credenciales: `./change.sh`
+**Primer inicio de sesión:** el sistema exige cambiar la contraseña con una política robusta (mín. 12 caracteres, mayúsculas, números y símbolos). No podrás usar la app hasta completar este paso.
+
+Cambiar credenciales desde servidor: `./change.sh`
 
 ### Comandos habituales
 

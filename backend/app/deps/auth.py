@@ -15,6 +15,15 @@ from app.services.jwt_tokens import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
 
+_PASSWORD_CHANGE_ALLOWED = (
+    "/api/v1/auth/me",
+    "/api/v1/auth/change-password",
+)
+
+
+def _password_change_allowed(path: str) -> bool:
+    return any(path.rstrip("/").endswith(suffix) for suffix in _PASSWORD_CHANGE_ALLOWED)
+
 WRITE_ROLES = {UserRole.platform_admin, UserRole.tenant_admin, UserRole.analyst}
 ADMIN_ROLES = {UserRole.platform_admin, UserRole.tenant_admin}
 PORTAL_ROLES = {UserRole.client_viewer, UserRole.tenant_admin, UserRole.platform_admin, UserRole.analyst}
@@ -91,6 +100,12 @@ def get_auth_context(
         role = UserRole(role_name)
     except ValueError:
         role = membership.role
+
+    if user.must_change_password and not _password_change_allowed(request.url.path):
+        raise HTTPException(
+            status_code=403,
+            detail="password_change_required",
+        )
 
     return AuthContext(user=user, tenant_id=tenant_id, role=role, membership=membership)
 

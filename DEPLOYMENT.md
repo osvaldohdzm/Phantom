@@ -114,8 +114,9 @@ O termina TLS en el proxy y reenvía HTTP a un listener HTTP (requiere ajustar `
 
 ## 4. Seguridad
 
-1. Cambia `phantom` / `phantom` tras el primer login.
-2. Usa `JWT_SECRET` y `POSTGRES_PASSWORD` fuertes (`.env` nunca en git).
+1. Tras el primer login con `phantom` / `phantom`, la UI obliga a definir una contraseña robusta.
+2. Cambia credenciales desde servidor cuando quieras: `./change.sh` (misma política).
+3. Usa `JWT_SECRET` y `POSTGRES_PASSWORD` fuertes (`.env` nunca en git).
 3. Restringe el puerto 3000 con firewall (`ufw allow from 10.0.0.0/8 to any port 3000`).
 4. `AUTH_REQUIRED=true` en producción.
 5. Backups periódicos del volumen `pgdata`:

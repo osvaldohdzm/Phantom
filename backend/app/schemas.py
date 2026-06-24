@@ -888,6 +888,12 @@ class AuthUserInfo(BaseModel):
     nombre: str
     ui_language_preference: str = "auto"
     ui_language: str = "es"
+    must_change_password: bool = False
+
+
+class AuthChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class UserPreferencesUpdate(BaseModel):

@@ -358,9 +358,29 @@ def _migrate_scan_and_groups() -> None:
         conn.commit()
 
 
+def _migrate_user_must_change_password() -> None:
+    alters = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
+    ]
+    with engine.connect() as conn:
+        for sql in alters:
+            conn.execute(text(sql))
+        conn.commit()
+
+
 def run_schema_migrations() -> None:
     if settings.is_sqlite:
         Base.metadata.create_all(bind=engine)
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0"
+                    )
+                )
+                conn.commit()
+        except Exception:
+            pass
         return
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS core"))
@@ -381,6 +401,7 @@ def run_schema_migrations() -> None:
     _migrate_scan_runs_engagement_fk_cascade()
     _migrate_tenant_branding()
     _migrate_user_preferences()
+    _migrate_user_must_change_password()
     _migrate_audit_events_indexes()
     db = SessionLocal()
     try:

@@ -96,6 +96,7 @@ def _ensure_user(
     password: str,
     *,
     reset_password: bool = False,
+    must_change_password: bool | None = None,
 ) -> User:
     """Crea usuario semilla si no existe. No sobrescribe contraseña salvo reset_password=True."""
     user = db.query(User).filter(User.email == email).first()
@@ -104,16 +105,30 @@ def _ensure_user(
             email=email,
             nombre=nombre,
             password_hash=hash_password(password),
+            must_change_password=(
+                must_change_password if must_change_password is not None else True
+            ),
         )
         db.add(user)
         db.flush()
         return user
     if reset_password and not verify_password(password, user.password_hash):
         user.password_hash = hash_password(password)
+    if must_change_password is not None:
+        user.must_change_password = must_change_password
     if nombre and not (user.nombre or "").strip():
         user.nombre = nombre
     user.is_active = True
     return user
+
+
+def _sync_default_password_flags(db: Session) -> None:
+    """Marca must_change_password si el admin sigue con la contraseña semilla «phantom»."""
+    admin = db.query(User).filter(User.email == DEFAULT_ADMIN_LOGIN).first()
+    if not admin:
+        return
+    if verify_password(DEFAULT_ADMIN_PASSWORD, admin.password_hash):
+        admin.must_change_password = True
 
 
 def migrate_legacy_admin_login(db: Session) -> User | None:
@@ -151,8 +166,14 @@ def seed_auth_data(db: Session) -> None:
 
     migrate_legacy_admin_login(db)
     admin = _ensure_user(db, DEFAULT_ADMIN_LOGIN, DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_PASSWORD)
-    analyst = _ensure_user(db, "analyst@Phantom.local", "Analista SecOps", "analyst123")
-    client = _ensure_user(db, "cliente@demo.local", "Usuario Cliente", "client123")
+    analyst = _ensure_user(
+        db, "analyst@Phantom.local", "Analista SecOps", "analyst123", must_change_password=False
+    )
+    client = _ensure_user(
+        db, "cliente@demo.local", "Usuario Cliente", "client123", must_change_password=False
+    )
+
+    _sync_default_password_flags(db)
 
     _ensure_membership(db, admin.id, tenant_main.id, UserRole.platform_admin)
     _ensure_membership(db, admin.id, tenant_demo.id, UserRole.tenant_admin)

@@ -27,6 +27,13 @@ export default function LoginPage() {
   const banner = resolveBrandingAssetUrl(branding.login_banner_url);
 
   if (user && !loading) {
+    if (user.must_change_password) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">Configura tu nueva contraseña…</p>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <p className="text-sm text-muted-foreground">Sesión activa. Redirigiendo…</p>
@@ -112,6 +119,11 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? 'Entrando…' : 'Entrar'}
           </Button>
+          <p className="text-[10px] text-muted-foreground leading-snug text-center">
+            Primera instalación: usuario <span className="font-mono">phantom</span> /{' '}
+            <span className="font-mono">phantom</span>. El sistema pedirá una contraseña robusta al
+            iniciar sesión.
+          </p>
         </form>
 
         {orgSlug ? null : (

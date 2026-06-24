@@ -34,6 +34,7 @@ import {
   resolveUiLanguage,
   type UiLanguagePreference,
 } from '@/lib/user-preferences';
+import { ForcePasswordChange } from '@/components/force-password-change';
 
 type AuthState = {
   user: AuthUser | null;
@@ -120,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!state.ready || state.loading) return;
+    if (state.user?.must_change_password) return;
     if (!state.user && pathname !== '/login') {
       router.replace(`/login?next=${encodeURIComponent(pathname || '/')}`);
       return;
@@ -132,7 +134,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       setState((s) => ({ ...s, loading: true }));
-      const session = await apiLogin(email, password);
+      try {
+        const session = await apiLogin(email, password);
+        applySession(session);
+        if (session.user.must_change_password) {
+          return;
+        }
+        if (isClientViewer(session.role)) {
+          router.push('/portal');
+        } else {
+          router.push('/');
+        }
+      } finally {
+        setState((s) => ({ ...s, loading: false }));
+      }
+    },
+    [applySession, router]
+  );
+
+  const completePasswordChange = useCallback(
+    (session: AuthSession) => {
       applySession(session);
       if (isClientViewer(session.role)) {
         router.push('/portal');
@@ -193,7 +214,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [state, login, logout, switchTenant, refresh]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {state.user?.must_change_password ? (
+        <ForcePasswordChange email={state.user.email} onComplete={completePasswordChange} />
+      ) : null}
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

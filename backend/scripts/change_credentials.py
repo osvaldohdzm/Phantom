@@ -16,6 +16,7 @@ from app.services.auth_seed import (
     LEGACY_ADMIN_LOGINS,
     migrate_legacy_admin_login,
 )
+from app.services.password_policy import validate_password_strength
 from app.services.passwords import hash_password
 
 
@@ -63,11 +64,12 @@ def _read_secret(prompt: str) -> str:
         return getpass.getpass(prompt)
 
 
-def _prompt_password() -> str:
+def _prompt_password(login: str) -> str:
     while True:
         pwd = _read_secret("Nueva contraseña: ")
-        if len(pwd) < 8:
-            print("[!] La contraseña debe tener al menos 8 caracteres.")
+        errors = validate_password_strength(pwd, login=login)
+        if errors:
+            print("[!] " + "; ".join(errors))
             continue
         confirm = _read_secret("Confirmar contraseña: ")
         if pwd != confirm:
@@ -117,7 +119,7 @@ def main() -> int:
                 print("[!] El usuario no puede contener espacios.")
                 return 1
 
-        new_password = _prompt_password()
+        new_password = _prompt_password(new_login)
 
         if new_login != user.email:
             taken = db.query(User).filter(User.email == new_login, User.id != user.id).first()
@@ -127,6 +129,7 @@ def main() -> int:
             user.email = new_login
 
         user.password_hash = hash_password(new_password)
+        user.must_change_password = False
         user.is_active = True
         db.commit()
 

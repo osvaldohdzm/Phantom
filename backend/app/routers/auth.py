@@ -9,6 +9,7 @@ from app.database import get_db
 from app.deps.auth import AuthContext, get_auth_context
 from app.models.auth import Tenant, TenantMembership, User, UserRole
 from app.schemas import (
+    AuthChangePasswordRequest,
     AuthLoginRequest,
     AuthLoginResponse,
     AuthMeResponse,
@@ -20,7 +21,8 @@ from app.schemas import (
 )
 from app.services.audit import log_audit_event
 from app.services.jwt_tokens import create_access_token
-from app.services.passwords import verify_password
+from app.services.password_policy import validate_password_strength
+from app.services.passwords import hash_password, verify_password
 from app.services.tenant_branding import normalize_branding
 from app.services.tenant_locale import resolve_tenant_language
 from app.services.user_preferences import normalize_user_preferences, resolve_ui_language
@@ -38,6 +40,7 @@ def _user_info(user: User, tenant: Tenant | None) -> AuthUserInfo:
         nombre=user.nombre,
         ui_language_preference=pref,
         ui_language=resolve_ui_language(user.preferences, tenant_lang),
+        must_change_password=bool(getattr(user, "must_change_password", False)),
     )
 
 
@@ -181,6 +184,11 @@ def update_my_preferences(
     ctx: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
 ) -> AuthMeResponse:
+    if ctx.user.must_change_password:
+        raise HTTPException(
+            status_code=403,
+            detail="Debes cambiar la contraseña antes de continuar",
+        )
     prefs = normalize_user_preferences(ctx.user.preferences)
     if payload.ui_language is not None:
         prefs["ui_language"] = payload.ui_language
@@ -194,5 +202,58 @@ def update_my_preferences(
         active_tenant_id=ctx.tenant_id,
         role=ctx.role.value,
         tenants=_tenant_infos(db, ctx.user.id),
+        branding=_active_branding(db, ctx.tenant_id),
+    )
+
+
+@router.post("/change-password", response_model=AuthLoginResponse)
+def change_password(
+    payload: AuthChangePasswordRequest,
+    request: Request,
+    ctx: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> AuthLoginResponse:
+    user = ctx.user
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="La nueva contraseña debe ser distinta a la actual",
+        )
+
+    policy_errors = validate_password_strength(payload.new_password, login=user.email)
+    if policy_errors:
+        raise HTTPException(
+            status_code=400,
+            detail="Contraseña no cumple la política: " + "; ".join(policy_errors),
+        )
+
+    was_forced = user.must_change_password
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
+    db.add(user)
+
+    token, role = _issue_token(db, user, ctx.tenant_id)
+    tenants = _tenant_infos(db, user.id)
+
+    log_audit_event(
+        db,
+        action="auth.password_changed",
+        actor_id=user.id,
+        tenant_id=ctx.tenant_id,
+        ip_address=request.client.host if request.client else None,
+        details={"email": user.email, "forced": was_forced},
+    )
+    db.commit()
+
+    return AuthLoginResponse(
+        access_token=token,
+        token_type="bearer",
+        user=_user_info(user, db.get(Tenant, ctx.tenant_id)),
+        active_tenant_id=ctx.tenant_id,
+        role=role.value,
+        tenants=tenants,
         branding=_active_branding(db, ctx.tenant_id),
     )

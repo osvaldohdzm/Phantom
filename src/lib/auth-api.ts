@@ -17,6 +17,7 @@ export interface AuthUser {
   nombre: string;
   ui_language_preference?: UiLanguagePreference;
   ui_language?: TenantLanguage;
+  must_change_password?: boolean;
 }
 
 export interface AuthTenant {
@@ -67,6 +68,21 @@ export async function login(
   const session = await authFetch<AuthSession>('/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password, tenant_id: tenantId ?? null }),
+  });
+  persistSession(session.access_token, session.active_tenant_id);
+  return session;
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<AuthSession> {
+  const session = await authFetch<AuthSession>('/api/v1/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   });
   persistSession(session.access_token, session.active_tenant_id);
   return session;
