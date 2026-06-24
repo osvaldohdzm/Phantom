@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
-import { collectDevOrigins } from "./src/lib/collect-dev-origins";
+
+/** Dev-only (Turbopack / RSC). En producción no importa módulos bajo src/ (Docker runner). */
+function collectDevOrigins(): string[] {
+  const fallback = ["localhost", "127.0.0.1"];
+  if (process.env.NODE_ENV === "production") return fallback;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("./src/lib/collect-dev-origins") as {
+      collectDevOrigins: () => string[];
+    };
+    return mod.collectDevOrigins();
+  } catch {
+    return fallback;
+  }
+}
 
 const backendUrl = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
