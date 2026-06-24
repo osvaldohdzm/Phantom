@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps.auth import AuthContext, get_auth_context
+from app.deps.auth import AuthContext, get_auth_context, user_has_platform_admin
 from app.models.auth import Tenant, TenantMembership, User, UserRole
 from app.schemas import (
     AuthChangePasswordRequest,
+    AuthInitialSetupRequest,
     AuthLoginRequest,
     AuthLoginResponse,
     AuthMeResponse,
@@ -20,12 +21,18 @@ from app.schemas import (
     UserPreferencesUpdate,
 )
 from app.services.audit import log_audit_event
+from app.services.auth_seed import DEFAULT_TENANT_SLUG, DEMO_TENANT_SLUG
 from app.services.jwt_tokens import create_access_token
 from app.services.password_policy import validate_password_strength
 from app.services.passwords import hash_password, verify_password
-from app.services.tenant_branding import normalize_branding
+from app.services.tenant_branding import merge_branding_update, normalize_branding
 from app.services.tenant_locale import resolve_tenant_language
-from app.services.user_preferences import normalize_user_preferences, resolve_ui_language
+from app.services.tenant_utils import normalize_tenant_slug
+from app.services.user_preferences import (
+    is_initial_setup_complete,
+    normalize_user_preferences,
+    resolve_ui_language,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,6 +48,7 @@ def _user_info(user: User, tenant: Tenant | None) -> AuthUserInfo:
         ui_language_preference=pref,
         ui_language=resolve_ui_language(user.preferences, tenant_lang),
         must_change_password=bool(getattr(user, "must_change_password", False)),
+        initial_setup_complete=is_initial_setup_complete(user.preferences),
     )
 
 
@@ -256,4 +264,99 @@ def change_password(
         role=role.value,
         tenants=tenants,
         branding=_active_branding(db, ctx.tenant_id),
+    )
+
+
+@router.post("/initial-setup", response_model=AuthLoginResponse)
+def complete_initial_setup(
+    payload: AuthInitialSetupRequest,
+    request: Request,
+    ctx: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> AuthLoginResponse:
+    if ctx.user.must_change_password:
+        raise HTTPException(
+            status_code=403,
+            detail="Change your password before completing setup",
+        )
+    if is_initial_setup_complete(ctx.user.preferences):
+        raise HTTPException(status_code=400, detail="Initial setup already completed")
+    if not user_has_platform_admin(db, ctx.user.id):
+        raise HTTPException(status_code=403, detail="Platform administrator required")
+
+    org_name = payload.organization_name.strip()
+    if len(org_name) < 2:
+        raise HTTPException(status_code=400, detail="Organization name is too short")
+
+    tenant = (
+        db.query(Tenant).filter(Tenant.slug == DEFAULT_TENANT_SLUG).first()
+        or db.get(Tenant, ctx.tenant_id)
+    )
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Primary tenant not found")
+
+    tenant.nombre = org_name
+    try:
+        candidate_slug = normalize_tenant_slug(org_name)
+        conflict = (
+            db.query(Tenant)
+            .filter(Tenant.slug == candidate_slug, Tenant.id != tenant.id)
+            .first()
+        )
+        if not conflict:
+            tenant.slug = candidate_slug
+    except ValueError:
+        pass
+
+    tenant.branding = merge_branding_update(
+        tenant.branding,
+        {
+            "language": payload.operational_language,
+            "workspace_name": org_name,
+            "login_headline": "Sign in",
+            "login_subtitle": None,
+            "login_message": None,
+        },
+    )
+
+    demo = db.query(Tenant).filter(Tenant.slug == DEMO_TENANT_SLUG).first()
+    if demo and demo.is_active:
+        demo.is_active = False
+
+    ui_lang = payload.ui_language or payload.operational_language
+    prefs = normalize_user_preferences(ctx.user.preferences)
+    prefs["ui_language"] = ui_lang
+    prefs["initial_setup_complete"] = True
+    ctx.user.preferences = prefs
+    db.add(ctx.user)
+    db.add(tenant)
+    if demo:
+        db.add(demo)
+
+    active_tenant_id = tenant.id
+    token, role = _issue_token(db, ctx.user, active_tenant_id)
+    tenants = _tenant_infos(db, ctx.user.id)
+
+    log_audit_event(
+        db,
+        action="auth.initial_setup",
+        actor_id=ctx.user.id,
+        tenant_id=active_tenant_id,
+        ip_address=request.client.host if request.client else None,
+        details={
+            "organization_name": org_name,
+            "operational_language": payload.operational_language,
+            "ui_language": ui_lang,
+        },
+    )
+    db.commit()
+
+    return AuthLoginResponse(
+        access_token=token,
+        token_type="bearer",
+        user=_user_info(ctx.user, tenant),
+        active_tenant_id=active_tenant_id,
+        role=role.value,
+        tenants=tenants,
+        branding=_active_branding(db, active_tenant_id),
     )

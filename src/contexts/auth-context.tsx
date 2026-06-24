@@ -35,6 +35,7 @@ import {
   type UiLanguagePreference,
 } from '@/lib/user-preferences';
 import { ForcePasswordChange } from '@/components/force-password-change';
+import { InitialSetupWizard } from '@/components/initial-setup-wizard';
 
 type AuthState = {
   user: AuthUser | null;
@@ -119,9 +120,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  const needsInitialSetup = useMemo(
+    () =>
+      Boolean(state.user) &&
+      !state.user?.must_change_password &&
+      !state.user?.initial_setup_complete &&
+      (state.role ? hasPlatformAdminAccess(state.role, state.tenants) : false),
+    [state.user, state.role, state.tenants]
+  );
+
   useEffect(() => {
     if (!state.ready || state.loading) return;
-    if (state.user?.must_change_password) return;
+    if (state.user?.must_change_password || needsInitialSetup) return;
     if (!state.user && pathname !== '/login') {
       router.replace(`/login?next=${encodeURIComponent(pathname || '/')}`);
       return;
@@ -129,7 +139,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.role && isClientViewer(state.role) && pathname && !pathname.startsWith('/portal') && pathname !== '/login') {
       router.replace('/portal');
     }
-  }, [state.ready, state.loading, state.user, state.role, pathname, router]);
+  }, [state.ready, state.loading, state.user, state.role, pathname, router, needsInitialSetup]);
+
+  const goAfterAuth = useCallback(
+    (session: AuthSession) => {
+      if (session.user.must_change_password) return;
+      if (!session.user.initial_setup_complete && hasPlatformAdminAccess(session.role, session.tenants)) {
+        return;
+      }
+      if (isClientViewer(session.role)) {
+        router.push('/portal');
+      } else {
+        router.push('/');
+      }
+    },
+    [router]
+  );
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -137,31 +162,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const session = await apiLogin(email, password);
         applySession(session);
-        if (session.user.must_change_password) {
-          return;
-        }
-        if (isClientViewer(session.role)) {
-          router.push('/portal');
-        } else {
-          router.push('/');
-        }
+        goAfterAuth(session);
       } finally {
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [applySession, router]
+    [applySession, goAfterAuth]
   );
 
   const completePasswordChange = useCallback(
     (session: AuthSession) => {
       applySession(session);
-      if (isClientViewer(session.role)) {
-        router.push('/portal');
-      } else {
-        router.push('/');
-      }
+      goAfterAuth(session);
     },
-    [applySession, router]
+    [applySession, goAfterAuth]
+  );
+
+  const completeInitialSetup = useCallback(
+    (session: AuthSession) => {
+      applySession(session);
+      goAfterAuth(session);
+    },
+    [applySession, goAfterAuth]
   );
 
   const logout = useCallback(() => {
@@ -218,6 +240,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={value}>
       {state.user?.must_change_password ? (
         <ForcePasswordChange email={state.user.email} onComplete={completePasswordChange} />
+      ) : null}
+      {needsInitialSetup ? (
+        <InitialSetupWizard onComplete={completeInitialSetup} />
       ) : null}
       {children}
     </AuthContext.Provider>

@@ -18,6 +18,7 @@ export interface AuthUser {
   ui_language_preference?: UiLanguagePreference;
   ui_language?: TenantLanguage;
   must_change_password?: boolean;
+  initial_setup_complete?: boolean;
 }
 
 export interface AuthTenant {
@@ -83,6 +84,19 @@ export async function changePassword(
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  });
+  persistSession(session.access_token, session.active_tenant_id);
+  return session;
+}
+
+export async function completeInitialSetup(payload: {
+  organization_name: string;
+  operational_language: 'es' | 'en';
+  ui_language?: 'es' | 'en';
+}): Promise<AuthSession> {
+  const session = await authFetch<AuthSession>('/api/v1/auth/initial-setup', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
   persistSession(session.access_token, session.active_tenant_id);
   return session;

@@ -11,12 +11,11 @@ import { resolveBrandingAssetUrl } from '@/lib/tenant-branding';
 
 export default function LoginPage() {
   const { login, loading, user } = useAuth();
-  const { branding, workspaceName, productName, loadPublicBranding } = useBranding();
+  const { branding, loadPublicBranding } = useBranding();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/';
   const orgSlug = searchParams.get('org') || searchParams.get('tenant') || '';
-  const [email, setEmail] = useState('phantom');
-  const [password, setPassword] = useState('phantom');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,16 +26,16 @@ export default function LoginPage() {
   const banner = resolveBrandingAssetUrl(branding.login_banner_url);
 
   if (user && !loading) {
-    if (user.must_change_password) {
+    if (user.must_change_password || !user.initial_setup_complete) {
       return (
         <div className="min-h-screen flex items-center justify-center p-6">
-          <p className="text-sm text-muted-foreground">Configura tu nueva contraseña…</p>
+          <p className="text-sm text-muted-foreground">Completing account setup…</p>
         </div>
       );
     }
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
-        <p className="text-sm text-muted-foreground">Sesión activa. Redirigiendo…</p>
+        <p className="text-sm text-muted-foreground">Signed in. Redirecting…</p>
       </div>
     );
   }
@@ -48,7 +47,7 @@ export default function LoginPage() {
     try {
       await login(email.trim(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+      setError(err instanceof Error ? err.message : 'Sign-in failed');
     } finally {
       setSubmitting(false);
     }
@@ -70,24 +69,18 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6 relative z-10">
         <div className="text-center space-y-3">
           <div className="flex justify-center">
-            <BrandingLogo branding={branding} size="lg" fallback={workspaceName} />
+            <BrandingLogo branding={branding} size="lg" fallback="Phantom" />
           </div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">{productName}</p>
-          <h1 className="text-2xl font-semibold">{branding.login_headline || 'Iniciar sesión'}</h1>
-          <p className="text-sm text-muted-foreground">
-            {branding.login_subtitle || workspaceName}
-          </p>
-          {branding.login_message ? (
-            <p className="text-[11px] text-muted-foreground/90 border border-border/50 rounded-md px-3 py-1.5 inline-block">
-              {branding.login_message}
-            </p>
-          ) : null}
+          <h1 className="text-2xl font-semibold">Sign in</h1>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-border bg-card/95 backdrop-blur p-6 shadow-sm">
+        <form
+          onSubmit={onSubmit}
+          className="space-y-4 rounded-xl border border-border bg-card/95 backdrop-blur p-6 shadow-sm"
+        >
           <div className="space-y-1.5">
             <label htmlFor="email" className="text-xs text-muted-foreground">
-              Usuario
+              Username
             </label>
             <Input
               id="email"
@@ -100,7 +93,7 @@ export default function LoginPage() {
           </div>
           <div className="space-y-1.5">
             <label htmlFor="password" className="text-xs text-muted-foreground">
-              Contraseña
+              Password
             </label>
             <Input
               id="password"
@@ -117,26 +110,9 @@ export default function LoginPage() {
             </p>
           ) : null}
           <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? 'Entrando…' : 'Entrar'}
+            {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
-          <p className="text-[10px] text-muted-foreground leading-snug text-center">
-            Primera instalación: usuario <span className="font-mono">phantom</span> /{' '}
-            <span className="font-mono">phantom</span>. El sistema pedirá una contraseña robusta al
-            iniciar sesión.
-          </p>
         </form>
-
-        {orgSlug ? null : (
-          <p className="text-center text-[10px] text-muted-foreground">
-            White-label: añade <span className="font-mono">?org=slug-tenant</span> a la URL
-          </p>
-        )}
-
-        {next !== '/login' ? (
-          <p className="text-center text-xs text-muted-foreground">
-            Tras login irás a <span className="font-mono">{next}</span>
-          </p>
-        ) : null}
       </div>
     </div>
   );

@@ -5,8 +5,36 @@ import { Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { changePassword, type AuthSession } from '@/lib/auth-api';
-import { PASSWORD_RULES, passwordMeetsPolicy } from '@/lib/password-policy';
+import { passwordMeetsPolicy } from '@/lib/password-policy';
 import { cn } from '@/lib/utils';
+
+const PASSWORD_RULES_EN = [
+  { id: 'length', label: 'At least 12 characters', test: (p: string) => p.length >= 12 },
+  { id: 'upper', label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { id: 'lower', label: 'One lowercase letter', test: (p: string) => /[a-z]/.test(p) },
+  { id: 'digit', label: 'One number', test: (p: string) => /[0-9]/.test(p) },
+  {
+    id: 'special',
+    label: 'One special character',
+    test: (p: string) => /[^A-Za-z0-9]/.test(p),
+  },
+  {
+    id: 'not_default',
+    label: 'Not a common or default password',
+    test: (p: string) =>
+      !['phantom', 'password', 'password123', 'admin', 'changeme'].includes(
+        p.trim().toLowerCase()
+      ),
+  },
+  {
+    id: 'not_login',
+    label: 'Different from your username',
+    test: (p: string, login?: string) => {
+      const l = (login ?? '').trim().toLowerCase();
+      return !l || p.trim().toLowerCase() !== l;
+    },
+  },
+] as const;
 
 type ForcePasswordChangeProps = {
   email: string;
@@ -21,7 +49,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
   const [submitting, setSubmitting] = useState(false);
 
   const rulesOk = useMemo(
-    () => PASSWORD_RULES.map((r) => ({ ...r, ok: r.test(newPassword, email) })),
+    () => PASSWORD_RULES_EN.map((r) => ({ ...r, ok: r.test(newPassword, email) })),
     [newPassword, email]
   );
 
@@ -40,7 +68,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
       const session = await changePassword(currentPassword, newPassword);
       onComplete(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo actualizar la contraseña');
+      setError(err instanceof Error ? err.message : 'Could not update password');
     } finally {
       setSubmitting(false);
     }
@@ -52,10 +80,10 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
         <div className="flex items-start gap-3">
           <ShieldAlert className="size-6 shrink-0 text-amber-500 mt-0.5" />
           <div className="space-y-1">
-            <h1 className="text-lg font-semibold">Cambio de contraseña obligatorio</h1>
+            <h1 className="text-lg font-semibold">Password change required</h1>
             <p className="text-sm text-muted-foreground leading-snug">
-              La cuenta <span className="font-mono text-foreground">{email}</span> usa credenciales
-              por defecto. Define una contraseña robusta antes de continuar.
+              Set a strong password for <span className="font-mono text-foreground">{email}</span>{' '}
+              before continuing.
             </p>
           </div>
         </div>
@@ -63,7 +91,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
         <form onSubmit={onSubmit} className="space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="current-pw" className="text-xs text-muted-foreground">
-              Contraseña actual
+              Current password
             </label>
             <Input
               id="current-pw"
@@ -76,7 +104,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
           </div>
           <div className="space-y-1.5">
             <label htmlFor="new-pw" className="text-xs text-muted-foreground">
-              Nueva contraseña
+              New password
             </label>
             <Input
               id="new-pw"
@@ -89,7 +117,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
           </div>
           <div className="space-y-1.5">
             <label htmlFor="confirm-pw" className="text-xs text-muted-foreground">
-              Confirmar nueva contraseña
+              Confirm new password
             </label>
             <Input
               id="confirm-pw"
@@ -123,7 +151,7 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
               )}
             >
               <span className="size-1.5 rounded-full bg-current shrink-0" />
-              Las dos contraseñas coinciden
+              Passwords match
             </li>
           </ul>
 
@@ -137,18 +165,13 @@ export function ForcePasswordChange({ email, onComplete }: ForcePasswordChangePr
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin mr-1.5" />
-                Guardando…
+                Saving…
               </>
             ) : (
-              'Guardar y continuar'
+              'Save and continue'
             )}
           </Button>
         </form>
-
-        <p className="text-[10px] text-muted-foreground text-center">
-          También puedes cambiar la contraseña desde el servidor con{' '}
-          <span className="font-mono">./change.sh</span>
-        </p>
       </div>
     </div>
   );

@@ -50,8 +50,12 @@ done
 echo ""
 if [[ "$OK" -eq 1 ]]; then
   echo "[+] Phantom responde en https://127.0.0.1:${PORT}"
-  echo "    Desde tu PC: https://${IP}:${PORT}"
+  echo "    Desde tu PC (misma red): https://${IP}:${PORT}"
   echo "    Certificado autofirmado → Avanzado → continuar en el navegador."
+  echo ""
+  echo "    Acceso remoto por túnel SSH (desde tu laptop):"
+  echo "      ssh -L ${PORT}:127.0.0.1:${PORT} baxteru@${IP}"
+  echo "    Luego en el navegador: https://localhost:${PORT}/  (no uses :8080 salvo que redirijas ese puerto)"
 else
   echo "[!] Sigue sin responder. Revisa:"
   echo "    docker compose ps"

@@ -466,6 +466,12 @@ def run_startup_seeds() -> None:
     except Exception as e:
         print(f"Auth seed: {e}")
     try:
+        from app.services.user_preferences import backfill_initial_setup_complete
+
+        backfill_initial_setup_complete(SessionLocal())
+    except Exception as e:
+        print(f"Initial setup backfill: {e}")
+    try:
         backfill_tenant_ids(SessionLocal())
     except Exception as e:
         print(f"Tenant backfill: {e}")

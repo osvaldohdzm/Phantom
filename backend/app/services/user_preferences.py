@@ -7,7 +7,10 @@ from typing import Any, Literal, Optional
 UiLanguagePreference = Literal["auto", "es", "en"]
 TenantLanguage = Literal["es", "en"]
 
-DEFAULT_USER_PREFERENCES: dict[str, Any] = {"ui_language": "auto"}
+DEFAULT_USER_PREFERENCES: dict[str, Any] = {
+    "ui_language": "auto",
+    "initial_setup_complete": False,
+}
 
 
 def normalize_user_preferences(raw: Optional[dict]) -> dict[str, Any]:
@@ -17,7 +20,31 @@ def normalize_user_preferences(raw: Optional[dict]) -> dict[str, Any]:
     pref = str(raw.get("ui_language") or "auto").strip().lower()
     if pref in ("auto", "es", "en"):
         out["ui_language"] = pref
+    if "initial_setup_complete" in raw:
+        out["initial_setup_complete"] = bool(raw.get("initial_setup_complete"))
     return out
+
+
+def is_initial_setup_complete(raw: Optional[dict]) -> bool:
+    return bool(normalize_user_preferences(raw).get("initial_setup_complete"))
+
+
+def backfill_initial_setup_complete(db) -> None:
+    """Instalaciones existentes: marcar setup hecho si ya no usan contraseña semilla."""
+    from app.models.auth import User
+
+    changed = 0
+    for user in db.query(User).all():
+        raw = user.preferences if isinstance(user.preferences, dict) else {}
+        if "initial_setup_complete" in raw:
+            continue
+        prefs = normalize_user_preferences(raw)
+        if not user.must_change_password:
+            prefs["initial_setup_complete"] = True
+        user.preferences = prefs
+        changed += 1
+    if changed:
+        db.commit()
 
 
 def ui_language_preference(raw: Optional[dict]) -> UiLanguagePreference:

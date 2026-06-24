@@ -898,11 +898,18 @@ class AuthUserInfo(BaseModel):
     ui_language_preference: str = "auto"
     ui_language: str = "es"
     must_change_password: bool = False
+    initial_setup_complete: bool = False
 
 
 class AuthChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class AuthInitialSetupRequest(BaseModel):
+    organization_name: str = Field(..., min_length=2, max_length=255)
+    operational_language: str = Field(..., pattern="^(es|en)$")
+    ui_language: Optional[str] = Field(None, pattern="^(es|en)$")
 
 
 class UserPreferencesUpdate(BaseModel):
