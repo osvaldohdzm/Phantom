@@ -19,3 +19,13 @@ export async function postIngestMultipart(apiPath: string, form: FormData): Prom
     body: form,
   });
 }
+
+export async function postMultipartUpload(apiPath: string, form: FormData): Promise<Response> {
+  const { resolveMultipartUploadUrl } = await import('@/lib/api-base');
+  const url = resolveMultipartUploadUrl(apiPath);
+  return fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  });
+}

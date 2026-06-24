@@ -109,6 +109,15 @@ class AssetScanTargetRefreshResponse(BaseModel):
     message: Optional[str] = None
 
 
+class AssetScanTargetImportResponse(BaseModel):
+    source: str
+    created_count: int
+    discovered: int
+    pending: int
+    message: Optional[str] = None
+    engagement_id: Optional[UUID] = None
+
+
 class AssetScanTargetPromoteRequest(BaseModel):
     target_ids: List[UUID]
     source_type: AssetSourceTypeEnum = AssetSourceTypeEnum.inventory

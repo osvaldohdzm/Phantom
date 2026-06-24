@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.deps.auth import AuthContext, get_auth_context, require_write
@@ -14,6 +14,7 @@ from app.schemas import (
     AssetCreate,
     AssetRead,
     AssetScanTargetActionResponse,
+    AssetScanTargetImportResponse,
     AssetScanTargetPassRequest,
     AssetScanTargetPromoteRequest,
     AssetScanTargetRead,
@@ -21,11 +22,13 @@ from app.schemas import (
     AssetSourceTypeEnum,
     EnvironmentEnum,
 )
+from app.services.asset_scan_import import import_scan_file_for_targets
 from app.services.asset_scan_targets import pass_scan_targets, promote_scan_targets, refresh_scan_targets
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 MAX_LIST = 5000
+MAX_SCAN_IMPORT_MB = 150
 
 
 def _serialize_asset(asset: Asset) -> AssetRead:
@@ -133,6 +136,33 @@ def refresh_scan_targets_endpoint(
         pending=stats["pending"],
         message=f"{stats['discovered']} objetivo(s) nuevos · {stats['pending']} pendientes en cola",
     )
+
+
+@router.post("/scan-targets/import", response_model=AssetScanTargetImportResponse)
+async def import_scan_targets_file(
+    file: UploadFile = File(...),
+    engagement_id: Optional[UUID] = Form(None),
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(require_write),
+) -> AssetScanTargetImportResponse:
+    """Importa Nessus CSV o Nmap (XML/GNMAP/txt) y alimenta la cola de objetivos desde escaneos."""
+    raw = await file.read()
+    if len(raw) > MAX_SCAN_IMPORT_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Archivo mayor a {MAX_SCAN_IMPORT_MB} MB")
+    if engagement_id is not None:
+        from app.deps.auth import require_engagement_tenant
+
+        require_engagement_tenant(db, engagement_id, ctx.tenant_id)
+
+    result = import_scan_file_for_targets(
+        db,
+        data=raw,
+        filename=file.filename or "scan",
+        tenant_id=ctx.tenant_id,
+        engagement_id=engagement_id,
+        refresh_engagement_id=engagement_id,
+    )
+    return AssetScanTargetImportResponse(**result)
 
 
 @router.post("/scan-targets/promote", response_model=AssetScanTargetActionResponse)

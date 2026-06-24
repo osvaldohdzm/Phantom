@@ -30,12 +30,23 @@ function inferDirectBackendOrigin(): string | null {
  * (evita doble proxy Next y timeouts 504 en CSV grandes).
  */
 export function resolveIngestApiUrl(path: string, _opts?: { fileSize?: number }): string {
+  return resolveMultipartUploadUrl(path);
+}
+
+/** Multipart grande: ingesta o importación de escaneos en Activos → directo :8000 en browser. */
+export function resolveMultipartUploadUrl(path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  if (typeof window !== 'undefined' && normalized.startsWith(INGEST_API_PREFIX)) {
-    const rest = normalized.slice(INGEST_API_PREFIX.length);
+  const isDirectMultipart =
+    normalized.startsWith(INGEST_API_PREFIX) ||
+    normalized === '/api/v1/assets/scan-targets/import';
+
+  if (typeof window !== 'undefined' && isDirectMultipart) {
     const direct = inferDirectBackendOrigin();
-    if (direct) return `${direct}/api/v1/ingest/${rest}`;
-    return `${window.location.origin}/api/secops/ingest/${rest}`;
+    if (direct) return `${direct}${normalized}`;
+    if (normalized.startsWith(INGEST_API_PREFIX)) {
+      const rest = normalized.slice(INGEST_API_PREFIX.length);
+      return `${window.location.origin}/api/secops/ingest/${rest}`;
+    }
   }
   return resolveApiUrl(path);
 }

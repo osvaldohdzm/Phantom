@@ -1073,6 +1073,39 @@ export async function refreshAssetScanTargets(engagement_id?: string): Promise<{
   return apiFetch(`/api/v1/assets/scan-targets/refresh${q}`, { method: 'POST' });
 }
 
+export type AssetScanTargetImportResult = {
+  source: string;
+  created_count: number;
+  discovered: number;
+  pending: number;
+  message?: string;
+  engagement_id?: string;
+};
+
+export async function importAssetScanTargets(
+  file: File,
+  engagement_id?: string
+): Promise<AssetScanTargetImportResult> {
+  const { postMultipartUpload } = await import('@/lib/ingest-upload');
+  const form = new FormData();
+  form.append('file', file);
+  if (engagement_id?.trim()) form.append('engagement_id', engagement_id.trim());
+  const res = await postMultipartUpload('/api/v1/assets/scan-targets/import', form);
+  const data = (await res.json().catch(() => ({}))) as AssetScanTargetImportResult & {
+    detail?: unknown;
+  };
+  if (!res.ok) {
+    const detail =
+      typeof data.detail === 'string'
+        ? data.detail
+        : Array.isArray(data.detail)
+          ? data.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+          : res.statusText;
+    throw new Error(detail || `Error ${res.status}`);
+  }
+  return data;
+}
+
 export async function promoteAssetScanTargets(body: {
   target_ids: string[];
   source_type: AssetSourceType;

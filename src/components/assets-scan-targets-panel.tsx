@@ -15,6 +15,7 @@ import {
   refreshAssetScanTargets,
   type AssetScanTarget,
 } from '@/lib/secops-api';
+import { AssetsScanImportZone } from '@/components/assets-scan-import-zone';
 
 type AssetsScanTargetsPanelProps = {
   engagementId: string | null;
@@ -141,9 +142,11 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground max-w-3xl">
-        Objetivos extraídos de Nessus, Nmap y otros escaneos (hallazgos sin activo vinculado). Elige
-        cuáles entran al inventario y cuáles se omiten; la decisión queda guardada.
+        Importa Nessus CSV o Nmap (XML, GNMAP, TXT) aquí, o actualiza desde hallazgos ya cargados.
+        Elige qué objetivos entran al inventario y cuáles se omiten; la decisión queda guardada.
       </p>
+
+      <AssetsScanImportZone engagementId={engagementId} onImported={() => void load()} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border/60 bg-background p-0.5">
