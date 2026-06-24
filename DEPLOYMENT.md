@@ -148,6 +148,7 @@ Plantillas Word se suben desde la UI o se restauran en `backend/storage/template
 | Firefox `PR_CONNECT_RESET_ERROR` | El puerto no llega al contenedor: `sudo ufw allow 3000/tcp`, `docker compose ps`, `docker compose logs web`. En el servidor: `curl -k https://127.0.0.1:3000/`. Si curl OK pero el navegador falla, es red/firewall entre cliente y servidor. |
 | `PR_CONNECT_RESET` en `localhost:8080` | Phantom usa **puerto 3000**, no 8080. Túnel SSH: `ssh -L 3000:127.0.0.1:3000 user@servidor` → `https://localhost:3000`. |
 | Login muestra **Internal Server Error** | El proxy API apuntaba a `127.0.0.1:8000` dentro del contenedor web. Actualiza (`git pull`) y `docker compose up -d --build web`. Prueba: `curl -k https://127.0.0.1:3000/api/secops-health` y `docker compose logs api --tail 40` (desde `~/Phantom`). |
+| **NetworkError** al subir CSV / importar escaneos | El navegador intentaba `http://:8000` (puerto no publicado + mixed content HTTPS→HTTP). Actualiza y reconstruye web: `git pull && docker compose up -d --build web`. Las subidas van por `https://…:3000/api/secops/…`. |
 | Certificado no válido / advertencia TLS | Normal con cert autofirmado: **Avanzado → aceptar riesgo**. Añade la IP en `.env`: `PHANTOM_TLS_SANS=localhost,127.0.0.1,TU_IP` y `docker compose up -d --force-recreate web`. |
 | `Auth seed: UniqueViolation` | Actualiza a última versión; seed es idempotente |
 | Puerto 3000 ocupado | `PHANTOM_HTTP_PORT=3443` en `.env` |

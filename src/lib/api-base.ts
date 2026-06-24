@@ -13,39 +13,45 @@ export function getApiBaseUrl(): string {
   return `${backend}${API_V1}`;
 }
 
-/** Prefijo de rutas de ingesta multipart (directo al backend :8000). */
+/** Prefijo de rutas de ingesta multipart. */
 const INGEST_API_PREFIX = '/api/v1/ingest/';
 
-function inferDirectBackendOrigin(): string | null {
+const SCAN_IMPORT_PATH = '/api/v1/assets/scan-targets/import';
+
+/**
+ * Origen directo al API solo si está configurado explícitamente.
+ * En Docker el API no se publica en :8000; además HTTPS→HTTP (:8000) provoca NetworkError.
+ */
+function explicitBackendOrigin(): string | null {
   const fromEnv = process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
-  if (typeof window === 'undefined') return null;
-  const { hostname } = window.location;
-  // El API FastAPI escucha HTTP en :8000 aunque el frontend sea HTTPS.
-  return `http://${hostname}:8000`;
+  if (!fromEnv) return null;
+  return fromEnv.replace(/\/$/, '');
 }
 
 /**
- * Resuelve URL de ingesta: siempre directo al API FastAPI :8000 en el navegador
- * (evita doble proxy Next y timeouts 504 en CSV grandes).
+ * Resuelve URL de ingesta multipart.
+ * Por defecto same-origin (/api/secops) para Docker y frontend HTTPS.
  */
 export function resolveIngestApiUrl(path: string, _opts?: { fileSize?: number }): string {
   return resolveMultipartUploadUrl(path);
 }
 
-/** Multipart grande: ingesta o importación de escaneos en Activos → directo :8000 en browser. */
+/** Multipart grande: ingesta o importación de escaneos → proxy same-origin salvo BACKEND_ORIGIN explícito. */
 export function resolveMultipartUploadUrl(path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  const isDirectMultipart =
-    normalized.startsWith(INGEST_API_PREFIX) ||
-    normalized === '/api/v1/assets/scan-targets/import';
+  const isMultipart =
+    normalized.startsWith(INGEST_API_PREFIX) || normalized === SCAN_IMPORT_PATH;
 
-  if (typeof window !== 'undefined' && isDirectMultipart) {
-    const direct = inferDirectBackendOrigin();
+  if (typeof window !== 'undefined' && isMultipart) {
+    const direct = explicitBackendOrigin();
     if (direct) return `${direct}${normalized}`;
+
     if (normalized.startsWith(INGEST_API_PREFIX)) {
       const rest = normalized.slice(INGEST_API_PREFIX.length);
       return `${window.location.origin}/api/secops/ingest/${rest}`;
+    }
+    if (normalized === SCAN_IMPORT_PATH) {
+      return `${window.location.origin}/api/secops/assets/scan-targets/import`;
     }
   }
   return resolveApiUrl(path);
