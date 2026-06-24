@@ -145,6 +145,8 @@ Plantillas Word se suben desde la UI o se restauran en `backend/storage/template
 
 | Síntoma | Acción |
 |---------|--------|
+| Firefox `PR_CONNECT_RESET_ERROR` | El puerto no llega al contenedor: `sudo ufw allow 3000/tcp`, `docker compose ps`, `docker compose logs web`. En el servidor: `curl -k https://127.0.0.1:3000/`. Si curl OK pero el navegador falla, es red/firewall entre cliente y servidor. |
+| Certificado no válido / advertencia TLS | Normal con cert autofirmado: **Avanzado → aceptar riesgo**. Añade la IP en `.env`: `PHANTOM_TLS_SANS=localhost,127.0.0.1,TU_IP` y `docker compose up -d --force-recreate web`. |
 | `Auth seed: UniqueViolation` | Actualiza a última versión; seed es idempotente |
 | Puerto 3000 ocupado | `PHANTOM_HTTP_PORT=3443` en `.env` |
 | API no responde | `docker compose logs api` — esperar healthcheck Postgres |

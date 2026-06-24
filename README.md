@@ -12,7 +12,15 @@ cd Phantom
 sudo ./scripts/install-ubuntu.sh
 ```
 
-Abre **https://&lt;IP-del-servidor&gt;:3000** (certificado autofirmado → acepta la advertencia del navegador).
+Abre **https://&lt;IP-del-servidor&gt;:3000** (certificado autofirmado → **Avanzado → aceptar riesgo y continuar**).
+
+Si el navegador muestra `PR_CONNECT_RESET_ERROR`, en el servidor ejecuta:
+
+```bash
+sudo ./scripts/fix-docker-access.sh
+```
+
+Eso regenera el certificado con la IP del host, abre el puerto en `ufw` si aplica y verifica con `curl`.
 
 | Campo        | Valor por defecto |
 |-------------|-------------------|

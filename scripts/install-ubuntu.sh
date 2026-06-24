@@ -59,19 +59,49 @@ if [[ ! -f "$ROOT/.env" ]]; then
   fi
 fi
 
+IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+if ! grep -qE '^PHANTOM_TLS_SANS=' "$ROOT/.env" 2>/dev/null; then
+  echo "PHANTOM_TLS_SANS=localhost,127.0.0.1,${IP}" >> "$ROOT/.env"
+  echo "[+] PHANTOM_TLS_SANS=localhost,127.0.0.1,${IP}"
+fi
+
 echo "[*] Construyendo y arrancando contenedores (primera vez puede tardar varios minutos)…"
 cd "$ROOT"
 docker compose up -d --build
 
-IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 PORT=$(grep -E '^PHANTOM_HTTP_PORT=' "$ROOT/.env" 2>/dev/null | cut -d= -f2 || echo 3000)
 PORT=${PORT:-3000}
+
+# Firewall: abrir puerto si ufw está activo
+if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -qi 'Status: active'; then
+  ufw allow "${PORT}/tcp" comment 'Phantom SecOps web' >/dev/null 2>&1 || true
+  echo "[+] Regla ufw: allow ${PORT}/tcp"
+fi
+
+echo "[*] Comprobando HTTPS local…"
+VERIFY_OK=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -kfsS "https://127.0.0.1:${PORT}/" -o /dev/null 2>/dev/null; then
+    VERIFY_OK=1
+    break
+  fi
+  sleep 3
+done
 
 echo ""
 echo "============================================================"
 echo " Phantom listo"
-echo "   https://${IP}:${PORT}"
-echo "   https://localhost:${PORT}"
+if [[ "$VERIFY_OK" -eq 1 ]]; then
+  echo "   https://${IP}:${PORT}"
+  echo "   https://localhost:${PORT}"
+  echo ""
+  echo "   El certificado es autofirmado: en el navegador acepta la"
+  echo "   excepción de seguridad (Avanzado → continuar)."
+else
+  echo "   [!] El servicio web aún no responde en el puerto ${PORT}."
+  echo "   Revisa: docker compose logs web"
+  echo "   URL esperada: https://${IP}:${PORT}"
+fi
 echo "   Usuario: phantom  |  Contraseña: phantom (cambio obligatorio en primer login)"
 echo ""
 echo "   Cambiar credenciales: cd $ROOT && ./change.sh"

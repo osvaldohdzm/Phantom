@@ -30,7 +30,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/server-prod.mjs ./
 COPY --from=builder /app/next.config.ts ./
 COPY scripts/docker-entrypoint-web.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh \
+COPY scripts/docker-generate-tls.sh /app/scripts/docker-generate-tls.sh
+RUN chmod +x /entrypoint.sh /app/scripts/docker-generate-tls.sh \
   && mkdir -p /app/certificates
 
 EXPOSE 3000
