@@ -142,6 +142,7 @@ def refresh_scan_targets_endpoint(
 async def import_scan_targets_file(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
+    promote_source_type: Optional[AssetSourceTypeEnum] = Form(None),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> AssetScanTargetImportResponse:
@@ -154,6 +155,9 @@ async def import_scan_targets_file(
 
         require_engagement_tenant(db, engagement_id, ctx.tenant_id)
 
+    promote_type = (
+        AssetSourceType(promote_source_type.value) if promote_source_type is not None else None
+    )
     result = import_scan_file_for_targets(
         db,
         data=raw,
@@ -161,6 +165,7 @@ async def import_scan_targets_file(
         tenant_id=ctx.tenant_id,
         engagement_id=engagement_id,
         refresh_engagement_id=engagement_id,
+        promote_source_type=promote_type,
     )
     return AssetScanTargetImportResponse(**result)
 

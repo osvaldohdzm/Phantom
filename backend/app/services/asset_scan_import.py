@@ -10,13 +10,26 @@ from sqlalchemy.orm import Session
 
 from app.deps.auth import require_engagement_tenant
 from app.models.auth import Tenant
-from app.services.asset_scan_targets import refresh_scan_targets
+from app.models.core import AssetSourceType
+from app.models.scan import AssetScanTarget
+from app.services.asset_scan_targets import (
+    promote_scan_targets,
+    refresh_scan_targets,
+    upsert_assets_from_scan_drafts,
+)
 from app.services.catalog_from_draft import ensure_drafts_catalog
 from app.services.default_engagement import ensure_default_engagement
 from app.services.finding_duplicates import normalize_affected_component
 from app.services.parse_nessus_csv import parse_nessus_csv_bytes
 from app.services.parse_nmap_scan import parse_nmap_bytes
 from app.services.vulns_catalog_lookup import enrich_drafts_with_catalog
+
+_ATTACK_SURFACE_TYPES = frozenset(
+    {
+        AssetSourceType.external_attack_surface,
+        AssetSourceType.internal_attack_surface,
+    }
+)
 
 
 def _detect_and_parse(data: bytes, filename: str) -> tuple[str, list[dict[str, Any]]]:
@@ -50,9 +63,9 @@ def import_scan_file_for_targets(
     tenant_id: UUID,
     engagement_id: Optional[UUID],
     refresh_engagement_id: Optional[UUID] = None,
+    promote_source_type: Optional[AssetSourceType] = None,
 ) -> dict[str, Any]:
     """Persiste hallazgos del escaneo y actualiza la cola de objetivos pendientes."""
-    # Import tardío: reutiliza persistencia de ingesta sin refactor masivo.
     from app.routers.ingest import _persist_drafts
 
     tenant = db.get(Tenant, tenant_id)
@@ -91,7 +104,7 @@ def import_scan_file_for_targets(
         if key:
             import_keys.add(key)
 
-    refresh_filter = refresh_engagement_id if refresh_engagement_id is not None else engagement_id
+    refresh_filter = refresh_engagement_id if refresh_engagement_id is not None else import_engagement_id
     stats = refresh_scan_targets(
         db,
         tenant_id=tenant_id,
@@ -99,25 +112,52 @@ def import_scan_file_for_targets(
         only_keys=import_keys if import_keys else None,
     )
 
-    source_label = "Nessus CSV" if source == "nessus-csv" else "Nmap"
-    unique_ports = len(import_keys)
-    msg = (
-        f"{len(ids) if ids else len(drafts):,} hallazgo(s) importados desde {source_label}. "
-        f"{stats['discovered']} objetivo(s) nuevo(s) · {stats['pending']} pendiente(s) en cola."
-    )
-    if stats["discovered"] == 0 and unique_ports > 0:
-        msg += (
-            f" ({unique_ports:,} host:puerto en este archivo; "
-            "si ya importaste Nessus, pueden estar en cola con otra fuente — revisa la tabla o filtra por Nmap)."
-        )
-    if used_default and engagement_id is None:
-        msg += " (almacenados en el espacio interno del tenant)"
+    assets_created = 0
+    assets_updated = 0
+    promoted = 0
+    if promote_source_type is not None:
+        if promote_source_type in _ATTACK_SURFACE_TYPES:
+            upsert = upsert_assets_from_scan_drafts(
+                db,
+                tenant_id=tenant_id,
+                drafts=drafts,
+                source_type=promote_source_type,
+                engagement_id=import_engagement_id,
+            )
+            assets_created = upsert["created"]
+            assets_updated = upsert["updated"]
+        elif import_keys:
+            pending_rows = (
+                db.query(AssetScanTarget)
+                .filter(
+                    AssetScanTarget.tenant_id == tenant_id,
+                    AssetScanTarget.status == "pending",
+                    AssetScanTarget.target_key.in_(list(import_keys)),
+                )
+                .all()
+            )
+            if pending_rows:
+                result = promote_scan_targets(
+                    db,
+                    tenant_id=tenant_id,
+                    target_ids=[r.id for r in pending_rows],
+                    source_type=promote_source_type,
+                    engagement_id=import_engagement_id,
+                )
+                promoted = int(result.get("processed") or 0)
 
     return {
         "source": source,
         "created_count": len(ids) if ids else len(drafts),
         "discovered": stats["discovered"],
+        "reopened": stats.get("reopened", 0),
         "pending": stats["pending"],
-        "message": msg,
+        "import_keys": len(import_keys),
+        "assets_created": assets_created,
+        "assets_updated": assets_updated,
+        "promoted": promoted,
+        "promote_source_type": promote_source_type.value if promote_source_type else None,
         "engagement_id": import_engagement_id,
+        "used_default_engagement": used_default,
+        "message": None,
     }

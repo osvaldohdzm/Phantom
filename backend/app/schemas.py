@@ -113,9 +113,16 @@ class AssetScanTargetImportResponse(BaseModel):
     source: str
     created_count: int
     discovered: int
+    reopened: int = 0
     pending: int
+    import_keys: int = 0
+    assets_created: int = 0
+    assets_updated: int = 0
+    promoted: int = 0
+    promote_source_type: Optional[str] = None
     message: Optional[str] = None
     engagement_id: Optional[UUID] = None
+    used_default_engagement: bool = False
 
 
 class AssetScanTargetPromoteRequest(BaseModel):

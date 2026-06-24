@@ -36,7 +36,7 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
   );
   const [targets, setTargets] = useState<AssetScanTarget[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [promoteSource, setPromoteSource] = useState<AssetSourceType>('inventory');
+  const [promoteSource, setPromoteSource] = useState<AssetSourceType>('internal_attack_surface');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'refresh' | 'promote' | 'pass' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -155,7 +155,13 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground max-w-3xl">{t('assetsScanIntro')}</p>
 
-      <AssetsScanImportZone engagementId={engagementId} onImported={() => void load()} />
+      <AssetsScanImportZone
+        engagementId={engagementId}
+        onImported={() => {
+          void load();
+          onPromoted?.();
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border/60 bg-background p-0.5">

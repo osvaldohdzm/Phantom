@@ -1077,19 +1077,32 @@ export type AssetScanTargetImportResult = {
   source: string;
   created_count: number;
   discovered: number;
+  reopened: number;
   pending: number;
+  import_keys: number;
+  assets_created: number;
+  assets_updated: number;
+  promoted: number;
+  promote_source_type?: string | null;
+  used_default_engagement?: boolean;
   message?: string;
   engagement_id?: string;
 };
 
 export async function importAssetScanTargets(
   file: File,
-  engagement_id?: string
+  options?: {
+    engagement_id?: string;
+    promote_source_type?: AssetSourceType;
+  }
 ): Promise<AssetScanTargetImportResult> {
   const { postMultipartUpload } = await import('@/lib/ingest-upload');
   const form = new FormData();
   form.append('file', file);
-  if (engagement_id?.trim()) form.append('engagement_id', engagement_id.trim());
+  if (options?.engagement_id?.trim()) form.append('engagement_id', options.engagement_id.trim());
+  if (options?.promote_source_type) {
+    form.append('promote_source_type', options.promote_source_type);
+  }
   const res = await postMultipartUpload('/api/v1/assets/scan-targets/import', form);
   const data = (await res.json().catch(() => ({}))) as AssetScanTargetImportResult & {
     detail?: unknown;

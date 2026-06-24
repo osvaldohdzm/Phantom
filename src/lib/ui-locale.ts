@@ -192,6 +192,27 @@ const MESSAGES = {
     assetsScanStatusAcceptedRow: 'Inventario',
     assetsScanStatusPassedRow: 'Omitido',
     assetsScanSelectAll: 'Seleccionar todos',
+    assetsScanImportTitle: 'Importar escaneo aquí',
+    assetsScanImportHint: 'arrastra o haz clic',
+    assetsScanImportWithProject:
+      'Los hallazgos se asocian al proyecto seleccionado y los hosts aparecen abajo como objetivos pendientes.',
+    assetsScanImportNoProject:
+      'Sin proyecto: se usa el espacio interno del tenant. Los objetivos se listan en toda la vista global.',
+    assetsScanImportProgress: 'Importando escaneo',
+    assetsScanImportProgressHint: 'Procesando en servidor y actualizando objetivos…',
+    assetsScanImportError: 'No se pudo importar el escaneo',
+    assetsScanImportDirectLabel: 'Añadir directamente a',
+    assetsScanImportDirectHint:
+      'Los host:puerto del archivo se escriben en el inventario elegido (recomendado para Nmap → Internal Attack Surface).',
+    assetsScanImportResultFindings: '{count} hallazgo(s) importados desde {source}',
+    assetsScanImportResultQueue: '{discovered} objetivo(s) nuevo(s) · {pending} pendiente(s) en cola',
+    assetsScanImportResultReopened: '{count} reabierto(s) en cola',
+    assetsScanImportResultInventory: '{created} fila(s) nuevas · {updated} actualizadas en {dest}',
+    assetsScanImportResultOverlap:
+      '({keys} host:puerto en el archivo; si ya importaste Nessus, revisa la cola o el inventario de destino)',
+    assetsScanImportResultDefaultEngagement: '(almacenados en el espacio interno del tenant)',
+    assetsScanImportSourceNmap: 'Nmap',
+    assetsScanImportSourceNessus: 'Nessus CSV',
     // Dashboard (tablero)
     dashTitle: 'Tablero',
     dashSubtitle: 'Vista ejecutiva con datos reales de hallazgos, proyectos y activos.',
@@ -750,6 +771,27 @@ const MESSAGES = {
     assetsScanStatusAcceptedRow: 'Inventory',
     assetsScanStatusPassedRow: 'Skipped',
     assetsScanSelectAll: 'Select all',
+    assetsScanImportTitle: 'Import scan here',
+    assetsScanImportHint: 'drag or click',
+    assetsScanImportWithProject:
+      'Findings attach to the selected project and hosts appear below as pending targets.',
+    assetsScanImportNoProject:
+      'No project: the tenant internal space is used. Targets appear across the global view.',
+    assetsScanImportProgress: 'Importing scan',
+    assetsScanImportProgressHint: 'Processing on server and updating targets…',
+    assetsScanImportError: 'Could not import scan',
+    assetsScanImportDirectLabel: 'Add directly to',
+    assetsScanImportDirectHint:
+      'Host:port rows from the file are written to the selected inventory (recommended for Nmap → Internal Attack Surface).',
+    assetsScanImportResultFindings: '{count} finding(s) imported from {source}',
+    assetsScanImportResultQueue: '{discovered} new target(s) · {pending} pending in queue',
+    assetsScanImportResultReopened: '{count} re-queued',
+    assetsScanImportResultInventory: '{created} new row(s) · {updated} updated in {dest}',
+    assetsScanImportResultOverlap:
+      '({keys} host:port in file; if you already imported Nessus, check the queue or destination inventory)',
+    assetsScanImportResultDefaultEngagement: '(stored in tenant internal space)',
+    assetsScanImportSourceNmap: 'Nmap',
+    assetsScanImportSourceNessus: 'Nessus CSV',
     dashTitle: 'Dashboard',
     dashSubtitle: 'Executive view with live findings, projects and assets.',
     dashPentestBtn: 'Pentest (7 steps)',

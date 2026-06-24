@@ -12,6 +12,7 @@ from app.deps.auth import tenant_findings_filter
 from app.models.core import Asset, AssetSourceType, Environment, Finding
 from app.models.scan import AssetScanTarget
 from app.services.finding_duplicates import _resolve_componente, normalize_affected_component
+from app.services.vulns_catalog_lookup import build_componente_afectado
 
 _IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _HOST_PORT_RE = re.compile(r"^([^:/]+)(?::(\d+))?$")
@@ -39,8 +40,41 @@ def _asset_matches_key(asset: Asset, target_key: str, display: str) -> bool:
     return False
 
 
-def _inventory_has_target(assets: list[Asset], target_key: str, display: str) -> bool:
-    return any(_asset_matches_key(a, target_key, display) for a in assets)
+def _split_component(component: str) -> tuple[str, Optional[str], Optional[str]]:
+    """host, port, transport from componente_afectado (host:port or host:port/proto)."""
+    raw = (component or "").strip()
+    if not raw:
+        return "", None, None
+    transport = None
+    if "/" in raw:
+        base, suffix = raw.split("/", 1)
+        if suffix.lower() in ("tcp", "udp"):
+            transport = suffix.lower()
+        raw = base
+    m = _HOST_PORT_RE.match(raw)
+    if m:
+        return m.group(1), m.group(2), transport
+    return raw, None, transport
+
+
+def _asset_covers_target(asset: Asset, target_key: str, component: str) -> bool:
+    meta = asset.extra_metadata or {}
+    stored = (meta.get("target_key") or "").strip().lower()
+    if stored and stored == target_key.lower():
+        return True
+    host, port, _ = _split_component(component)
+    if port:
+        meta_port = str(meta.get("puerto") or "").strip()
+        for field in (asset.ip_publica, asset.ip_privada, asset.fqdn, asset.nombre):
+            if not field:
+                continue
+            if str(field).strip().lower() == host.lower() and meta_port == port:
+                return True
+    return _asset_matches_key(asset, target_key, _display_from_component(component))
+
+
+def _inventory_has_target(assets: list[Asset], target_key: str, display: str, component: str) -> bool:
+    return any(_asset_covers_target(a, target_key, component) for a in assets)
 
 
 def _parse_asset_fields(display: str, component: str) -> dict[str, Optional[str]]:
@@ -121,10 +155,11 @@ def refresh_scan_targets(
 
     assets = db.query(Asset).filter(Asset.tenant_id == tenant_id).all()
     discovered = 0
+    reopened = 0
     pending = 0
 
     for key, meta in buckets.items():
-        if _inventory_has_target(assets, key, meta["display"]):
+        if _inventory_has_target(assets, key, meta["display"], meta["component"]):
             continue
 
         row = (
@@ -133,6 +168,7 @@ def refresh_scan_targets(
             .first()
         )
         tools = sorted(meta["tools"])
+        target_engagement = engagement_id or meta.get("engagement_id")
 
         if row:
             if row.status == "pending":
@@ -142,15 +178,29 @@ def refresh_scan_targets(
                 merged_tools = set(row.tool_sources or [])
                 merged_tools.update(meta["tools"])
                 row.tool_sources = sorted(merged_tools)
-                if engagement_id and not row.engagement_id:
-                    row.engagement_id = engagement_id
+                if target_engagement and not row.engagement_id:
+                    row.engagement_id = target_engagement
+                pending += 1
+            elif row.status == "passed" and only_keys is not None:
+                row.status = "pending"
+                row.display_name = meta["display"]
+                row.componente_afectado = meta["component"]
+                row.finding_count = meta["count"]
+                merged_tools = set(row.tool_sources or [])
+                merged_tools.update(meta["tools"])
+                row.tool_sources = sorted(merged_tools)
+                row.promoted_asset_id = None
+                row.target_source_type = None
+                if target_engagement:
+                    row.engagement_id = target_engagement
+                reopened += 1
                 pending += 1
             continue
 
         db.add(
             AssetScanTarget(
                 tenant_id=tenant_id,
-                engagement_id=engagement_id or meta.get("engagement_id"),
+                engagement_id=target_engagement,
                 target_key=key,
                 display_name=meta["display"],
                 componente_afectado=meta["component"],
@@ -171,7 +221,7 @@ def refresh_scan_targets(
         )
         .count()
     )
-    return {"discovered": discovered, "pending": total_pending}
+    return {"discovered": discovered, "reopened": reopened, "pending": total_pending}
 
 
 def _findings_for_target(db: Session, tenant_id: UUID, target_key: str) -> list[Finding]:
@@ -203,19 +253,36 @@ def promote_scan_targets(
     )
     asset_ids: list[UUID] = []
     for target in rows:
-        fields = _parse_asset_fields(target.display_name, target.componente_afectado)
+        component = target.componente_afectado or target.display_name or target.target_key
+        host, port, transport = _split_component(component)
+        fields = _parse_asset_fields(host or target.display_name, component)
         tools = target.tool_sources or []
+        internal = source_type in (
+            AssetSourceType.internal_attack_surface,
+            AssetSourceType.internal_recon,
+        )
+        meta: dict[str, str] = {
+            "from_scan_target": str(target.id),
+            "target_key": target.target_key,
+        }
+        if port:
+            meta["puerto"] = port
+        if transport:
+            meta["transporte"] = transport
+
+        ip = fields["ip_publica"]
         asset = Asset(
             tenant_id=tenant_id,
             nombre=fields["nombre"] or target.display_name,
-            ip_publica=fields["ip_publica"],
-            fqdn=fields["fqdn"],
+            ip_publica=None if internal else ip,
+            ip_privada=ip if internal else None,
+            fqdn=fields["fqdn"] if not ip else None,
             ambiente=Environment.prod,
             is_in_scope=True,
             source_type=source_type,
             engagement_id=engagement_id or target.engagement_id,
-            discovery_method=", ".join(tools) if tools else "Escaneo",
-            extra_metadata={"from_scan_target": str(target.id), "target_key": target.target_key},
+            discovery_method=", ".join(tools) if tools else "Scan",
+            extra_metadata=meta,
         )
         db.add(asset)
         db.flush()
@@ -232,6 +299,99 @@ def promote_scan_targets(
 
     db.commit()
     return {"processed": len(rows), "asset_ids": asset_ids, "linked_findings": True}
+
+
+def upsert_assets_from_scan_drafts(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    drafts: list[dict[str, Any]],
+    source_type: AssetSourceType,
+    engagement_id: Optional[UUID],
+) -> dict[str, int]:
+    """Crea/actualiza filas de inventario (p. ej. attack surface) directamente desde drafts de escaneo."""
+    internal = source_type in (
+        AssetSourceType.internal_attack_surface,
+        AssetSourceType.internal_recon,
+    )
+    q = db.query(Asset).filter(
+        Asset.tenant_id == tenant_id,
+        Asset.source_type == source_type,
+    )
+    if engagement_id is not None:
+        q = q.filter(Asset.engagement_id == engagement_id)
+    existing = list(q.all())
+
+    created = 0
+    updated = 0
+    for draft in drafts:
+        comp = (draft.get("componente_afectado") or "").strip()
+        if not comp:
+            host = (draft.get("host") or "").strip()
+            port = str(draft.get("port") or "").strip()
+            proto = str(draft.get("proto") or "").strip()
+            if host:
+                comp = build_componente_afectado(host, port, proto) if port else host
+        if not comp:
+            continue
+        key = normalize_affected_component(comp)
+        if not key:
+            continue
+
+        host, port, transport = _split_component(comp)
+        if not host:
+            continue
+        port = port or str(draft.get("port") or "").strip() or None
+        transport = transport or str(draft.get("proto") or "").strip().lower() or None
+        service = ""
+        tool_id = str(draft.get("tool_vuln_id") or "")
+        if "/" in tool_id:
+            service = tool_id.split("/", 1)[0]
+
+        fields = _parse_asset_fields(host, comp)
+        ip = fields["ip_publica"]
+        meta: dict[str, str] = {"target_key": key}
+        if port:
+            meta["puerto"] = port
+        if transport:
+            meta["transporte"] = transport
+        if service:
+            meta["servicio"] = service[:255]
+
+        row = None
+        for asset in existing:
+            if _asset_covers_target(asset, key, comp):
+                row = asset
+                break
+
+        if row:
+            merged = dict(row.extra_metadata or {})
+            merged.update({k: v for k, v in meta.items() if v})
+            row.extra_metadata = merged
+            if service and not row.discovery_method:
+                row.discovery_method = draft.get("tool_source") or "Nmap"
+            updated += 1
+            continue
+
+        asset = Asset(
+            tenant_id=tenant_id,
+            nombre=fields["nombre"] or key,
+            ip_publica=None if internal else ip,
+            ip_privada=ip if internal else None,
+            fqdn=fields["fqdn"] if not ip else None,
+            ambiente=Environment.prod,
+            is_in_scope=True,
+            source_type=source_type,
+            engagement_id=engagement_id,
+            discovery_method=str(draft.get("tool_source") or "Scan"),
+            extra_metadata=meta,
+        )
+        db.add(asset)
+        existing.append(asset)
+        created += 1
+
+    db.commit()
+    return {"created": created, "updated": updated}
 
 
 def pass_scan_targets(
