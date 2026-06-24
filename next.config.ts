@@ -15,8 +15,6 @@ function collectDevOrigins(): string[] {
   }
 }
 
-const backendUrl = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-
 const nextConfig: NextConfig = {
   // Turbopack blocks cross-origin dev/RSC fetches unless the browser host is listed.
   // @ts-ignore - Next.js 16 root config
@@ -36,12 +34,14 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    const backendUrl = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
     return [
       {
         source: "/api/secops-health",
         destination: `${backendUrl}/health`,
       },
       // Ingest multipart va a app/api/secops/ingest/[...path]/route.ts (sin límite 10 MB).
+      // El resto de /api/secops/* usa app/api/secops/[...path]/route.ts (proxy en runtime).
       {
         source: "/api/secops/:path((?!ingest(?:/|$)).*)",
         destination: `${backendUrl}/api/v1/:path*`,

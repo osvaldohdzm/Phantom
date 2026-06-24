@@ -11,6 +11,7 @@ COPY next.config.ts tsconfig.json postcss.config.mjs components.json ./
 COPY public ./public
 COPY src ./src
 COPY server-prod.mjs ./
+ENV API_PROXY_URL=http://api:8000
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
@@ -29,6 +30,7 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/server-prod.mjs ./
 COPY --from=builder /app/next.config.ts ./
+ENV API_PROXY_URL=http://api:8000
 COPY scripts/docker-entrypoint-web.sh /entrypoint.sh
 COPY scripts/docker-generate-tls.sh /app/scripts/docker-generate-tls.sh
 RUN chmod +x /entrypoint.sh /app/scripts/docker-generate-tls.sh \
