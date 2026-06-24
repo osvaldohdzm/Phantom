@@ -20,6 +20,15 @@ export async function postIngestMultipart(apiPath: string, form: FormData): Prom
   });
 }
 
+/** Activa cola async en el servidor para archivos grandes (Nessus / Nmap). */
+export function appendAsyncIngestIfLarge(form: FormData, file: File): boolean {
+  if (file.size >= LARGE_INGEST_BYTES) {
+    form.append('async_mode', 'true');
+    return true;
+  }
+  return false;
+}
+
 export async function postMultipartUpload(apiPath: string, form: FormData): Promise<Response> {
   const { resolveMultipartUploadUrl } = await import('@/lib/api-base');
   const url = resolveMultipartUploadUrl(apiPath);

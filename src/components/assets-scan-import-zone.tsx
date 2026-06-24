@@ -4,10 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { FileSpreadsheet, Loader2, Network, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { importAssetScanTargets, type AssetSourceType } from '@/lib/secops-api';
-import { LARGE_INGEST_BYTES } from '@/lib/ingest-upload';
+import { importAssetScanTargets, type AssetScanTargetImportResult, type AssetSourceType } from '@/lib/secops-api';
+import { LARGE_INGEST_BYTES, appendAsyncIngestIfLarge } from '@/lib/ingest-upload';
 import { LongTaskProgress } from '@/components/long-task-progress';
 import { estimateIngestSeconds } from '@/lib/eta-progress';
+import {
+  ingestJobPhaseLabel,
+  pollIngestJobUntilDone,
+  type IngestJob,
+} from '@/lib/ingest-jobs';
 import { assetSourceLabel } from '@/lib/ui-locale';
 import { useUiT } from '@/lib/use-ui-locale';
 
@@ -87,6 +92,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
   const [activeFile, setActiveFile] = useState<File | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [estimateSec, setEstimateSec] = useState(30);
+  const [asyncJob, setAsyncJob] = useState<IngestJob | null>(null);
   const [directDestination, setDirectDestination] =
     useState<AssetSourceType>('internal_attack_surface');
   const [targetsOnly, setTargetsOnly] = useState(true);
@@ -109,6 +115,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
       setError(null);
       setNotice(null);
       setElapsedSec(0);
+      setAsyncJob(null);
       let lastMsg: string | null = null;
       try {
         for (const file of files) {
@@ -118,8 +125,19 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
             engagement_id: engagementId ?? undefined,
             promote_source_type: directDestination,
             targets_only: targetsOnly,
+            onJobUpdate: setAsyncJob,
           });
-          lastMsg = formatImportNotice(result, t, format, destLabel);
+          if (result.async_mode && result.job_id) {
+            const job = await pollIngestJobUntilDone(result.job_id, { onUpdate: setAsyncJob });
+            const jobResult = job.result as AssetScanTargetImportResult | undefined;
+            if (jobResult && typeof jobResult === 'object' && 'source' in jobResult) {
+              lastMsg = formatImportNotice(jobResult, t, format, destLabel);
+            } else {
+              lastMsg = job.message || t('assetsScanImportProgressDone');
+            }
+          } else {
+            lastMsg = formatImportNotice(result, t, format, destLabel);
+          }
         }
         setNotice(lastMsg);
         onImported();
@@ -128,6 +146,7 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
       } finally {
         setBusy(false);
         setActiveFile(null);
+        setAsyncJob(null);
       }
     },
     [busy, engagementId, onImported, directDestination, targetsOnly, t, format, destLabel]
@@ -208,10 +227,20 @@ export function AssetsScanImportZone({ engagementId, onImported }: AssetsScanImp
       {busy ? (
         <LongTaskProgress
           title={t('assetsScanImportProgress')}
-          phase={activeFile?.name ?? '…'}
+          phase={
+            asyncJob
+              ? ingestJobPhaseLabel(asyncJob.status, uiLanguage === 'en' ? 'en' : 'es', asyncJob.parser_engine)
+              : activeFile?.name ?? '…'
+          }
+          loaded={asyncJob?.progress_pct}
+          total={asyncJob ? 100 : 0}
           elapsedSec={elapsedSec}
-          estimatedTotalSec={estimateSec}
-          hint={t('assetsScanImportProgressHint')}
+          estimatedTotalSec={asyncJob ? undefined : estimateSec}
+          hint={
+            asyncJob
+              ? t('assetsScanImportProgressAsyncHint')
+              : t('assetsScanImportProgressHint')
+          }
         />
       ) : null}
 

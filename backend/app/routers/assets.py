@@ -1,10 +1,11 @@
 from uuid import UUID
 from typing import Optional
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.deps.auth import AuthContext, get_auth_context, require_write
+from app.deps.auth import AuthContext, actor_email, get_auth_context, require_write
 from app.database import get_db
 from app.models.core import Asset, AssetSourceType, Environment
 from app.models.scan import AssetScanTarget
@@ -24,6 +25,13 @@ from app.schemas import (
 )
 from app.services.asset_scan_import import import_scan_file_for_targets
 from app.services.asset_scan_targets import pass_scan_targets, promote_scan_targets, refresh_scan_targets
+from app.services.ingest_jobs import (
+    IngestJobKind,
+    enqueue_ingest_job,
+    save_job_file,
+    sha256_bytes,
+    should_use_async_ingest,
+)
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -144,6 +152,7 @@ async def import_scan_targets_file(
     engagement_id: Optional[UUID] = Form(None),
     promote_source_type: Optional[AssetSourceTypeEnum] = Form(None),
     targets_only: bool = Form(True),
+    async_mode: bool = Form(False),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> AssetScanTargetImportResponse:
@@ -159,6 +168,40 @@ async def import_scan_targets_file(
     promote_type = (
         AssetSourceType(promote_source_type.value) if promote_source_type is not None else None
     )
+
+    if async_mode or should_use_async_ingest(file_size=len(raw)):
+        job_id = str(uuid.uuid4())
+        path = save_job_file(job_id, raw, file.filename or "scan")
+        job = enqueue_ingest_job(
+            kind=IngestJobKind.scan_targets,
+            tenant_id=ctx.tenant_id,
+            engagement_id=engagement_id,
+            actor=actor_email(ctx),
+            filename=file.filename or "scan",
+            file_path=path,
+            file_sha256=sha256_bytes(raw),
+            file_size=len(raw),
+            job_id=job_id,
+            params={
+                "targets_only": targets_only,
+                "promote_source_type": promote_type.value if promote_type else None,
+                "refresh_engagement_id": str(engagement_id) if engagement_id else None,
+            },
+        )
+        return AssetScanTargetImportResponse(
+            source="queued",
+            created_count=0,
+            unique_targets=0,
+            targets_only=targets_only,
+            discovered=0,
+            pending=0,
+            import_keys=0,
+            message="Importación en cola — consulta GET /api/v1/ingest/jobs/{job_id}",
+            engagement_id=engagement_id,
+            job_id=UUID(job["id"]),
+            async_mode=True,
+        )
+
     result = import_scan_file_for_targets(
         db,
         data=raw,

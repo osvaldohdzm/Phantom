@@ -38,6 +38,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-katana_security_db}
       REDIS_URL: redis://redis:6379/0
+      INGEST_GO_URL: http://ingest-go:8080
+      PARSE_RUST_URL: http://parse-rust:8081
+      INGEST_ASYNC_ENABLED: ${INGEST_ASYNC_ENABLED:-true}
+      INGEST_WORKER_ENABLED: ${INGEST_WORKER_ENABLED:-true}
+      PHANTOM_STORAGE_ROOT: /app/backend/storage
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
@@ -52,6 +57,38 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ingest-go:
+        condition: service_healthy
+      parse-rust:
+        condition: service_healthy
+
+  ingest-go:
+    build:
+      context: .
+      dockerfile: infra/docker/ingest-go.Dockerfile
+    restart: unless-stopped
+    environment:
+      INGEST_GO_ADDR: :8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  parse-rust:
+    build:
+      context: .
+      dockerfile: infra/docker/parse-rust.Dockerfile
+    restart: unless-stopped
+    environment:
+      PARSE_RUST_ADDR: 0.0.0.0:8081
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
 
   web:
     build:

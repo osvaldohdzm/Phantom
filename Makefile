@@ -2,7 +2,7 @@
 # Uso: make help | make start | make update
 
 .PHONY: help install start stop restart update build logs health backup clean \
-        dev prod debug verify-env uninstall change catalog-export catalog-import fix-docker
+        dev prod debug verify-env uninstall change catalog-export catalog-import fix-docker sbom
 
 help:
 	@./phantom help
@@ -63,3 +63,6 @@ catalog-import:
 
 fix-docker:
 	@./phantom fix-docker
+
+sbom:
+	@./phantom sbom $(ARGS)

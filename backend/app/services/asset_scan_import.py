@@ -21,8 +21,11 @@ from app.services.asset_scan_targets import (
 )
 from app.services.catalog_from_draft import ensure_drafts_catalog
 from app.services.default_engagement import ensure_default_engagement
-from app.services.parse_nessus_csv import parse_nessus_csv_bytes, parse_nessus_scan_targets_csv_bytes
-from app.services.parse_nmap_scan import parse_nmap_bytes
+from app.services.parser_gateway import (
+    parse_nessus_csv_bytes,
+    parse_nessus_scan_targets_csv_bytes,
+    parse_nmap_bytes,
+)
 from app.services.vulns_catalog_lookup import enrich_drafts_with_catalog
 
 _ATTACK_SURFACE_TYPES = frozenset(

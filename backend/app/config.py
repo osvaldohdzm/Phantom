@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 480
     auth_required: bool = True
 
+    # Hybrid parser stack (Go platform ingest + Rust fast paths)
+    ingest_go_url: Optional[str] = None
+    parse_rust_url: Optional[str] = None
+
+    # Async ingest via Redis worker
+    ingest_async_enabled: bool = True
+    ingest_async_min_rows: int = 5000
+    ingest_async_min_bytes: int = 5 * 1024 * 1024
+    ingest_worker_enabled: bool = True
+
     @property
     def database_mode(self) -> Literal["postgresql", "sqlite", "other"]:
         url = (self.database_url or "").lower()

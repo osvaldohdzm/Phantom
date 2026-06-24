@@ -13,9 +13,16 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { postIngestMultipart, shouldCacheNessusForMap, LARGE_INGEST_BYTES } from '@/lib/ingest-upload';
+import { postIngestMultipart, shouldCacheNessusForMap, LARGE_INGEST_BYTES, appendAsyncIngestIfLarge } from '@/lib/ingest-upload';
 import { estimateIngestSeconds } from '@/lib/eta-progress';
 import { LongTaskProgress } from '@/components/long-task-progress';
+import {
+  ingestJobPhaseLabel,
+  isAsyncIngestResponse,
+  pollIngestJobUntilDone,
+  type IngestBatchWithJob,
+  type IngestJob,
+} from '@/lib/ingest-jobs';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
 import { UniversalCsvIngestPanel } from '@/components/universal-csv-ingest-panel';
@@ -34,6 +41,8 @@ type IngestResult = {
   created_count: number;
   finding_ids: string[];
   message?: string | null;
+  job_id?: string | null;
+  async_mode?: boolean;
 };
 
 type FileIngestOutcome = {
@@ -95,6 +104,7 @@ function IngestDropCard({
   const [largeUpload, setLargeUpload] = useState(false);
   const [activeFile, setActiveFile] = useState<{ name: string; size: number } | null>(null);
   const [ingestEstimateSec, setIngestEstimateSec] = useState<number | undefined>(undefined);
+  const [asyncJob, setAsyncJob] = useState<IngestJob | null>(null);
 
   useEffect(() => {
     if (status !== 'uploading' || uploadStartedAt === null) return;
@@ -118,6 +128,7 @@ function IngestDropCard({
       setIngestEstimateSec(
         isLarge ? Math.max(...files.map((f) => estimateIngestSeconds(f.size))) : undefined
       );
+      setAsyncJob(null);
       setUploadProgress({ current: 0, total: files.length });
 
       const eg = engagementId.trim();
@@ -142,10 +153,15 @@ function IngestDropCard({
         fd.append('file', file);
         fd.append('engagement_id', eg);
         appendAssetScopeToFormData(fd, importScope);
+        if (source === 'nessus-csv' || source === 'nmap') {
+          appendAsyncIngestIfLarge(fd, file);
+        }
 
         try {
           const res = await postIngestMultipart(cfg.path, fd);
-          const data = (await res.json().catch(() => ({}))) as IngestResult & { detail?: unknown };
+          const data = (await res.json().catch(() => ({}))) as IngestBatchWithJob & {
+            detail?: unknown;
+          };
           if (!res.ok) {
             const detail =
               typeof data.detail === 'string'
@@ -159,6 +175,30 @@ function IngestDropCard({
               created_count: 0,
               error: detail || 'Error en ingesta',
             });
+            continue;
+          }
+
+          if (isAsyncIngestResponse(data)) {
+            const job = await pollIngestJobUntilDone(data.job_id, {
+              onUpdate: (j) => setAsyncJob(j),
+            });
+            const created =
+              typeof job.result?.created_count === 'number'
+                ? job.result.created_count
+                : 0;
+            totalCreated += created;
+            outcomes.push({
+              name: file.name,
+              ok: true,
+              created_count: created,
+            });
+            if (source === 'nessus-csv' && shouldCacheNessusForMap(file)) {
+              try {
+                void appendNessusFileToCache(file, { engagementId: eg, title: file.name });
+              } catch {
+                /* mapa opcional */
+              }
+            }
             continue;
           }
 
@@ -196,6 +236,7 @@ function IngestDropCard({
       setUploadStartedAt(null);
       setActiveFile(null);
       setIngestEstimateSec(undefined);
+      setAsyncJob(null);
 
       const okCount = outcomes.filter((o) => o.ok).length;
       const failCount = outcomes.length - okCount;
@@ -272,20 +313,24 @@ function IngestDropCard({
         </div>
         {status === 'uploading' ? (
           <LongTaskProgress
-            title={largeUpload ? 'Ingesta CSV grande' : 'Importando archivo'}
+            title={asyncJob ? 'Ingesta en cola (Go/Rust + Python)' : largeUpload ? 'Ingesta CSV grande' : 'Importando archivo'}
             phase={
-              activeFile
-                ? `${activeFile.name}${uploadProgress && uploadProgress.total > 1 ? ` (${uploadProgress.current}/${uploadProgress.total})` : ''}`
-                : cfg.label
+              asyncJob
+                ? ingestJobPhaseLabel(asyncJob.status, 'es', asyncJob.parser_engine)
+                : activeFile
+                  ? `${activeFile.name}${uploadProgress && uploadProgress.total > 1 ? ` (${uploadProgress.current}/${uploadProgress.total})` : ''}`
+                  : cfg.label
             }
-            loaded={uploadProgress?.current}
-            total={uploadProgress && uploadProgress.total > 1 ? uploadProgress.total : 0}
+            loaded={asyncJob ? asyncJob.progress_pct : uploadProgress?.current}
+            total={asyncJob ? 100 : uploadProgress && uploadProgress.total > 1 ? uploadProgress.total : 0}
             elapsedSec={uploadElapsedSec}
-            estimatedTotalSec={ingestEstimateSec}
+            estimatedTotalSec={asyncJob ? undefined : ingestEstimateSec}
             hint={
-              largeUpload
-                ? 'Parseo, catálogo y persistencia en backend (:8000). CSV 50k+ filas puede tardar varios minutos.'
-                : 'Subida y procesamiento en el servidor FastAPI.'
+              asyncJob
+                ? 'El archivo se procesa en segundo plano (parse Go/Rust → enriquecimiento Python). Puedes dejar esta pestaña abierta.'
+                : largeUpload
+                  ? 'Archivos >5 MB usan cola async automáticamente (Go/Rust + worker Python).'
+                  : 'Subida y procesamiento en el servidor FastAPI.'
             }
           />
         ) : null}

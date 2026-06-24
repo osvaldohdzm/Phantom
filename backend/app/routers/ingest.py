@@ -12,10 +12,21 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps.auth import AuthContext, require_engagement_tenant, require_write
 from app.models.core import Engagement, Finding, FindingStatus
-from app.schemas import IngestBatchResponse, NessusRescanResponse
+from app.schemas import IngestBatchResponse, IngestJobResponse, NessusRescanResponse
+from app.services.ingest_jobs import (
+    IngestJobKind,
+    enqueue_ingest_job,
+    get_ingest_job,
+    save_job_file,
+    sha256_bytes,
+    should_use_async_ingest,
+)
 from app.services.parse_acunetix_html import parse_acunetix_html_bytes
-from app.services.parse_nessus_csv import parse_nessus_csv_bytes
-from app.services.parse_nmap_scan import parse_nmap_bytes
+from app.services.parser_gateway import (
+    parse_nessus_csv_bytes,
+    parse_nmap_bytes,
+    parser_stack_status,
+)
 from app.services.parse_universal_csv import parse_universal_csv_bytes
 from app.services.catalog_from_draft import ensure_drafts_catalog
 from app.services.dedup_fingerprint import build_dedup_fingerprint_from_draft
@@ -33,6 +44,61 @@ from app.deps.auth import actor_email
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 MAX_FILE_MB = 150
+
+
+def _job_to_response(job: dict) -> IngestJobResponse:
+    return IngestJobResponse(
+        id=UUID(job["id"]),
+        kind=job.get("kind", ""),
+        status=job.get("status", ""),
+        tenant_id=UUID(job["tenant_id"]),
+        engagement_id=UUID(job["engagement_id"]) if job.get("engagement_id") else None,
+        filename=job.get("filename"),
+        file_sha256=job.get("file_sha256"),
+        file_size=job.get("file_size"),
+        progress_pct=int(job.get("progress_pct") or 0),
+        message=job.get("message"),
+        error=job.get("error"),
+        parser_engine=job.get("parser_engine"),
+        result=job.get("result"),
+        created_at=job.get("created_at"),
+        updated_at=job.get("updated_at"),
+        completed_at=job.get("completed_at"),
+    )
+
+
+async def _enqueue_ingest(
+    *,
+    kind: IngestJobKind,
+    data: bytes,
+    filename: str,
+    ctx: AuthContext,
+    engagement_id: Optional[UUID],
+    params: Optional[dict] = None,
+) -> IngestBatchResponse:
+    file_hash = sha256_bytes(data)
+    job_id = str(uuid.uuid4())
+    path = save_job_file(job_id, data, filename)
+    job = enqueue_ingest_job(
+        kind=kind,
+        tenant_id=ctx.tenant_id,
+        engagement_id=engagement_id,
+        actor=actor_email(ctx),
+        filename=filename,
+        file_path=path,
+        file_sha256=file_hash,
+        file_size=len(data),
+        params=params or {},
+        job_id=job_id,
+    )
+    return IngestBatchResponse(
+        source=kind.value,
+        created_count=0,
+        finding_ids=[],
+        message="Ingesta en cola — consulta el estado con GET /api/v1/ingest/jobs/{job_id}",
+        job_id=UUID(job["id"]),
+        async_mode=True,
+    )
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -277,18 +343,50 @@ def _ingest_scope_forms(
     )
 
 
+@router.get("/stack")
+def ingest_stack_status() -> dict:
+    """Estado del stack híbrido Go + Rust + Python."""
+    return parser_stack_status()
+
+
+@router.get("/jobs/{job_id}", response_model=IngestJobResponse)
+def get_ingest_job_status(
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_write),
+) -> IngestJobResponse:
+    job = get_ingest_job(str(job_id))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job no encontrado")
+    if str(job.get("tenant_id")) != str(ctx.tenant_id):
+        raise HTTPException(status_code=404, detail="Job no encontrado")
+    return _job_to_response(job)
+
+
 @router.post("/nessus-csv", response_model=IngestBatchResponse)
 async def ingest_nessus_csv(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Form(None),
     asset_group: Optional[str] = Form(None),
     asset_subgroup: Optional[str] = Form(None),
+    async_mode: bool = Form(False),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
     engagement_id = _require_engagement_id(engagement_id)
     _assert_ingest_access(db, engagement_id, ctx)
     data = await _read_upload(file)
+    if async_mode or should_use_async_ingest(file_size=len(data)):
+        return await _enqueue_ingest(
+            kind=IngestJobKind.nessus_csv,
+            data=data,
+            filename=file.filename or "nessus.csv",
+            ctx=ctx,
+            engagement_id=engagement_id,
+            params={
+                "asset_group": asset_group,
+                "asset_subgroup": asset_subgroup,
+            },
+        )
     drafts = parse_nessus_csv_bytes(data)
     if not drafts:
         raise HTTPException(
@@ -316,6 +414,47 @@ async def ingest_nessus_csv(
     )
 
 
+def _enqueue_rescan(
+    *,
+    data: bytes,
+    filename: str,
+    ctx: AuthContext,
+    engagement_id: UUID,
+    scope: str,
+    absent_policy: str,
+    label: Optional[str],
+    asset_group: Optional[str],
+    asset_subgroup: Optional[str],
+) -> NessusRescanResponse:
+    job_id = str(uuid.uuid4())
+    path = save_job_file(job_id, data, filename)
+    job = enqueue_ingest_job(
+        kind=IngestJobKind.nessus_rescan,
+        tenant_id=ctx.tenant_id,
+        engagement_id=engagement_id,
+        actor=actor_email(ctx),
+        filename=filename,
+        file_path=path,
+        file_sha256=sha256_bytes(data),
+        file_size=len(data),
+        job_id=job_id,
+        params={
+            "scope": scope,
+            "absent_policy": absent_policy,
+            "label": label,
+            "asset_group": asset_group,
+            "asset_subgroup": asset_subgroup,
+        },
+    )
+    return NessusRescanResponse(
+        scope=scope,
+        absent_policy=absent_policy,
+        message="Re-escaneo en cola — consulta GET /api/v1/ingest/jobs/{job_id}",
+        job_id=UUID(job["id"]),
+        async_mode=True,
+    )
+
+
 @router.post("/nessus-csv/rescan", response_model=NessusRescanResponse)
 async def ingest_nessus_csv_rescan(
     file: UploadFile = File(...),
@@ -325,6 +464,7 @@ async def ingest_nessus_csv_rescan(
     label: Optional[str] = Form(None),
     asset_group: Optional[str] = Form(None),
     asset_subgroup: Optional[str] = Form(None),
+    async_mode: bool = Form(False),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> NessusRescanResponse:
@@ -338,6 +478,18 @@ async def ingest_nessus_csv_rescan(
         raise HTTPException(status_code=400, detail="absent_policy debe ser 'atendido' o 'remediado'")
 
     data = await _read_upload(file)
+    if async_mode or should_use_async_ingest(file_size=len(data)):
+        return _enqueue_rescan(
+            data=data,
+            filename=file.filename or "nessus.csv",
+            ctx=ctx,
+            engagement_id=engagement_id,
+            scope=scope,
+            absent_policy=absent_policy,
+            label=label or file.filename,
+            asset_group=asset_group,
+            asset_subgroup=asset_subgroup,
+        )
     drafts = parse_nessus_csv_bytes(data)
     if not drafts:
         raise HTTPException(
@@ -434,12 +586,25 @@ async def ingest_nmap(
     engagement_id: Optional[UUID] = Form(None),
     asset_group: Optional[str] = Form(None),
     asset_subgroup: Optional[str] = Form(None),
+    async_mode: bool = Form(False),
     db: Session = Depends(get_db),
     ctx: AuthContext = Depends(require_write),
 ) -> IngestBatchResponse:
     engagement_id = _require_engagement_id(engagement_id)
     _assert_ingest_access(db, engagement_id, ctx)
     data = await _read_upload(file)
+    if async_mode or should_use_async_ingest(file_size=len(data)):
+        return await _enqueue_ingest(
+            kind=IngestJobKind.nmap,
+            data=data,
+            filename=file.filename or "scan",
+            ctx=ctx,
+            engagement_id=engagement_id,
+            params={
+                "asset_group": asset_group,
+                "asset_subgroup": asset_subgroup,
+            },
+        )
     name = file.filename or "scan"
     drafts = parse_nmap_bytes(data, name)
     if not drafts:

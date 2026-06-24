@@ -42,6 +42,17 @@ else
   FAIL=1
 fi
 
+if phantom_require_compose 2>/dev/null; then
+  echo "[*] Parser stack (ingest-go / parse-rust)…"
+  for svc in ingest-go parse-rust; do
+    if phantom_compose ps --status running "$svc" 2>/dev/null | grep -q running; then
+      echo "    OK — $svc running"
+    else
+      echo "    WARN — $svc no está running (fallback Python activo)"
+    fi
+  done
+fi
+
 echo ""
 if [[ "$FAIL" -eq 0 ]]; then
   echo "[+] Salud: OK"

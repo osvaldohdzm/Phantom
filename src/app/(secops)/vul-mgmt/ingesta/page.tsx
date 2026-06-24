@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { VulIngestPanel } from '@/components/vul-ingest-panel';
 import { VulRescanPanel } from '@/components/vul-rescan-panel';
+import { IngestStackBadge } from '@/components/ingest-stack-badge';
 import { FileCode2, FileSpreadsheet, Network, PenLine, Table2 } from 'lucide-react';
 
 const formats = [
@@ -21,6 +22,7 @@ export default function VulnMgmtIngestaPage() {
             Primera importación vinculada al servicio activo (borrador hasta «Cargar a gestión»). Grupo y
             subgrupo de activos opcionales en cada carga. Para re-escaneos AV usa el panel de re-scan.
           </CardDescription>
+          <IngestStackBadge className="pt-1" />
         </CardHeader>
         <CardContent>
           <VulIngestPanel />

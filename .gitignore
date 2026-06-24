@@ -64,6 +64,8 @@ uploads/
 storage/uploads/*
 storage/backups/*
 storage/logs/*
+storage/sbom/*
+!storage/sbom/.gitkeep
 !storage/**/.gitkeep
 /backups/
 backend/storage/branding/

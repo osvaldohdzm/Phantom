@@ -17,6 +17,9 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     worker_startup(schema_prebootstrapped=os.environ.get("PHANTOM_DB_BOOTSTRAPPED") == "1")
+    from app.services.ingest_worker import start_ingest_worker
+
+    start_ingest_worker()
     yield
 
 

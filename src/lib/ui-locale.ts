@@ -200,6 +200,9 @@ const MESSAGES = {
       'Sin proyecto: se usa el espacio interno del tenant. Los objetivos se listan en toda la vista global.',
     assetsScanImportProgress: 'Importando escaneo',
     assetsScanImportProgressHint: 'Procesando en servidor y actualizando objetivos…',
+    assetsScanImportProgressAsyncHint:
+      'Cola async: Rust/Go parsea targets → Python persiste. Archivos >5 MB usan este modo.',
+    assetsScanImportProgressDone: 'Importación completada',
     assetsScanImportError: 'No se pudo importar el escaneo',
     assetsScanImportDirectLabel: 'Añadir directamente a',
     assetsScanImportDirectHint:
@@ -783,6 +786,9 @@ const MESSAGES = {
       'No project: the tenant internal space is used. Targets appear across the global view.',
     assetsScanImportProgress: 'Importing scan',
     assetsScanImportProgressHint: 'Processing on server and updating targets…',
+    assetsScanImportProgressAsyncHint:
+      'Async queue: Rust/Go parses targets → Python persists. Files >5 MB use this mode.',
+    assetsScanImportProgressDone: 'Import completed',
     assetsScanImportError: 'Could not import scan',
     assetsScanImportDirectLabel: 'Add directly to',
     assetsScanImportDirectHint:

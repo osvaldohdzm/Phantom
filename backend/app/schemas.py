@@ -125,6 +125,8 @@ class AssetScanTargetImportResponse(BaseModel):
     message: Optional[str] = None
     engagement_id: Optional[UUID] = None
     used_default_engagement: bool = False
+    job_id: Optional[UUID] = None
+    async_mode: bool = False
 
 
 class AssetScanTargetPromoteRequest(BaseModel):
@@ -421,10 +423,31 @@ class IngestBatchResponse(BaseModel):
     finding_ids: List[UUID] = Field(default_factory=list)
     message: Optional[str] = None
     column_map: Optional[dict[str, str]] = None
+    job_id: Optional[UUID] = None
+    async_mode: bool = False
+
+
+class IngestJobResponse(BaseModel):
+    id: UUID
+    kind: str
+    status: str
+    tenant_id: UUID
+    engagement_id: Optional[UUID] = None
+    filename: Optional[str] = None
+    file_sha256: Optional[str] = None
+    file_size: Optional[int] = None
+    progress_pct: int = 0
+    message: Optional[str] = None
+    error: Optional[str] = None
+    parser_engine: Optional[str] = None
+    result: Optional[dict] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 class NessusRescanResponse(BaseModel):
-    scan_run_id: UUID
+    scan_run_id: Optional[UUID] = None
     source: str = "nessus-csv-rescan"
     scope: str
     absent_policy: str
@@ -434,6 +457,8 @@ class NessusRescanResponse(BaseModel):
     absent_count: int = 0
     total_in_scan: int = 0
     message: Optional[str] = None
+    job_id: Optional[UUID] = None
+    async_mode: bool = False
 
 
 # --- Remediation & Retest Schemas ---

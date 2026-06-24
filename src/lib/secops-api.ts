@@ -1089,6 +1089,8 @@ export type AssetScanTargetImportResult = {
   used_default_engagement?: boolean;
   message?: string;
   engagement_id?: string;
+  job_id?: string | null;
+  async_mode?: boolean;
 };
 
 export async function importAssetScanTargets(
@@ -1097,9 +1099,10 @@ export async function importAssetScanTargets(
     engagement_id?: string;
     promote_source_type?: AssetSourceType;
     targets_only?: boolean;
+    onJobUpdate?: (job: import('@/lib/ingest-jobs').IngestJob) => void;
   }
 ): Promise<AssetScanTargetImportResult> {
-  const { postMultipartUpload } = await import('@/lib/ingest-upload');
+  const { postMultipartUpload, appendAsyncIngestIfLarge } = await import('@/lib/ingest-upload');
   const form = new FormData();
   form.append('file', file);
   if (options?.engagement_id?.trim()) form.append('engagement_id', options.engagement_id.trim());
@@ -1111,6 +1114,7 @@ export async function importAssetScanTargets(
   } else {
     form.append('targets_only', 'false');
   }
+  appendAsyncIngestIfLarge(form, file);
   const res = await postMultipartUpload('/api/v1/assets/scan-targets/import', form);
   const data = (await res.json().catch(() => ({}))) as AssetScanTargetImportResult & {
     detail?: unknown;
@@ -1123,6 +1127,15 @@ export async function importAssetScanTargets(
           ? data.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
           : res.statusText;
     throw new Error(detail || `Error ${res.status}`);
+  }
+  if (data.async_mode && data.job_id) {
+    options?.onJobUpdate?.({
+      id: data.job_id,
+      kind: 'scan-targets',
+      status: 'queued',
+      tenant_id: '',
+      progress_pct: 0,
+    });
   }
   return data;
 }

@@ -42,6 +42,9 @@ Phantom — operaciones
     catalog-export   Exportar catálogo → backend/catalog/
     catalog-import   Importar catálogo empaquetado
 
+  Compliance / supply chain
+    sbom             Generar SBOM (Syft) + escaneo Grype → storage/sbom/
+
   Desarrollo nativo (sin Docker app)
     dev              HTTPS + hot-reload
     prod             Producción nativa
@@ -75,6 +78,7 @@ EOF
   change|change-password|credentials) run change.sh "$@" ;;
   catalog-export) run catalog-export.sh "$@" ;;
   catalog-import|db-catalog) run catalog-import.sh "$@" ;;
+  sbom|supply-chain) run sbom.sh "$@" ;;
   dev|start-dev) run dev.sh "$@" ;;
   prod|start-prod) run prod.sh "$@" ;;
   native) run native.sh "$@" ;;

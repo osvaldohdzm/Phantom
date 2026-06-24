@@ -45,6 +45,15 @@ Los scripts sueltos en `ops/*.sh` son implementación interna; no dupliques lóg
 | `./phantom catalog-export vX.Y` | Exportar `core.vulns_catalog` → `backend/catalog/` |
 | `./phantom catalog-import` | Importar catálogo empaquetado (tras `git pull`) |
 
+## Compliance / supply chain
+
+| Comando | Descripción |
+|---------|-------------|
+| `./phantom sbom` | SBOM SPDX + CycloneDX → `storage/sbom/` (Syft + Grype) |
+| `./phantom sbom --images` | Incluye imágenes Docker tras build |
+
+Ver [docs/architecture/supply-chain.md](../docs/architecture/supply-chain.md).
+
 ## Desarrollo nativo
 
 | Comando | Script | Descripción |
