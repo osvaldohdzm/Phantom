@@ -12,6 +12,7 @@ help:
 	@echo "  ./backup.sh        Respaldo BD + storage"
 	@echo "  ./verify-env.sh    Validar .env"
 	@echo "  ./clean.sh         Limpiar artefactos locales"
+	@echo "  ./debug.sh         Dev nativo + diagnóstico de puertos"
 	@echo "  ./uninstall.sh     Desinstalar (ver --help)"
 	@echo ""
 	@echo "  make up / down     Atajos Docker (equivalente a start/stop)"
