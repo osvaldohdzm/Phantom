@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Phantom SecOps
 
-## Getting Started
+Plataforma de gestión de vulnerabilidades y ciclo de vida de servicios de seguridad (AV/Infra, pentest, DAST, SAST): ingesta masiva (Nessus/CSV), catálogo operativo, matriz CYB001, repositorio global y exportación Word.
 
-First, run the development server:
+## Inicio rápido (Ubuntu Server — Docker)
+
+Requisitos: Ubuntu 22.04/24.04, acceso `sudo`, puerto **3000** libre.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/osvaldohdzm/Phantom.git
+cd Phantom
+sudo ./scripts/install-ubuntu.sh
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre **https://&lt;IP-del-servidor&gt;:3000** (certificado autofirmado → acepta la advertencia del navegador).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Campo        | Valor por defecto |
+|-------------|-------------------|
+| Usuario     | `phantom`         |
+| Contraseña  | `phantom`         |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Cambiar credenciales: `./change.sh`
 
-## Learn More
+### Comandos habituales
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cp .env.example .env          # si no existe
+make up                       # levantar stack
+make logs                     # ver logs
+make down                     # parar
+docker compose ps             # estado
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Compatible con **Podman Compose** (`podman compose up -d --build`).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Desarrollo local (macOS / Linux)
 
-## Deploy on Vercel
+```bash
+# 1. Base de datos
+docker compose up -d postgres redis
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# 2. Backend
+cp backend/.env.example backend/.env   # ajustar DATABASE_URL
+cd backend && python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# 3. Frontend
+npm ci
+
+# 4. Certificados TLS locales (mkcert)
+brew install mkcert && mkcert -install   # macOS
+./scripts/generate-certs.sh
+
+# 5. Arrancar
+./start-dev.sh
+```
+
+Producción nativa (sin Docker): `./start-prod.sh`
+
+## Estructura
+
+| Ruta | Descripción |
+|------|-------------|
+| `src/` | Frontend Next.js (App Router) |
+| `backend/app/` | API FastAPI |
+| `docker-compose.yml` | PostgreSQL + Redis + API + Web |
+| `scripts/install-ubuntu.sh` | Instalación automatizada en Ubuntu |
+| `docs/` | Manual técnico y API |
+
+## Variables de entorno
+
+Copia `.env.example` → `.env`. Obligatorias en producción:
+
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET`
+- `GEMINI_API_KEY` (opcional; IA degradada sin clave)
+
+Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para reverse proxy, backups y hardening.
+
+## Licencia
+
+Ver [LICENSE](./LICENSE).

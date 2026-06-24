@@ -1,4 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# See https://help.github.com/articles/ignoring-files/
 
 # dependencies
 /node_modules
@@ -30,8 +30,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env — nunca commitear secretos; sí las plantillas
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+backend/.env
+!backend/.env.example
 
 # vercel
 .vercel
@@ -40,8 +46,27 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-certificates
+# certs (generar con scripts/generate-certs.sh o en Docker)
+certificates/
+
+# herramientas locales opcionales
 Phantom-Tool/
+
+# python
 backend/.venv/
+**/__pycache__/
+**/*.pyc
+backend/.pytest_cache/
+
+# datos de runtime (no versionar)
+uploads/
 backend/storage/branding/
 backend/storage/reports/
+# plantillas Word subidas por usuarios (mantener directorio vacío)
+backend/storage/templates/*
+!backend/storage/templates/.gitkeep
+
+# scratch / tests locales
+test-gen.ts
+test-parser.js
+test-parser.ts

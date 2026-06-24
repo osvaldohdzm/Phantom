@@ -1,0 +1,37 @@
+# Dependencies and build artifacts
+node_modules
+.next
+out
+build
+backend/.venv
+backend/.pytest_cache
+**/__pycache__
+**/*.pyc
+*.tsbuildinfo
+
+# Local secrets and certs (generated on host or in container)
+.env
+.env.local
+.env.*.local
+certificates
+
+# Runtime data
+uploads
+backend/storage/branding
+backend/storage/reports
+
+# VCS and IDE
+.git
+.github
+.cursor
+.DS_Store
+
+# Optional local tools (not needed in image)
+Spectra-Tool
+Phantom-Tool
+
+# Tests and scratch
+coverage
+test-*.ts
+test-*.js
+test-gen.ts

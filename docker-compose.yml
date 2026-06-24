@@ -1,19 +1,73 @@
+# Phantom SecOps — stack completo (PostgreSQL + Redis + API + Web)
+# Uso: cp .env.example .env && docker compose up -d --build
+# Compatible con Docker Engine y Podman Compose.
+
+name: phantom
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: katana
-      POSTGRES_PASSWORD: 299792458.Light
-      POSTGRES_DB: katana_security_db
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-phantom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-katana_security_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phantom} -d ${POSTGRES_DB:-katana_security_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-katana_security_db}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:-}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    volumes:
+      - phantom_storage:/app/backend/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${PHANTOM_HTTP_PORT:-3000}:3000"
+    environment:
+      API_PROXY_URL: http://api:8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "3000"
+    depends_on:
+      - api
 
 volumes:
   pgdata:
+  phantom_storage:
