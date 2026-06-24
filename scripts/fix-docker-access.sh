@@ -34,6 +34,11 @@ if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -qi 'Status: acti
   echo "[+] ufw: allow ${PORT}/tcp"
 fi
 
+if [[ "$(sysctl -n vm.overcommit_memory 2>/dev/null || echo 0)" != "1" ]]; then
+  echo "[*] Redis recomienda vm.overcommit_memory=1 (opcional, mejora persistencia)"
+  sysctl -w vm.overcommit_memory=1 2>/dev/null || true
+fi
+
 echo "[*] Recreando contenedor web…"
 docker compose up -d --build web
 
@@ -59,5 +64,5 @@ if [[ "$OK" -eq 1 ]]; then
 else
   echo "[!] Sigue sin responder. Revisa:"
   echo "    docker compose ps"
-  echo "    docker compose logs web --tail 80"
+  echo "    ./phantom logs web --tail 80"
 fi

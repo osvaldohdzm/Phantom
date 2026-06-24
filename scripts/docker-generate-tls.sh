@@ -91,7 +91,8 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout "$KEY" \
   -out "$CERT" \
   -config "$OPENSSL_CNF" \
-  -extensions v3_req
+  -extensions v3_req \
+  >/dev/null 2>&1
 
 chmod 600 "$KEY"
 echo "$SANS" > "$SANS_MARKER"

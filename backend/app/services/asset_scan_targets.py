@@ -54,12 +54,43 @@ def _parse_asset_fields(display: str, component: str) -> dict[str, Optional[str]
     return {"nombre": host or component[:255], "ip_publica": ip_publica, "fqdn": fqdn}
 
 
+def backfill_finding_componente(
+    db: Session,
+    tenant_id: UUID,
+    *,
+    batch: int = 10_000,
+) -> int:
+    """Rellena componente_afectado en hallazgos antiguos (p. ej. Nmap sin host:puerto)."""
+    rows = (
+        tenant_findings_filter(db.query(Finding), tenant_id)
+        .filter(Finding.asset_id.is_(None))
+        .filter(
+            (Finding.componente_afectado.is_(None)) | (Finding.componente_afectado == "")
+        )
+        .limit(batch)
+        .all()
+    )
+    updated = 0
+    for finding in rows:
+        comp = _resolve_componente(finding)
+        if not comp:
+            continue
+        finding.componente_afectado = comp
+        updated += 1
+    if updated:
+        db.commit()
+    return updated
+
+
 def refresh_scan_targets(
     db: Session,
     *,
     tenant_id: UUID,
     engagement_id: Optional[UUID] = None,
+    only_keys: Optional[set[str]] = None,
 ) -> dict[str, int]:
+    backfill_finding_componente(db, tenant_id)
+
     query = tenant_findings_filter(db.query(Finding), tenant_id)
     if engagement_id is not None:
         query = query.filter(Finding.engagement_id == engagement_id)
@@ -70,6 +101,8 @@ def refresh_scan_targets(
         component = _resolve_componente(finding)
         key = normalize_affected_component(component)
         if not key:
+            continue
+        if only_keys is not None and key not in only_keys:
             continue
         display = _display_from_component(component) or key
         bucket = buckets.setdefault(
@@ -106,7 +139,9 @@ def refresh_scan_targets(
                 row.display_name = meta["display"]
                 row.componente_afectado = meta["component"]
                 row.finding_count = meta["count"]
-                row.tool_sources = tools
+                merged_tools = set(row.tool_sources or [])
+                merged_tools.update(meta["tools"])
+                row.tool_sources = sorted(merged_tools)
                 if engagement_id and not row.engagement_id:
                     row.engagement_id = engagement_id
                 pending += 1

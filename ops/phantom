@@ -30,7 +30,7 @@ Phantom — operaciones
     restart [svc]    Reiniciar contenedores
     update           git pull + build + recreate (alias: deploy)
     build            Solo construir imágenes
-    logs [svc]       Ver logs
+    logs [svc]       Ver logs (default: api + web; --all para todo)
     health           Comprobar web y API
     backup [dir]     Respaldo BD + storage
     verify-env       Validar .env
