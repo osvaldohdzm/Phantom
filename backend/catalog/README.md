@@ -2,14 +2,42 @@
 
 Base de datos de vulnerabilidades unificada (CFR / Nessus Plugin ID, textos ES+EN, remediación, etc.) que alimenta la ingesta y los hallazgos.
 
+## Export nativo (macOS / Postgres local, sin Docker)
+
+1. Crea `backend/.env` (no lo commitees si tiene contraseña real):
+
+```bash
+cat > backend/.env <<'EOF'
+DATABASE_URL=postgresql+psycopg2://postgres:TU_PASSWORD@127.0.0.1:5432/katana_security_db
+JWT_SECRET=dev-local-only-change-me
+AUTH_REQUIRED=false
+EOF
+```
+
+2. Instala dependencias Python (una vez):
+
+```bash
+cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+3. Exporta (lee `core.vulns_catalog` de tu BD pgAdmin):
+
+```bash
+./phantom catalog-export --native
+```
+
+Genera `backend/catalog/operational-catalog.csv.gz` + `manifest.json` (revisión +1 automática).
+
 ## Flujo para mantenedores
 
 1. **Alimenta el catálogo** en tu Phantom local (UI *Catálogo operativo* → importar CSV, o edición manual).
 2. **Exporta al repo**:
    ```bash
+   ./phantom catalog-export
+   # o con etiqueta explícita:
    ./phantom catalog-export v2026.06.1
    ```
-   Genera `operational-catalog.csv.gz` + actualiza `manifest.json` (versión, revisión, SHA256).
+   Genera o **sobrescribe** `operational-catalog.csv.gz` + `manifest.json` (versión, revisión incremental, SHA256, nota).
 3. **Commit y push**:
    ```bash
    git add backend/catalog/

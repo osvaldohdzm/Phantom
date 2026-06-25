@@ -1,10 +1,10 @@
 {
-  "version": "0.0.0",
-  "revision": 0,
-  "filename": "",
+  "version": "v2026.06.25",
+  "revision": 2,
+  "filename": "operational-catalog.csv.gz",
   "encoding": "utf-8",
-  "row_count": 0,
-  "sha256": "",
-  "published_at": null,
-  "notes": "Sin catálogo empaquetado. Exporta desde tu BD con ./catalog-export.sh y haz commit de operational-catalog.csv.gz + este manifest."
+  "row_count": 13413,
+  "sha256": "2e9edb84d3aa6cd5a8fc7a68b1f83515c8b92c2e77f6f96c204b694f3beb25c7",
+  "published_at": "2026-06-25T05:16:58.806090+00:00",
+  "notes": "Corte operativo exportado desde core.vulns_catalog (snapshot de la BD actual). Versi\u00f3n v2026.06.25, revisi\u00f3n 2 (2026-06-25 05:16 UTC)."
 }
