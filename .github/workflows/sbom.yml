@@ -1,0 +1,46 @@
+name: Supply chain (SBOM)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Syft and Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM
+        run: chmod +x ops/sbom.sh && ./ops/sbom.sh --ci
+        continue-on-error: true
+        id: sbom
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-sbom
+          path: storage/sbom/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: SBOM summary
+        if: always()
+        run: |
+          echo "## Supply chain" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -d storage/sbom ]]; then
+            ls -la storage/sbom >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+          if [[ "${{ steps.sbom.outcome }}" == "failure" ]]; then
+            echo "::warning::Grype reportó vulnerabilidades Critical/High — revisar artefacto SBOM."
+          fi
