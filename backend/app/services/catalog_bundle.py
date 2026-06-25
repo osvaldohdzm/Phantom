@@ -21,6 +21,12 @@ from app.services.vulns_catalog_schema import invalidate_vulns_catalog_schema_ca
 CATALOG_DIR = Path(__file__).resolve().parents[2] / "catalog"
 MANIFEST_PATH = CATALOG_DIR / "manifest.json"
 
+DEFAULT_EXPORT_NOTES = (
+    "Corte operativo exportado desde core.vulns_catalog (snapshot de la BD actual)."
+)
+
+_PLACEHOLDER_VERSIONS = frozenset({"", "0.0.0", "unknown", "none"})
+
 # Columnas conocidas del CFR / Excel operativo (el resto se añade al importar CSV).
 _KNOWN_COLUMN_TYPES: dict[str, str] = {
     "Id": "INTEGER PRIMARY KEY",
@@ -71,6 +77,40 @@ def load_manifest() -> Optional[dict[str, Any]]:
         return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def resolve_export_version(explicit: Optional[str]) -> str:
+    """Versión del bundle: argumento CLI, manifest existente o fecha UTC."""
+    if explicit and str(explicit).strip():
+        return str(explicit).strip()
+    manifest = load_manifest() or {}
+    current = str(manifest.get("version") or "").strip()
+    if current.lower() not in _PLACEHOLDER_VERSIONS:
+        return current
+    return f"v{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+
+
+def resolve_export_revision(explicit: Optional[int]) -> int:
+    """Revisión incremental por defecto (continuidad enumerada)."""
+    if explicit is not None:
+        return max(0, int(explicit))
+    manifest = load_manifest() or {}
+    return int(manifest.get("revision") or 0) + 1
+
+
+def resolve_export_notes(
+    explicit: Optional[str],
+    *,
+    version: str,
+    revision: int,
+) -> str:
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return (
+        f"{DEFAULT_EXPORT_NOTES} "
+        f"Versión {version}, revisión {revision} ({stamp})."
+    )
 
 
 def bundled_catalog_path(manifest: Optional[dict[str, Any]] = None) -> Optional[Path]:
@@ -508,6 +548,12 @@ def export_catalog_to_bundle(
         "notes": notes,
     }
     MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    # Un solo artefacto en repo: sobrescribir y eliminar el formato alternativo.
+    stale_name = "operational-catalog.csv" if gzip_output else "operational-catalog.csv.gz"
+    stale_path = CATALOG_DIR / stale_name
+    if stale_path.exists():
+        stale_path.unlink()
 
     return {
         "path": str(out_path),

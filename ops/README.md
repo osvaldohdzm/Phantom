@@ -42,7 +42,7 @@ Los scripts sueltos en `ops/*.sh` son implementación interna; no dupliques lóg
 | Comando | Descripción |
 |---------|-------------|
 | `./phantom change` | Credenciales admin |
-| `./phantom catalog-export vX.Y` | Exportar `core.vulns_catalog` → `backend/catalog/` |
+| `./phantom catalog-export [--native]` | Exportar catálogo → `backend/catalog/` (Docker o Postgres local) |
 | `./phantom catalog-import` | Importar catálogo empaquetado (tras `git pull`) |
 
 ## Compliance / supply chain

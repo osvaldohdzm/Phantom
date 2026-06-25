@@ -57,6 +57,8 @@ Phantom — operaciones
 Ejemplos:
   ./phantom install && ./phantom start
   ./phantom update
+  ./phantom catalog-export          # Docker (api en marcha)
+  ./phantom catalog-export --native   # Postgres local (macOS / sin Docker)
   ./phantom catalog-export v2026.06.1
   ./phantom backup /var/backups
 

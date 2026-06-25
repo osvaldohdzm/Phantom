@@ -115,3 +115,36 @@ phantom_stack_running() {
 phantom_ops_dir() {
   echo "$(phantom_repo_root)/ops"
 }
+
+phantom_has_compose() {
+  if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v podman &>/dev/null && podman compose version &>/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+phantom_catalog_export_native() {
+  phantom_cd_root
+  local py="python3"
+  if [[ -x backend/.venv/bin/python ]]; then
+    py=".venv/bin/python"
+  fi
+  if [[ -f backend/.env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source backend/.env
+    set +a
+  fi
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    echo "[!] Falta DATABASE_URL en backend/.env" >&2
+    echo "    Ejemplo (Postgres local en macOS):" >&2
+    echo "    DATABASE_URL=postgresql+psycopg2://postgres:TU_PASS@127.0.0.1:5432/katana_security_db" >&2
+    exit 1
+  fi
+  export PYTHONPATH="${PHANTOM_ROOT}/backend"
+  echo "[*] Export nativo → backend/catalog/ (DATABASE_URL desde backend/.env)"
+  (cd backend && "$py" -m scripts.export_operational_catalog "$@")
+}
