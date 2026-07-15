@@ -21,6 +21,13 @@ HOSTS=(
   ::1
 )
 
+# System Hostname
+if command -v hostname &>/dev/null; then
+  HOSTS+=("$(hostname)")
+  HOSTS+=("$(hostname | tr '[:upper:]' '[:lower:]')")
+fi
+
+
 # Tailscale IPv4
 TS_IP=$(tailscale_ipv4 || true)
 [[ -n "$TS_IP" ]] && HOSTS+=("$TS_IP")

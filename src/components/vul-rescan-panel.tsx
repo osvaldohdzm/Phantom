@@ -40,7 +40,18 @@ type RescanResult = {
   async_mode?: boolean;
 };
 
-function mapRescanPayload(data: RescanResult & { job_id?: string }): RescanResult {
+function mapRescanPayload(data: {
+  scan_run_id?: string;
+  new_count?: number;
+  updated_count?: number;
+  reaparecido_count?: number;
+  absent_count?: number;
+  total_in_scan?: number;
+  scope: string;
+  absent_policy: string;
+  message?: string | null;
+  job_id?: string;
+}): RescanResult {
   return {
     scan_run_id: data.scan_run_id,
     new_count: data.new_count ?? 0,

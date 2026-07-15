@@ -19,6 +19,9 @@ import {
   Layers,
   ExternalLink,
   Settings,
+  ClipboardList,
+  ClipboardCheck,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -39,9 +42,12 @@ const nav: NavItem[] = [
   { href: '/assets', labelKey: 'navAssets', icon: Server },
   { href: '/vul-mgmt', labelKey: 'navVulnerabilities', icon: ShieldAlert },
   { href: '/reports', labelKey: 'navServices', icon: FileText },
+  { href: '/evaluaciones', labelKey: 'navEvaluationsActive', icon: ClipboardCheck },
+  { href: '/pruebas-seguridad', labelKey: 'navSecurityTestsActive', icon: ShieldAlert },
+  { href: '/evaluaciones-catalogo', labelKey: 'navEvaluationsCatalog', icon: ClipboardList },
+  { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield },
   { href: '/vulns-catalog', labelKey: 'navOperationalCatalog', icon: BookOpen },
   { href: '/compliance', labelKey: 'navCompliance', icon: Scale },
-  { href: '/sec-services', labelKey: 'navModules', icon: Layers },
   { href: '/canvas', labelKey: 'navEvidenceCanvas', icon: Layout },
   { href: '/vul-catalog', labelKey: 'navBaseCatalog', icon: Database },
   { href: '/ingesta-excel', labelKey: 'navExcelIngest', icon: FileSpreadsheet },
@@ -95,7 +101,7 @@ export function SecOpsSidebarNav() {
 }
 
 function shortMobileLabel(label: string) {
-  if (label === 'Catálogo Vulns' || label === 'Operational Catalog') return 'Catalog';
+  if (label === 'Catálogo Vulns' || label === 'Vulnerabilities Catalog') return 'Catalog';
   if (label === 'Ingesta Excel' || label === 'Excel Ingest') return 'Excel';
   if (label === 'Herramientas · Nmap' || label === 'Tools · Nmap') return 'Nmap';
   if (label === 'Network Exposure Live Report') return 'Exposure';

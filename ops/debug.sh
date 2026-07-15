@@ -46,7 +46,9 @@ if [[ ${#MISSING_CERT_IPS[@]} -gt 0 ]]; then
   fi
 fi
 
-DEV_ALLOWED_ORIGINS="localhost,127.0.0.1${TS_IP:+,${TS_IP}}${CERT_EXTRA_HOSTS:+,${CERT_EXTRA_HOSTS// /,}}"
+HOST_NAME=$(hostname || true)
+HOST_NAME_LC=$(echo "$HOST_NAME" | tr '[:upper:]' '[:lower:]')
+DEV_ALLOWED_ORIGINS="localhost,127.0.0.1,${HOST_NAME},${HOST_NAME_LC}${TS_IP:+,${TS_IP}}${CERT_EXTRA_HOSTS:+,${CERT_EXTRA_HOSTS// /,}}"
 export DEV_ALLOWED_ORIGINS
 
 echo "============================================================"
@@ -202,7 +204,7 @@ fi
 
 echo "[*] Launching Uvicorn FastAPI server on port $BACKEND_PORT..."
 free_port "$BACKEND_PORT" "backend"
-uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload &
+uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload --log-level debug &
 BACKEND_PID=$!
 cd ..
 
@@ -216,7 +218,7 @@ fi
 echo "[*] Launching Next.js HTTPS on port $FRONTEND_PORT..."
 echo "    Allowed dev origins: ${DEV_ALLOWED_ORIGINS}"
 free_port "$FRONTEND_PORT" "frontend"
-export BIND_ADDRESS="0.0.0.0"
+export BIND_ADDRESS="::"
 export PORT="$FRONTEND_PORT"
 export SSL_CERT_PATH="$CERT"
 export SSL_KEY_PATH="$KEY"

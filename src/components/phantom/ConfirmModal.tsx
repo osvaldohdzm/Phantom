@@ -82,7 +82,7 @@ export default function ConfirmModal({
     >
       <div 
         id="confirm-modal-wrapper"
-        className={`w-full max-w-md bg-[#0F1116] border ${theme.borderAccent} rounded-xl p-6 shadow-[0_20px_50px_rgba(0,0,0,0.8)] scale-100 transition-all duration-200 transform`}
+        className={`w-full max-w-md bg-card border ${theme.borderAccent} rounded-xl p-6 shadow-xl scale-100 transition-all duration-200 transform`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start space-x-4">
@@ -92,29 +92,29 @@ export default function ConfirmModal({
           
           <div className="flex-1 space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="font-sans font-bold text-base text-zinc-100 tracking-tight uppercase">
+              <h3 className="font-sans font-bold text-base text-foreground tracking-tight uppercase">
                 {title}
               </h3>
               <button 
                 onClick={onCancel}
-                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-lg transition"
+                className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 title="Cancel and dismiss"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             
-            <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+            <p className="text-xs leading-relaxed text-muted-foreground font-sans">
               {message}
             </p>
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-end space-x-3 pt-4 border-t border-white/5 font-sans">
+        <div className="mt-6 flex items-center justify-end space-x-3 border-t border-border pt-4 font-sans">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-xs font-mono font-medium text-zinc-450 hover:text-zinc-200 bg-[#161822] hover:bg-[#1C1F2E] border border-white/5 rounded-lg transition active:scale-95 cursor-pointer"
+            className="phantom-footer-btn px-4 py-2 text-xs"
           >
             {cancelText}
           </button>
@@ -122,7 +122,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-xs font-semibold rounded-lg transition duration-150 active:scale-95 cursor-pointer flex items-center gap-1.5`}
+            className={`rounded-lg px-4 py-2 text-xs font-semibold transition duration-150 active:scale-95 cursor-pointer flex items-center gap-1.5 ${theme.confirmBtn}`}
           >
             {confirmText}
           </button>

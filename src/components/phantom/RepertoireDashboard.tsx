@@ -739,20 +739,16 @@ export default function RepertoireDashboard({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed top-14 left-0 right-0 bottom-0 bg-[#06070a]/85 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-      
-      {/* Dashboard frame */}
-      <div className="bg-[#0c0d12] border border-white/10 w-full max-w-6xl h-full max-h-[calc(100vh-6rem)] rounded-xl flex flex-col overflow-hidden shadow-2xl relative">
-        
-        {/* Banner header */}
-        <div className="bg-[#0F1116] border-b border-white/10 p-4 shrink-0 flex items-center justify-between">
+    <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+      <div className="bg-card border border-border w-full max-w-6xl h-full max-h-[95%] rounded-xl flex flex-col overflow-hidden shadow-xl relative">
+        <div className="border-b border-border bg-muted/30 p-4 shrink-0 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="h-9 w-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-              <FolderHeart className="h-5 w-5 text-emerald-400" />
+            <div className="h-9 w-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <FolderHeart className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-slate-100 tracking-wider font-mono">REPERTORIO Y ARCHIVADOR DE PENTEST / CTFs</h1>
-              <p className="text-[10px] text-emerald-400 font-mono">Replicación, Simulación, Almacén y Control de Vectores Ofensivos Activos</p>
+              <h1 className="text-sm font-bold text-foreground tracking-wide">Repertorio Pentest &amp; CTF</h1>
+              <p className="text-[10px] text-muted-foreground">Plantillas, playbooks y workspaces guardados</p>
             </div>
           </div>
 
@@ -835,7 +831,7 @@ export default function RepertoireDashboard({
         <div className="flex-1 flex overflow-hidden min-h-0">
           
           {/* LEFT COLUMN: Playbooks catalog selector */}
-          <div className="w-80 border-r border-white/15 flex flex-col bg-[#0A0B0E] divide-y divide-white/5">
+          <div className="w-80 border-r border-border flex flex-col bg-sidebar divide-y divide-border">
             
             {/* Search filter bar */}
             <div className="p-3">
@@ -1006,7 +1002,7 @@ export default function RepertoireDashboard({
           </div>
 
           {/* MAIN COLUMN RIGHT: Selected Workspace review space */}
-          <div className="flex-1 flex flex-col bg-[#0b0c10] overflow-hidden">
+          <div className="flex-1 flex flex-col bg-background overflow-hidden">
             
             {selectedWorkspace ? (
               <div className="flex-grow flex flex-col min-h-0 overflow-y-auto">

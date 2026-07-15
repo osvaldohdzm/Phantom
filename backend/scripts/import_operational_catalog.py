@@ -10,7 +10,7 @@ from app.services.catalog_bundle import import_bundled_catalog, seed_operational
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Import bundled operational catalog")
+    parser = argparse.ArgumentParser(description="Import bundled Vulnerabilities Catalog")
     parser.add_argument(
         "--force",
         action="store_true",

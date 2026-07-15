@@ -27,6 +27,7 @@ import { useUiT } from '@/lib/use-ui-locale';
 type Props = {
   sourceType: AssetSourceType;
   engagementId?: string | null;
+  subType?: 'host' | 'app';
 };
 
 function remapRows(rows: AssetGridRow[], columns: AssetGridColumn[]): AssetGridRow[] {
@@ -39,7 +40,7 @@ function remapRows(rows: AssetGridRow[], columns: AssetGridColumn[]): AssetGridR
   });
 }
 
-export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
+export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
   const { t } = useUiT();
   const baseColumns = useMemo(() => columnsForSource(sourceType), [sourceType]);
   const [columns, setColumns] = useState<AssetGridColumn[]>(() =>
@@ -53,8 +54,15 @@ export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
   useEffect(() => {
     const loaded = loadColumnLayout(sourceType, baseColumns);
     setColumns(loaded);
-    setRows([emptyGridRow(loaded)]);
-  }, [sourceType, baseColumns]);
+    const initRow = emptyGridRow(loaded);
+    if (sourceType === 'inventory' && subType) {
+      const assetTypeCol = loaded.find((c) => c.topLevel === 'asset_type');
+      if (assetTypeCol) {
+        initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+      }
+    }
+    setRows([initRow]);
+  }, [sourceType, baseColumns, subType]);
 
   const updateColumns = useCallback(
     (next: AssetGridColumn[]) => {
@@ -74,24 +82,60 @@ export function AssetsSourceGrid({ sourceType, engagementId }: Props) {
         engagement_id: engagementId ?? undefined,
         limit: 5000,
       });
-      const gridRows = assets.map((a) => assetToGridRow(a, columns));
-      setRows(gridRows.length ? gridRows : [emptyGridRow(columns)]);
+
+      let filteredAssets = assets;
+      if (sourceType === 'inventory' && subType) {
+        if (subType === 'host') {
+          filteredAssets = assets.filter((a) => {
+            const t = (a.asset_type || '').toLowerCase();
+            return t !== 'app' && t !== 'webapp' && t !== 'web_app' && t !== 'web app' && t !== 'api';
+          });
+        } else if (subType === 'app') {
+          filteredAssets = assets.filter((a) => {
+            const t = (a.asset_type || '').toLowerCase();
+            return t === 'app' || t === 'webapp' || t === 'web_app' || t === 'web app' || t === 'api';
+          });
+        }
+      }
+
+      const gridRows = filteredAssets.map((a) => assetToGridRow(a, columns));
+      const initRow = emptyGridRow(columns);
+      if (sourceType === 'inventory' && subType) {
+        const assetTypeCol = columns.find((c) => c.topLevel === 'asset_type');
+        if (assetTypeCol) {
+          initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+        }
+      }
+      setRows(gridRows.length ? gridRows : [initRow]);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('assetsLoadError'));
-      setRows([emptyGridRow(columns)]);
+      const initRow = emptyGridRow(columns);
+      if (sourceType === 'inventory' && subType) {
+        const assetTypeCol = columns.find((c) => c.topLevel === 'asset_type');
+        if (assetTypeCol) {
+          initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+        }
+      }
+      setRows([initRow]);
     } finally {
       setLoading(false);
     }
-  }, [columns, engagementId, sourceType, t]);
+  }, [columns, engagementId, sourceType, subType, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleSave = async (dirtyRows: AssetGridRow[], deletedIds: string[]) => {
-    const payloads = dirtyRows.map((row) =>
-      gridRowToAssetPayload(row, columns, sourceType, engagementId)
-    );
+    const payloads = dirtyRows.map((row) => {
+      const payload = gridRowToAssetPayload(row, columns, sourceType, engagementId);
+      if (sourceType === 'inventory' && subType) {
+        if (!payload.asset_type) {
+          payload.asset_type = subType === 'app' ? 'App' : 'Host';
+        }
+      }
+      return payload;
+    });
     await bulkUpsertAssets({
       rows: payloads,
       delete_ids: deletedIds,

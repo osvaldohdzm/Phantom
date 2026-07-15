@@ -133,6 +133,7 @@ class AssetScanTargetPromoteRequest(BaseModel):
     target_ids: List[UUID]
     source_type: AssetSourceTypeEnum = AssetSourceTypeEnum.inventory
     engagement_id: Optional[UUID] = None
+    asset_type: Optional[str] = None
 
 
 class AssetScanTargetPassRequest(BaseModel):

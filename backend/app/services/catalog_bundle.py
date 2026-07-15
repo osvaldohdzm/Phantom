@@ -477,13 +477,13 @@ def seed_operational_catalog_if_needed(db: Session) -> dict[str, Any]:
         result = import_bundled_catalog(db, force=force)
         if result.get("status") == "imported":
             print(
-                f"Operational catalog seeded: {result.get('version')} "
+                f"Vulnerabilities Catalog seeded: {result.get('version')} "
                 f"({result.get('row_count', 0):,} rows)"
             )
         return result
     except Exception as exc:
         db.rollback()
-        print(f"Operational catalog seed skipped: {exc}")
+        print(f"Vulnerabilities Catalog seed skipped: {exc}")
         return {"status": "error", "error": str(exc)}
 
 

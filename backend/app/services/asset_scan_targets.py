@@ -379,6 +379,7 @@ def promote_scan_targets(
     target_ids: list[UUID],
     source_type: AssetSourceType,
     engagement_id: Optional[UUID],
+    asset_type: Optional[str] = None,
 ) -> dict[str, Any]:
     rows = (
         db.query(AssetScanTarget)
@@ -408,6 +409,15 @@ def promote_scan_targets(
         if transport:
             meta["transporte"] = transport
 
+        # Auto-infer asset_type if not explicitly set
+        inferred_asset_type = asset_type
+        if not inferred_asset_type:
+            tool_list = [t.lower() for t in tools]
+            if any("acunetix" in t or "zap" in t or "burp" in t or "web" in t or "app" in t for t in tool_list):
+                inferred_asset_type = "App"
+            else:
+                inferred_asset_type = "Host"
+
         ip = fields["ip_publica"]
         asset = Asset(
             tenant_id=tenant_id,
@@ -421,6 +431,7 @@ def promote_scan_targets(
             engagement_id=engagement_id or target.engagement_id,
             discovery_method=", ".join(tools) if tools else "Scan",
             extra_metadata=meta,
+            asset_type=inferred_asset_type,
         )
         db.add(asset)
         db.flush()

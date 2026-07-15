@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-# Phantom — arrancar stack Docker en segundo plano.
+# Phantom — arrancar stack (Docker o nativo en macOS sin Docker).
 # Uso: ./phantom start
-#      PHANTOM_MODE=native ./phantom start   # modo nativo (HTTPS local, sin Docker)
+#      PHANTOM_MODE=docker ./phantom start   # forzar Docker
+#      PHANTOM_MODE=native ./phantom start   # forzar nativo
 set -euo pipefail
 
 OPS_DIR="$(cd "$(dirname "$0")" && pwd)"
 PHANTOM_ROOT="$(cd "$OPS_DIR/.." && pwd)"
 export PHANTOM_ROOT
-
-if [[ "${PHANTOM_MODE:-docker}" == "native" ]]; then
-  exec "$OPS_DIR/native.sh"
-fi
-
 # shellcheck source=lib.sh
 source "$OPS_DIR/lib.sh"
+
+phantom_load_env
+
+if phantom_use_native_mode; then
+  if [[ "${PHANTOM_MODE:-}" != "native" ]]; then
+    echo "[*] macOS sin Docker — arranque nativo automático"
+    echo "    Desarrollo: ./phantom dev   |   Docker: PHANTOM_MODE=docker ./phantom start"
+    echo ""
+  fi
+  exec "$OPS_DIR/native.sh"
+fi
 
 echo "============================================================"
 echo " Phantom — inicio (Docker)"

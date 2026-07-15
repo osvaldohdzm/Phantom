@@ -35,11 +35,19 @@ _stop_event = threading.Event()
 def start_ingest_worker() -> None:
     global _worker_thread
     from app.config import settings
+    from app.services.ingest_jobs import redis_available
 
     if not settings.ingest_worker_enabled:
         logger.info("ingest worker disabled (INGEST_WORKER_ENABLED=false)")
         return
     if _worker_thread and _worker_thread.is_alive():
+        return
+    if not redis_available():
+        logger.warning(
+            "ingest worker not started: Redis unavailable at %s "
+            "(start redis or set INGEST_WORKER_ENABLED=false)",
+            settings.redis_url,
+        )
         return
     _stop_event.clear()
     _worker_thread = threading.Thread(target=_worker_loop, name="phantom-ingest-worker", daemon=True)
@@ -52,20 +60,29 @@ def stop_ingest_worker() -> None:
 
 
 def _worker_loop() -> None:
+    redis_backoff_s = 5.0
     while not _stop_event.is_set():
-        job_id = dequeue_ingest_job(timeout=3)
+        try:
+            job_id = dequeue_ingest_job(timeout=3)
+        except ConnectionError as exc:
+            logger.warning("ingest worker waiting for Redis: %s", exc)
+            _stop_event.wait(redis_backoff_s)
+            continue
         if not job_id:
             continue
         try:
             _process_job(job_id)
         except Exception as exc:
             logger.exception("ingest job %s crashed: %s", job_id, exc)
-            update_ingest_job(
-                job_id,
-                status=IngestJobStatus.failed.value,
-                error=str(exc),
-                progress_pct=100,
-            )
+            try:
+                update_ingest_job(
+                    job_id,
+                    status=IngestJobStatus.failed.value,
+                    error=str(exc),
+                    progress_pct=100,
+                )
+            except ConnectionError:
+                logger.warning("could not mark ingest job %s failed: Redis unavailable", job_id)
 
 
 def _process_job(job_id: str) -> None:

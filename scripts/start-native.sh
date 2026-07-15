@@ -99,7 +99,7 @@ npm run build
 
 echo "[+] Frontend — HTTPS on port ${PORT:-3000} (all interfaces)..."
 # macOS exports HOSTNAME=MacBook-....local — never use for bind; use BIND_ADDRESS.
-export BIND_ADDRESS="0.0.0.0"
+export BIND_ADDRESS="::"
 export PORT="${PORT:-3000}"
 export SSL_CERT_PATH="$CERT"
 export SSL_KEY_PATH="$KEY"

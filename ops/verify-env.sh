@@ -45,7 +45,7 @@ if [[ "${JWT_SECRET:-}" == "change_me_jwt_secret_min_32_chars" ]]; then
   FAIL=1
 fi
 
-if [[ ${#JWT_SECRET} -lt 32 ]]; then
+if [[ -n "${JWT_SECRET:-}" && ${#JWT_SECRET} -lt 32 ]]; then
   echo "    FAIL — JWT_SECRET debe tener al menos 32 caracteres"
   FAIL=1
 fi

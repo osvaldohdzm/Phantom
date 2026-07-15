@@ -1,10 +1,22 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import os from 'os';
 
 /** Hostnames allowed to load Next.js dev / RSC assets (Tailscale + LAN). */
 export function collectDevOrigins(): string[] {
   const origins = new Set<string>(['localhost', '127.0.0.1']);
+
+  try {
+    const hostname = os.hostname();
+    if (hostname) {
+      origins.add(hostname);
+      origins.add(hostname.toLowerCase());
+    }
+  } catch {
+    // optional hostname
+  }
+
 
   for (const file of ['.env.local', '.env']) {
     try {

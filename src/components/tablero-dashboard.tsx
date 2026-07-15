@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BarChart3, Loader2, Shield } from 'lucide-react';
+import { BarChart3, Loader2, Shield, Workflow, Code, ShieldCheck, Server, KeyRound, ArrowUpRight } from 'lucide-react';
 import { LastExcelIngestHint } from '@/components/last-excel-ingest-hint';
-import { PlatformModulesGrid } from '@/components/platform-modules-grid';
 import { RiskPriorityPanel } from '@/components/risk-priority-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
@@ -180,8 +179,8 @@ export function TableroDashboard() {
             <Link href="/portal" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
               {t('dashLinkPortal')}
             </Link>
-            <Link href="/sec-services" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-              {t('dashLinkModules')}
+            <Link href="/reports" className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
+              Servicios de Pentest
             </Link>
           </CardContent>
         </Card>
@@ -189,16 +188,79 @@ export function TableroDashboard() {
 
       <RiskPriorityPanel />
 
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">{t('dashModulesTitle')}</h2>
-        <p className="text-sm text-muted-foreground max-w-3xl">
-          {t('dashModulesDescBefore')}
-          <Link href="/reports" className="text-primary underline-offset-2 hover:underline">
-            {t('dashModulesServices')}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-3">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Servicios Operativos de la Plataforma</h2>
+            <p className="text-xs text-muted-foreground">
+              Accede directamente a los servicios implementados y configurados en Spectre.
+            </p>
+          </div>
+          <Link
+            href="/reports"
+            className="inline-flex items-center text-xs font-semibold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400"
+          >
+            Ver todos los servicios
+            <ArrowUpRight className="size-4 ml-1" />
           </Link>
-          {t('dashModulesDescAfter')}
-        </p>
-        <PlatformModulesGrid compact />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[
+            {
+              name: 'Pentest de Infraestructura & Aplicación',
+              desc: 'Flujo completo en 7 pasos, administración de hallazgos y generación de entregables Word.',
+              icon: Workflow,
+              href: '/reports',
+            },
+            {
+              name: 'Análisis de Vulnerabilidades (SAST/DAST)',
+              desc: 'Detección dinámica y estática integrada de código fuente y red.',
+              icon: Code,
+              href: '/reports',
+            },
+            {
+              name: 'Auditorías de Cumplimiento (Compliance)',
+              desc: 'Controles y mapeo de vulnerabilidades a normativas PCI, ISO 27001 y NIST.',
+              icon: ShieldCheck,
+              href: '/compliance',
+            },
+            {
+              name: 'Gestión e Inventario de Activos',
+              desc: 'Inventario inteligente de hosts, apps y cola de aprobación automatizada.',
+              icon: Server,
+              href: '/assets',
+            },
+            {
+              name: 'Caja Fuerte de Credenciales (Vault)',
+              desc: 'Minivault de contraseñas SSH, RDP y web encriptadas con hashing y auditoría.',
+              icon: KeyRound,
+              href: '/assets',
+            },
+          ].map((service) => {
+            const IconComponent = service.icon;
+            return (
+              <Link
+                key={service.name}
+                href={service.href}
+                className="group flex flex-col justify-between p-4 rounded-xl border border-border/50 bg-card hover:border-cyan-500/50 hover:bg-muted/10 transition-all duration-300 shadow-sm"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 group-hover:bg-cyan-500/20 transition-colors">
+                      <IconComponent className="size-4.5" />
+                    </div>
+                    <ArrowUpRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-foreground leading-snug">{service.name}</h4>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{service.desc}</p>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -229,6 +229,7 @@ def promote_scan_targets_endpoint(
         target_ids=payload.target_ids,
         source_type=AssetSourceType(payload.source_type.value),
         engagement_id=payload.engagement_id,
+        asset_type=payload.asset_type,
     )
     return AssetScanTargetActionResponse(
         processed=result["processed"],

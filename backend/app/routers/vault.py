@@ -119,7 +119,7 @@ def reveal_credential(
 
     audit = VaultAuditLog(
         credential_id=cred.id,
-        action=VaultAuditAction.revealed,
+        action=VaultAuditAction.read,
         actor=actor_email(ctx),
         ip_address=request.client.host if request.client else None,
         details="Credencial revelada",
@@ -132,6 +132,45 @@ def reveal_credential(
         "secret": crypto_service.decrypt(cred.secret_encrypted),
         "notes": crypto_service.decrypt(cred.notes_encrypted) if cred.notes_encrypted else None,
     }
+
+
+@router.put("/credentials/{cred_id}", response_model=VaultCredentialRead)
+def update_credential(
+    cred_id: UUID,
+    payload: VaultCredentialCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(require_write),
+) -> VaultCredential:
+    cred = _get_credential_in_tenant(db, cred_id, ctx.tenant_id)
+
+    if payload.asset_id:
+        asset = db.query(Asset).filter(Asset.id == payload.asset_id, Asset.tenant_id == ctx.tenant_id).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Activo no encontrado")
+    if payload.engagement_id:
+        require_engagement_tenant(db, payload.engagement_id, ctx.tenant_id)
+
+    cred.label = payload.label.strip()
+    cred.credential_type = CredentialType(payload.credential_type.value)
+    cred.username_encrypted = crypto_service.encrypt(payload.username)
+    cred.secret_encrypted = crypto_service.encrypt(payload.secret)
+    cred.notes_encrypted = crypto_service.encrypt(payload.notes) if payload.notes else None
+    cred.service_port = payload.service_port
+    cred.engagement_id = payload.engagement_id
+    cred.asset_id = payload.asset_id
+
+    audit = VaultAuditLog(
+        credential_id=cred.id,
+        action=VaultAuditAction.updated,
+        actor=actor_email(ctx),
+        ip_address=request.client.host if request.client else None,
+        details=f"Credencial actualizada: '{cred.label}'",
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(cred)
+    return cred
 
 
 @router.delete("/credentials/{cred_id}")

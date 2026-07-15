@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { PentestNode, NodeConnection, NodeClass, NodeState, SuggestionRule } from '@/components/phantom/types';
 import { WORKFLOW_TEMPLATES } from '@/components/phantom/data/templates';
 import { Shield, Settings, Server, Plus, Download, Upload, Cpu, Play, ClipboardList, KeyRound, Globe, FileJson, Trash2, HelpCircle, Sparkles, BookOpen, Terminal, Database } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Preset walkthrough inputs for easy playground trigger
 const WALKTHROUGH_PRESETS = [
@@ -1134,25 +1135,26 @@ export default function Sidebar({
   };
 
   return (
-    <div className="w-80 bg-[#0A0B0E] border-r border-white/10 flex flex-col h-full text-slate-300 shrink-0 select-none">
+    <div className="w-80 phantom-workflow-sidebar flex flex-col h-full shrink-0 select-none">
       
-      {/* App Logo & Header */}
-      <div className="p-4 border-b border-white/10 bg-[#0F1116] flex items-center space-x-2 shrink-0">
-        <Server className="h-5 w-5 text-emerald-400 animate-pulse" />
+      {/* Panel header */}
+      <div className="phantom-map-sidebar-header flex items-center space-x-2 shrink-0">
+        <Server className="h-4 w-4 text-primary" />
         <div>
-          <h1 className="text-sm font-bold tracking-wider text-slate-100 uppercase font-sans">KRONOS OPERATING DECK</h1>
-          <p className="text-[9px] text-[#10B981] font-mono font-semibold">REPLAY & COGNITIVE ENGINE</p>
+          <h2 className="text-xs font-semibold tracking-wide text-foreground uppercase">Workflow Deck</h2>
+          <p className="text-[9px] text-muted-foreground font-mono">Variables · Blocks · Ingest</p>
         </div>
       </div>
 
       {/* Main Tab Switcher bar */}
-      <div className="grid grid-cols-5 border-b border-white/10 bg-[#0A0B0E] p-1 shrink-0">
+      <div className="phantom-side-tabs grid-cols-5 shrink-0">
         <button
           id="sidebar-tab-variables"
           onClick={() => setActiveSidebarTab('variables')}
-          className={`py-2 text-[9px] font-mono uppercase rounded transition cursor-pointer text-center flex flex-col items-center justify-center gap-1 ${
-            activeSidebarTab === 'variables' ? 'bg-emerald-600/10 text-emerald-300 font-bold border border-emerald-500/20' : 'text-slate-500 hover:text-slate-300'
-          }`}
+          className={cn(
+            'phantom-side-tab flex flex-col items-center justify-center gap-1 py-2 cursor-pointer',
+            activeSidebarTab === 'variables' && 'phantom-side-tab--active'
+          )}
           title="Global variables registry"
         >
           <Settings className="h-3.5 w-3.5" />
@@ -1161,9 +1163,10 @@ export default function Sidebar({
         <button
           id="sidebar-tab-ingestion"
           onClick={() => setActiveSidebarTab('ingestion')}
-          className={`py-2 text-[9px] font-mono uppercase rounded transition cursor-pointer text-center flex flex-col items-center justify-center gap-1 ${
-            activeSidebarTab === 'ingestion' ? 'bg-purple-600/10 text-purple-300 font-bold border border-purple-500/20' : 'text-slate-500 hover:text-slate-300'
-          }`}
+          className={cn(
+            'phantom-side-tab flex flex-col items-center justify-center gap-1 py-2 cursor-pointer',
+            activeSidebarTab === 'ingestion' && 'phantom-side-tab--active'
+          )}
           title="Walkthrough ingestion pipeline"
         >
           <Sparkles className="h-3.5 w-3.5" />
@@ -1172,9 +1175,10 @@ export default function Sidebar({
         <button
           id="sidebar-tab-procedures"
           onClick={() => setActiveSidebarTab('procedures')}
-          className={`py-2 text-[9px] font-mono uppercase rounded transition cursor-pointer text-center flex flex-col items-center justify-center gap-1 ${
-            activeSidebarTab === 'procedures' ? 'bg-[#3b82f6]/10 text-blue-300 font-bold border border-blue-500/20' : 'text-slate-500 hover:text-slate-300'
-          }`}
+          className={cn(
+            'phantom-side-tab flex flex-col items-center justify-center gap-1 py-2 cursor-pointer',
+            activeSidebarTab === 'procedures' && 'phantom-side-tab--active'
+          )}
           title="Procedure blocks builder"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -1183,9 +1187,10 @@ export default function Sidebar({
         <button
           id="sidebar-tab-findings"
           onClick={() => setActiveSidebarTab('findings')}
-          className={`py-2 text-[9px] font-mono uppercase rounded transition cursor-pointer text-center flex flex-col items-center justify-center gap-1 ${
-            activeSidebarTab === 'findings' ? 'bg-[#f59e0b]/10 text-amber-300 font-bold border border-amber-500/20' : 'text-slate-500 hover:text-slate-300'
-          }`}
+          className={cn(
+            'phantom-side-tab flex flex-col items-center justify-center gap-1 py-2 cursor-pointer',
+            activeSidebarTab === 'findings' && 'phantom-side-tab--active'
+          )}
           title="Discovered active findings"
         >
           <ClipboardList className="h-3.5 w-3.5" />
@@ -1194,9 +1199,10 @@ export default function Sidebar({
         <button
           id="sidebar-tab-json"
           onClick={() => setActiveSidebarTab('json')}
-          className={`py-2 text-[9px] font-mono uppercase rounded transition cursor-pointer text-center flex flex-col items-center justify-center gap-1 ${
-            activeSidebarTab === 'json' ? 'bg-purple-600/15 text-purple-300 font-bold border border-purple-500/20' : 'text-slate-500 hover:text-slate-300'
-          }`}
+          className={cn(
+            'phantom-side-tab flex flex-col items-center justify-center gap-1 py-2 cursor-pointer',
+            activeSidebarTab === 'json' && 'phantom-side-tab--active'
+          )}
           title="Direct RAW JSON workflow diagram editor"
         >
           <FileJson className="h-3.5 w-3.5" />
@@ -1211,18 +1217,18 @@ export default function Sidebar({
         {activeSidebarTab === 'variables' && (
           <div className="p-4 space-y-4">
             <div className="space-y-1">
-              <h3 className="text-xs font-mono text-emerald-400 uppercase tracking-wider font-bold">Global Variable Registry</h3>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+              <h3 className="text-xs font-mono text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold">Global Variable Registry</h3>
+              <p className="text-[10px] text-muted-foreground font-sans leading-relaxed">
                 Replicate attacks dynamically by changing values here. Connected nodes auto-interpolate values into command templates ready to replicate.
               </p>
             </div>
 
             {/* Core variables */}
-            <div className="space-y-3 bg-white/[0.01] p-3 rounded border border-white/5">
+            <div className="phantom-panel-card space-y-3">
               <div className="flex flex-col space-y-1">
                 <div className="flex justify-between items-center text-[9px] font-mono">
-                  <span className="text-emerald-400 font-bold">$TARGET</span>
-                  <span className="text-slate-500">Victim IP/Domain</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">$TARGET</span>
+                  <span className="text-muted-foreground">Victim IP/Domain</span>
                 </div>
                 <div className="flex gap-1.5">
                   <input
@@ -1233,15 +1239,15 @@ export default function Sidebar({
                       setGlobalVars(prev => ({ ...prev, '$TARGET': e.target.value }));
                     }}
                     placeholder="e.g. 10.10.53.217"
-                    className="bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder:text-slate-650 font-mono flex-1 focus:outline-none focus:border-emerald-500/50"
+                    className="phantom-field font-mono flex-1"
                   />
                 </div>
               </div>
 
               <div className="flex flex-col space-y-1">
                 <div className="flex justify-between items-center text-[9px] font-mono">
-                  <span className="text-orange-400 font-bold">$ATTACKER_IP</span>
-                  <span className="text-slate-500">Reverse VPN callback</span>
+                  <span className="text-orange-600 dark:text-orange-400 font-bold">$ATTACKER_IP</span>
+                  <span className="text-muted-foreground">Reverse VPN callback</span>
                 </div>
                 <div className="flex gap-1.5">
                   <input
@@ -1252,7 +1258,7 @@ export default function Sidebar({
                       setGlobalVars(prev => ({ ...prev, '$ATTACKER_IP': e.target.value }));
                     }}
                     placeholder="e.g. 10.10.14.53"
-                    className="bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder:text-slate-650 font-mono flex-1 focus:outline-none focus:border-orange-500/50"
+                    className="phantom-field font-mono flex-1"
                   />
                   <button
                     onClick={simulateAutodetectIP}
@@ -1267,12 +1273,12 @@ export default function Sidebar({
 
             {/* Extended Variable Registry */}
             <div className="space-y-2">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wide block font-bold">Extended Global Registry</span>
+              <span className="phantom-label">Extended Global Registry</span>
               
               {Object.entries(globalVars)
                 .filter(([key]) => key !== '$TARGET' && key !== '$ATTACKER_IP')
                 .length === 0 ? (
-                <div className="p-3 bg-zinc-950/40 rounded border border-zinc-900/55 text-center text-slate-500 font-sans text-xs italic">
+                <div className="phantom-panel-card p-3 text-center font-sans text-xs italic text-muted-foreground">
                   No custom global variables registered yet. Paste a walkthrough to extract them or add manually below.
                 </div>
               ) : (
@@ -1280,13 +1286,13 @@ export default function Sidebar({
                   {Object.entries(globalVars)
                     .filter(([key]) => key !== '$TARGET' && key !== '$ATTACKER_IP')
                     .map(([key, val]) => (
-                      <div key={key} className="flex items-center gap-1.5 bg-[#0F1116] border border-white/5 p-1 rounded">
-                        <span className="text-[9px] font-mono text-zinc-400 w-24 truncate pl-1" title={key}>{key}</span>
+                      <div key={key} className="flex items-center gap-1.5 bg-card border-border p-1 rounded">
+                        <span className="text-[9px] font-mono text-muted-foreground w-24 truncate pl-1" title={key}>{key}</span>
                         <input
                           type="text"
                           value={val}
                           onChange={(e) => setGlobalVars(p => ({ ...p, [key]: e.target.value }))}
-                          className="bg-black/35 border border-white/10 rounded px-1.5 py-1 text-[10px] text-slate-100 font-mono flex-1 focus:outline-none focus:border-emerald-500/40"
+                          className="phantom-input-sm font-mono flex-1"
                         />
                         <button
                           onClick={() => {
@@ -1307,14 +1313,14 @@ export default function Sidebar({
               )}
 
               {/* Variable Registry Builder */}
-              <div className="pt-3 border-t border-white/5 space-y-2">
-                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block font-bold">Add Custom Parameter</span>
+              <div className="pt-3 border-t border-border space-y-2">
+                <span className="phantom-label tracking-widest">Add Custom Parameter</span>
                 <div className="flex gap-1 items-center">
                   <input
                     type="text"
                     id="new-sidebar-var-key"
                     placeholder="$LPORT"
-                    className="bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-650 font-mono w-1/2 focus:outline-none focus:border-white/20"
+                    className="phantom-input w-1/2 font-mono"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         const keyInp = document.getElementById('new-sidebar-var-key') as HTMLInputElement;
@@ -1335,7 +1341,7 @@ export default function Sidebar({
                     type="text"
                     id="new-sidebar-var-val"
                     placeholder="4444"
-                    className="bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-650 font-mono w-1/3 focus:outline-none focus:border-white/20"
+                    className="phantom-input w-1/3 font-mono"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         const keyInp = document.getElementById('new-sidebar-var-key') as HTMLInputElement;
@@ -1375,12 +1381,12 @@ export default function Sidebar({
             </div>
 
             {/* System DB Migration and Backup section */}
-            <div className="pt-4 border-t border-white/10 mt-6 space-y-3">
+            <div className="pt-4 border-t border-border mt-6 space-y-3">
               <div className="flex items-center space-x-1.5 text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
                 <Database className="h-3.5 w-3.5" />
                 <span>Migración y Copia de Seguridad</span>
               </div>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+              <p className="text-[10px] text-muted-foreground font-sans leading-relaxed">
                 Exporta o importa la base de datos completa de Kronos (incluyendo todos tus laboratorios guardados del Repertorio y la pizarra de diagramación activa) para respaldar o migrar entre computadores.
               </p>
               
@@ -1451,14 +1457,14 @@ export default function Sidebar({
               <h3 className="text-xs font-mono text-purple-400 uppercase tracking-wider font-bold flex items-center gap-1">
                 <Sparkles className="h-3.5 w-3.5 animate-pulse" /> Walkthrough Ingestion Pipeline
               </h3>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+              <p className="text-[10px] text-muted-foreground font-sans leading-relaxed">
                 Paste complete writeups (HTML, Markdown, Raw terminal commands) from HackTheBox, VulnHUub, TryHackMe, or real pentests. AI cognitively analyzes your writeup, extracts hardcoded values, replaces them with variables, and builds connected nodes dynamically!
               </p>
             </div>
 
             {/* Quick Presets Dropdown */}
             <div className="space-y-1">
-              <label className="text-[9.5px] font-mono text-slate-500 uppercase tracking-wider block font-bold">Playground Preset Demos</label>
+              <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wider block font-bold">Playground Preset Demos</label>
               <select
                 id="walkthrough-preset-selector"
                 onChange={(e) => {
@@ -1468,7 +1474,7 @@ export default function Sidebar({
                     onLogMessage('info', `Loaded preset writeup demo: "${WALKTHROUGH_PRESETS[idx].name}". Click "Analyze & Build CTF Replayer" below!`);
                   }
                 }}
-                className="w-full bg-[#0F1116] border border-white/10 rounded px-2.5 py-1.5 text-xs text-purple-300 font-mono focus:outline-none focus:border-purple-500/50"
+                className="phantom-input w-full font-mono text-purple-700 dark:text-purple-300"
               >
                 <option value="">▼ Pick a demo writeup to ingest...</option>
                 {WALKTHROUGH_PRESETS.map((p, idx) => (
@@ -1483,7 +1489,7 @@ export default function Sidebar({
                 <span className="text-purple-400 font-bold uppercase">Raw Writeup Editor</span>
                 <button
                   onClick={() => setWalkthroughText('')}
-                  className="text-slate-500 hover:text-slate-300 transition text-[8.5px] uppercase cursor-pointer"
+                  className="text-muted-foreground hover:text-foreground transition text-[8.5px] uppercase cursor-pointer"
                 >
                   Clear Area
                 </button>
@@ -1492,7 +1498,7 @@ export default function Sidebar({
                 value={walkthroughText}
                 onChange={(e) => setWalkthroughText(e.target.value)}
                 placeholder="Paste Markdown, blog screenshots dump, or bash command streams here..."
-                className="w-full h-80 bg-slate-950 text-slate-300 border border-[#2e263c] focus:border-purple-500 focus:outline-none p-3 rounded font-mono text-[10px] resize-none leading-relaxed"
+                className="phantom-json-editor h-80 p-3"
               />
             </div>
 
@@ -1514,17 +1520,17 @@ export default function Sidebar({
           <div className="p-4 space-y-4">
             
             {/* Manual Spawn custom action */}
-            <div className="space-y-3 bg-[#0c0d12] p-3 rounded border border-white/5">
+            <div className="phantom-section space-y-3">
               <span className="text-[10px] font-mono text-blue-400 uppercase tracking-widest block font-bold">Add Custom Procedure Block</span>
               
               {/* Category switcher */}
-              <div className="grid grid-cols-3 gap-0.5 bg-black/40 p-0.5 rounded border border-white/10">
+              <div className="grid grid-cols-3 gap-0.5 rounded border border-border bg-muted/40 p-0.5">
                 {(['discovery', 'web', 'ad', 'exploitation', 'post-exploitation', 'custom'] as NodeClass[]).map((cat) => (
                   <button
                     key={cat}
                     onClick={() => handleCategoryChange(cat)}
                     className={`py-1 text-[8px] font-mono uppercase rounded transition cursor-pointer truncate ${
-                      selectedCategory === cat ? 'bg-blue-600/25 text-blue-400 border border-blue-500/30 font-bold' : 'text-slate-500 hover:text-slate-300'
+                      selectedCategory === cat ? 'bg-blue-600/15 text-blue-700 border border-blue-500/30 font-bold dark:text-blue-400' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     {cat === 'post-exploitation' ? 'Post' : cat}
@@ -1534,14 +1540,14 @@ export default function Sidebar({
 
               {/* Preset selectors catalog */}
               <div className="flex flex-col space-y-1">
-                <label className="text-[9px] font-mono text-slate-500">Pick Preset Template</label>
+                <label className="text-[9px] font-mono text-muted-foreground">Pick Preset Template</label>
                 <select
                   value={selectedPresetIndex}
                   onChange={(e) => {
                     const idx = parseInt(e.target.value, 10);
                     handleCategoryPresetChange(idx);
                   }}
-                  className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500/50"
+                  className="phantom-input w-full font-mono"
                 >
                   {categoryPresets[selectedCategory]?.map((p, idx) => (
                     <option key={idx} value={idx}>{p.tool}</option>
@@ -1551,22 +1557,22 @@ export default function Sidebar({
 
               {/* Tool Label */}
               <div className="flex flex-col space-y-1">
-                <label className="text-[9px] font-mono text-slate-500 font-medium">Tool Name</label>
+                <label className="text-[9px] font-mono text-muted-foreground font-medium">Tool Name</label>
                 <input
                   type="text"
                   value={toolText}
                   onChange={(e) => setToolText(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-blue-500/50"
+                  className="phantom-input font-mono"
                 />
               </div>
 
               {/* Command Template */}
               <div className="flex flex-col space-y-1">
-                <label className="text-[9px] font-mono text-slate-500 font-medium">Command Template</label>
+                <label className="text-[9px] font-mono text-muted-foreground font-medium">Command Template</label>
                 <textarea
                   value={commandTemplate}
                   onChange={(e) => setCommandTemplate(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded px-2.5 py-2 text-[10px] text-pink-400 font-mono min-h-12 w-full focus:outline-none focus:border-blue-500/50 resize-y"
+                  className="phantom-cmd-input min-h-12 p-2.5"
                 />
               </div>
 
@@ -1588,7 +1594,7 @@ export default function Sidebar({
                   <Cpu className="h-3.5 w-3.5 animate-pulse" /> Active AI Planner
                 </span>
               </div>
-              <p className="text-[9px] text-slate-400 font-sans leading-relaxed">
+              <p className="text-[9px] text-muted-foreground font-sans leading-relaxed">
                 Infers the next logical attack vectors dynamically based on current evidence.
               </p>
 
@@ -1603,14 +1609,14 @@ export default function Sidebar({
               </button>
 
               {aiSuggestions.length > 0 && (
-                <div className="space-y-2 mt-2 pt-2 border-t border-white/10 max-h-48 overflow-y-auto">
+                <div className="space-y-2 mt-2 pt-2 border-t border-border max-h-48 overflow-y-auto">
                   {aiSuggestions.map((item, idx) => (
-                    <div key={idx} className="bg-[#0F1116] border border-white/10 rounded p-2.5 space-y-2 text-left">
+                    <div key={idx} className="bg-card border border-border rounded p-2.5 space-y-2 text-left">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-200 font-bold font-mono">{item.tool}</span>
+                        <span className="text-[10px] text-foreground font-bold font-mono">{item.tool}</span>
                         <span className="text-[8px] font-mono border border-emerald-500/30 text-emerald-400 py-0.5 px-1.5 rounded uppercase">{item.type}</span>
                       </div>
-                      <p className="text-[9px] text-slate-400 font-sans leading-relaxed">{item.description}</p>
+                      <p className="text-[9px] text-muted-foreground font-sans leading-relaxed">{item.description}</p>
                       <div className="text-[8px] italic text-emerald-400/80 font-mono">Reason: {item.reason}</div>
                       <button
                         onClick={() => spawnSmartSuggestion(item)}
@@ -1635,7 +1641,7 @@ export default function Sidebar({
                   <Play className="h-3 w-3" />
                   <span>Demo Plan</span>
                 </button>
-                <label className="py-1.5 px-2 bg-black/40 hover:bg-white/5 border border-white/10 text-slate-350 text-[10px] font-mono rounded flex items-center justify-center space-x-1.5 transition cursor-pointer text-center">
+                <label className="phantom-footer-btn cursor-pointer text-center text-[10px]">
                   <Upload className="h-3 w-3" />
                   <span>Plan.json</span>
                   <input
@@ -1663,9 +1669,9 @@ export default function Sidebar({
                   </div>
                   <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                     {customRules.map((rule) => (
-                      <div key={rule.id} className="bg-black/30 border border-purple-500/10 rounded p-1.5 text-[8px] font-sans">
-                        <div className="font-bold text-slate-200">{rule.name}</div>
-                        <div className="text-slate-400 italic">↳ Suggests tool: {rule.suggestNode.tool}</div>
+                      <div key={rule.id} className="phantom-panel-card p-1.5 text-[8px] font-sans">
+                        <div className="font-bold text-foreground">{rule.name}</div>
+                        <div className="text-muted-foreground italic">↳ Suggests tool: {rule.suggestNode.tool}</div>
                       </div>
                     ))}
                   </div>
@@ -1674,16 +1680,16 @@ export default function Sidebar({
             </div>
 
             {/* Tactical Playbooks library */}
-            <div className="p-3 bg-white/[0.01] border border-white/5 rounded space-y-3">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block font-bold">Built-In Playbooks</span>
+            <div className="phantom-section space-y-3">
+              <span className="phantom-label tracking-widest">Built-In Playbooks</span>
               <div className="space-y-1.5">
                 {WORKFLOW_TEMPLATES.map((tpl, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleLoadTemplate(tpl)}
-                    className="w-full p-2 bg-black/40 hover:bg-[#10B981]/10 hover:border-[#10B981]/30 rounded border border-white/5 text-left transition flex flex-col cursor-pointer"
+                    className="w-full rounded-lg border border-border bg-card p-2 text-left transition hover:border-emerald-500/35 hover:bg-emerald-500/8 flex flex-col cursor-pointer"
                   >
-                    <span className="text-[11px] font-sans font-bold text-slate-100">{tpl.name}</span>
+                    <span className="text-[11px] font-sans font-bold text-foreground">{tpl.name}</span>
                     <span className="text-[9px] text-[#10B981] font-mono">{tpl.category}</span>
                   </button>
                 ))}
@@ -1697,16 +1703,16 @@ export default function Sidebar({
           <div className="p-4 space-y-4">
             <div className="space-y-1">
               <h3 className="text-xs font-mono text-amber-400 uppercase tracking-wider font-bold">Active Findings Cabinet</h3>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+              <p className="text-[10px] text-muted-foreground font-sans leading-relaxed">
                 Summary of all active discoveries and technical intelligence accumulated by marking steps as succeeded.
               </p>
             </div>
 
             {/* Aggregated Ports visual ledger */}
-            <div className="space-y-1.5 bg-[#0A0B0E] p-3 rounded border border-white/5">
-              <label className="text-[9px] font-mono text-slate-500 uppercase font-bold tracking-wide">Target Ports Identified</label>
+            <div className="space-y-1.5 bg-muted/30 border border-border">
+              <label className="text-[9px] font-mono text-muted-foreground uppercase font-bold tracking-wide">Target Ports Identified</label>
               {allPorts.length === 0 ? (
-                <p className="text-[10px] font-mono text-slate-600 italic">No ports discovered. Mark a scanning node as completed with evidence.</p>
+                <p className="text-[10px] font-mono text-muted-foreground italic">No ports discovered. Mark a scanning node as completed with evidence.</p>
               ) : (
                 <div className="flex flex-wrap gap-1 pt-1">
                   {allPorts.map(p => {
@@ -1717,7 +1723,7 @@ export default function Sidebar({
                         className={`text-[9.5px] font-mono px-2 py-0.5 rounded font-semibold ${
                           isWeb 
                             ? 'bg-[#10B981]/15 text-emerald-400 border border-[#10B981]/30' 
-                            : 'bg-white/10 text-slate-300 border border-white/5'
+                            : 'phantom-chip'
                         }`}
                       >
                         {p}
@@ -1729,14 +1735,14 @@ export default function Sidebar({
             </div>
 
             {/* Services ledger summary */}
-            <div className="space-y-1.5 bg-[#0A0B0E] p-3 rounded border border-white/5">
-              <label className="text-[9px] font-mono text-slate-500 uppercase font-bold tracking-wide">Target Services Discovered</label>
+            <div className="space-y-1.5 bg-muted/30 border border-border">
+              <label className="text-[9px] font-mono text-muted-foreground uppercase font-bold tracking-wide">Target Services Discovered</label>
               {allServices.length === 0 ? (
-                <p className="text-[10px] font-mono text-slate-600 italic font-sans">No services registered.</p>
+                <p className="text-[10px] font-mono text-muted-foreground italic font-sans">No services registered.</p>
               ) : (
                 <div className="flex flex-wrap gap-1 pt-1">
                   {allServices.map(s => (
-                    <span key={s} className="text-[9.5px] font-mono bg-white/5 text-slate-300 border border-white/5 px-2 py-0.5 rounded uppercase">
+                    <span key={s} className="phantom-chip">
                       {s}
                     </span>
                   ))}
@@ -1745,19 +1751,19 @@ export default function Sidebar({
             </div>
 
             {/* Credentials harvested table */}
-            <div className="space-y-1.5 bg-[#0A0B0E] p-3 rounded border border-white/5">
-              <label className="text-[9.5px] font-mono text-slate-500 uppercase tracking-wide flex items-center gap-1 font-bold">
+            <div className="space-y-1.5 bg-muted/30 border border-border">
+              <label className="text-[9.5px] font-mono text-muted-foreground uppercase tracking-wide flex items-center gap-1 font-bold">
                 <KeyRound className="h-3 w-3 text-amber-500" /> Harvested Credentials ({allCreds.length})
               </label>
               {allCreds.length === 0 ? (
-                <p className="text-[10px] font-mono text-slate-600 italic pr-1 leading-relaxed">No credential hashes harvested yet. Populate credentials in nodes' Structured Evidence.</p>
+                <p className="text-[10px] font-mono text-muted-foreground italic pr-1 leading-relaxed">No credential hashes harvested yet. Populate credentials in nodes' Structured Evidence.</p>
               ) : (
-                <div className="bg-black/35 border border-white/5 rounded p-2 text-[10px] font-mono mt-1 divide-y divide-[#1e2230] max-h-56 overflow-y-auto">
+                <div className="phantom-panel-card mt-1 max-h-56 divide-y divide-border overflow-y-auto p-2 font-mono text-[10px]">
                   {allCreds.map((cred, idx) => (
                     <div key={idx} className="flex justify-between items-center py-1.5 flex-wrap gap-1">
-                      <span className="text-slate-100 font-bold">{cred.username}</span>
+                      <span className="text-foreground font-bold">{cred.username}</span>
                       <span className="text-pink-400 font-semibold truncate max-w-28" title={cred.password}>{cred.password || 'no-pass'}</span>
-                      <span className="text-slate-500 text-[8.5px]">({cred.sourceNode})</span>
+                      <span className="text-muted-foreground text-[8.5px]">({cred.sourceNode})</span>
                     </div>
                   ))}
                 </div>
@@ -1771,7 +1777,7 @@ export default function Sidebar({
           <div className="p-4 flex flex-col h-full space-y-4">
             <div className="space-y-1">
               <h3 className="text-xs font-mono text-purple-400 uppercase tracking-widest font-black">RAW JSON SCHEMA DECK</h3>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+              <p className="text-[10px] text-muted-foreground font-sans leading-relaxed">
                 Modifica directamente el diagrama de red, las fases de ataque, enlaces y variables globales en tiempo real.
               </p>
             </div>
@@ -1789,8 +1795,8 @@ export default function Sidebar({
               </div>
             )}
 
-            <div className="relative flex flex-col min-h-0 bg-black/40 border border-white/5 rounded overflow-hidden">
-              <div className="text-[9px] font-mono bg-black/40 p-1.5 border-b border-white/5 text-slate-500 flex justify-between items-center select-none">
+            <div className="relative flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex select-none items-center justify-between border-b border-border bg-muted/40 p-1.5 font-mono text-[9px] text-muted-foreground">
                 <span>blueprint_schema.json</span>
                 <span className="text-[8px] opacity-60">Schema Active</span>
               </div>
@@ -1809,7 +1815,7 @@ export default function Sidebar({
                     setJsonError(`Error de sintaxis: ${err.message}`);
                   }
                 }}
-                className="w-full h-96 bg-[#06070a] text-slate-300 font-mono text-[10.5px] p-2.5 focus:outline-none focus:ring-1 focus:ring-purple-500/30 overflow-auto resize-none leading-relaxed"
+                className="phantom-json-editor h-96 p-2.5 text-[10.5px]"
                 placeholder='{ "nodes": [], "connections": [] }'
                 spellCheck={false}
               />
@@ -1828,13 +1834,13 @@ export default function Sidebar({
       </div>
 
       {/* Export / Import Persistent controls Footer */}
-      <div className="p-4 space-y-2 border-t border-white/10 bg-[#0F1116] shrink-0">
+      <div className="p-4 space-y-2 border-t border-sidebar-border bg-card/50 shrink-0">
         <div className="grid grid-cols-2 gap-2">
           {/* Export click */}
           <button
             id="btn-sidebar-export-json"
             onClick={handleExportJson}
-            className="py-2 px-3 bg-[#0c0d12] hover:bg-white/5 border border-white/10 rounded text-[11px] font-mono font-semibold text-slate-350 transition flex items-center justify-center space-x-1.5 cursor-pointer"
+            className="phantom-footer-btn"
             title="Download playbooks as JSON"
           >
             <Download className="h-3.5 w-3.5" />
@@ -1842,7 +1848,7 @@ export default function Sidebar({
           </button>
 
           {/* Import picker */}
-          <label className="py-2 px-3 bg-[#0c0d12] hover:bg-white/5 border border-white/10 rounded text-[11px] font-mono font-semibold text-slate-350 transition flex items-center justify-center space-x-1.5 cursor-pointer text-center">
+          <label className="phantom-footer-btn cursor-pointer text-center">
             <Upload className="h-3.5 w-3.5" />
             <span>Import JSON</span>
             <input

@@ -1144,6 +1144,7 @@ export async function promoteAssetScanTargets(body: {
   target_ids: string[];
   source_type: AssetSourceType;
   engagement_id?: string | null;
+  asset_type?: string;
 }): Promise<{ processed: number; asset_ids: string[]; message?: string }> {
   return apiFetch('/api/v1/assets/scan-targets/promote', {
     method: 'POST',
@@ -1416,4 +1417,98 @@ export async function uploadEvidence(
 
 export async function deleteEvidence(findingId: string, evidenceId: string): Promise<void> {
   await apiFetch(`/api/v1/findings/${findingId}/evidence/${evidenceId}`, { method: 'DELETE' });
+}
+
+// --- Vault Credentials API ---
+
+export type CredentialType = 'ssh' | 'rdp' | 'web' | 'database' | 'api_key' | 'certificate';
+
+export interface VaultCredential {
+  id: string;
+  engagement_id?: string | null;
+  asset_id?: string | null;
+  label: string;
+  credential_type: CredentialType;
+  service_port?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaultCredentialCreate {
+  engagement_id?: string | null;
+  asset_id?: string | null;
+  label: string;
+  credential_type: CredentialType;
+  username: string;
+  secret: string;
+  service_port?: number | null;
+  notes?: string | null;
+}
+
+export interface VaultCredentialReveal {
+  username: string;
+  secret: string;
+  notes?: string | null;
+}
+
+export interface VaultAuditLog {
+  id: string;
+  credential_id: string;
+  action: string;
+  actor: string;
+  ip_address?: string | null;
+  timestamp: string;
+  details?: string | null;
+}
+
+export async function listVaultCredentials(params?: {
+  engagement_id?: string;
+  asset_id?: string;
+}): Promise<VaultCredential[]> {
+  const q = new URLSearchParams();
+  if (params?.engagement_id) q.set('engagement_id', params.engagement_id);
+  if (params?.asset_id) q.set('asset_id', params.asset_id);
+  const suffix = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<VaultCredential[]>(`/api/v1/vault/credentials${suffix}`);
+}
+
+export async function createVaultCredential(body: VaultCredentialCreate): Promise<VaultCredential> {
+  return apiFetch<VaultCredential>('/api/v1/vault/credentials', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateVaultCredential(id: string, body: VaultCredentialCreate): Promise<VaultCredential> {
+  return apiFetch<VaultCredential>(`/api/v1/vault/credentials/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function revealVaultCredential(id: string): Promise<VaultCredentialReveal> {
+  return apiFetch<VaultCredentialReveal>(`/api/v1/vault/credentials/${id}/decrypt`);
+}
+
+export async function deleteVaultCredential(id: string): Promise<void> {
+  await apiFetch(`/api/v1/vault/credentials/${id}`, { method: 'DELETE' });
+}
+
+export async function getVaultCredentialAudit(id: string): Promise<VaultAuditLog[]> {
+  return apiFetch<VaultAuditLog[]>(`/api/v1/vault/credentials/${id}/audit`);
+}
+
+export async function getGlobalVaultAudit(): Promise<VaultAuditLog[]> {
+  return apiFetch<VaultAuditLog[]>('/api/v1/vault/audit');
+}
+
+export interface SystemLogsResponse {
+  log_path: string;
+  exists: boolean;
+  lines: string[];
+  message: string;
+}
+
+export async function getSystemLogs(lines = 200): Promise<SystemLogsResponse> {
+  return apiFetch<SystemLogsResponse>(`/api/v1/admin/system-logs?lines=${lines}`);
 }

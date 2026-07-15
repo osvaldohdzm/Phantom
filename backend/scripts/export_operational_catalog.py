@@ -17,7 +17,7 @@ from app.services.catalog_bundle import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Export operational catalog to backend/catalog/ (sobrescribe operational-catalog.* + manifest.json)",
+        description="Export Vulnerabilities Catalog to backend/catalog/ (sobrescribe operational-catalog.* + manifest.json)",
     )
     parser.add_argument(
         "version",

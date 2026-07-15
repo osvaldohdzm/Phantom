@@ -44,6 +44,14 @@ def _redis() -> redis.Redis:
     return redis.from_url(settings.redis_url, decode_responses=True)
 
 
+def redis_available() -> bool:
+    try:
+        _redis().ping()
+        return True
+    except redis.RedisError:
+        return False
+
+
 def _storage_root() -> Path:
     root = Path(os.environ.get("PHANTOM_STORAGE_ROOT", "storage"))
     root.mkdir(parents=True, exist_ok=True)
@@ -128,7 +136,10 @@ def update_ingest_job(job_id: str, **fields: Any) -> Optional[dict[str, Any]]:
 
 
 def dequeue_ingest_job(timeout: int = 5) -> Optional[str]:
-    item = _redis().brpop(QUEUE_KEY, timeout=timeout)
+    try:
+        item = _redis().brpop(QUEUE_KEY, timeout=timeout)
+    except redis.RedisError as exc:
+        raise ConnectionError(str(exc)) from exc
     if not item:
         return None
     return item[1]

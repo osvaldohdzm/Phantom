@@ -10,6 +10,8 @@ export PHANTOM_ROOT
 # shellcheck source=lib.sh
 source "$OPS_DIR/lib.sh"
 
+phantom_load_env
+
 echo "============================================================"
 echo " Phantom — instalación"
 echo "============================================================"
@@ -20,6 +22,24 @@ if [[ "${1:-}" == "--system" ]]; then
     exit 1
   fi
   exec "$PHANTOM_ROOT/scripts/install-ubuntu.sh"
+fi
+
+if [[ "${1:-}" == "--docker" ]]; then
+  if ! phantom_is_darwin; then
+    echo "[!] install --docker solo aplica en macOS."
+    echo "    Ubuntu: sudo ./phantom install --system"
+    exit 1
+  fi
+  phantom_install_docker_macos
+  phantom_wait_for_docker
+  phantom_ensure_docker_mode
+  export PHANTOM_MODE=docker
+  set -- ""
+fi
+
+if phantom_use_native_mode; then
+  phantom_install_native
+  exit 0
 fi
 
 phantom_cd_root

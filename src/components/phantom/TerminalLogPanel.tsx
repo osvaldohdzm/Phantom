@@ -48,7 +48,7 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
       case 'command_copied': return 'text-sky-400 font-semibold';
       case 'state_change': return 'text-amber-400';
       case 'ai': return 'text-purple-400 font-bold';
-      default: return 'text-zinc-400';
+      default: return 'text-muted-foreground';
     }
   };
 
@@ -73,12 +73,11 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
   };
 
   return (
-    <div id="hacker-terminal" className="bg-[#08090d] border-t border-zinc-900 text-zinc-300 flex flex-col h-64 font-mono select-none">
-      {/* Terminal Title Bar */}
-      <div className="bg-[#0c0d12] border-b border-zinc-900 px-4 py-2 flex items-center justify-between text-xs font-semibold select-none">
-        <div className="flex items-center space-x-2 text-zinc-400">
-          <Terminal className="h-4 w-4 text-purple-500" />
-          <span className="tracking-wide">CYBER_TRACE_TIMELINE_HISTORY.LOG</span>
+    <div id="hacker-terminal" className="phantom-terminal flex flex-col h-52 shrink-0 select-none">
+      <div className="border-b border-border bg-muted/40 px-4 py-2 flex items-center justify-between text-xs font-semibold select-none">
+        <div className="flex items-center space-x-2 text-muted-foreground">
+          <Terminal className="h-4 w-4 text-primary" />
+          <span className="tracking-wide">Activity log</span>
         </div>
         
         {/* Terminal Filters */}
@@ -87,7 +86,7 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
             id="filter-all"
             onClick={() => setFilter('all')}
             className={`px-2 py-1 rounded text-[10px] uppercase transition cursor-pointer ${
-              filter === 'all' ? 'bg-zinc-800 text-purple-400 font-bold border border-purple-900/30' : 'text-zinc-500 hover:text-zinc-300'
+              filter === 'all' ? 'bg-primary/10 text-primary font-bold border border-primary/20' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             All Traces
@@ -96,7 +95,7 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
             id="filter-commands"
             onClick={() => setFilter('commands')}
             className={`px-2 py-1 rounded text-[10px] uppercase transition cursor-pointer ${
-              filter === 'commands' ? 'bg-sky-950/20 text-sky-400 border border-sky-900/30 font-bold' : 'text-zinc-500 hover:text-zinc-300'
+              filter === 'commands' ? 'bg-sky-500/10 text-sky-600 border border-sky-500/20 font-bold dark:text-sky-400' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Commands Copied
@@ -105,7 +104,7 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
             id="filter-ai"
             onClick={() => setFilter('ai')}
             className={`px-2 py-1 rounded text-[10px] uppercase transition cursor-pointer ${
-              filter === 'ai' ? 'bg-purple-950/20 text-purple-400 border border-purple-900/20 font-bold' : 'text-zinc-500 hover:text-zinc-300'
+              filter === 'ai' ? 'bg-purple-500/10 text-purple-600 border border-purple-500/20 font-bold dark:text-purple-400' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             AI Detections
@@ -114,16 +113,16 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
             id="filter-errors"
             onClick={() => setFilter('errors')}
             className={`px-2 py-1 rounded text-[10px] uppercase transition cursor-pointer ${
-              filter === 'errors' ? 'bg-rose-950/20 text-rose-400 border border-rose-900/20 font-bold' : 'text-zinc-500 hover:text-zinc-300'
+              filter === 'errors' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20 font-bold dark:text-rose-400' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Failures/Errors
           </button>
-          <div className="w-[1px] h-3.5 bg-zinc-800 mx-2" />
+          <div className="w-px h-3.5 bg-border mx-2" />
           <button
             id="btn-clear-terminal"
             onClick={onClearLogs}
-            className="p-1 rounded text-zinc-600 hover:text-zinc-400 transition hover:bg-zinc-900 cursor-pointer"
+            className="p-1 rounded text-muted-foreground hover:text-foreground transition hover:bg-muted cursor-pointer"
             title="Clear Log History"
           >
             <Trash className="h-3.5 w-3.5" />
@@ -132,21 +131,21 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
       </div>
 
       {/* Terminal Logs Grid */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-1.5 text-xs select-text selection:bg-purple-500/20 selection:text-zinc-100">
+      <div className="flex-1 overflow-y-auto p-4 space-y-1.5 text-xs select-text">
         {filteredLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-8 space-y-2 text-zinc-600 text-center select-none">
-            <Shield className="h-7 w-7 text-zinc-700 animate-pulse" />
-            <p className="text-[11px] font-mono tracking-wider">NO AUDIT LOG ENTRIES MATCHING SELECTION RECORDED YET</p>
-            <p className="text-[10px] text-zinc-700">All command copying, node additions, state transitions, and cognitive parses will reflect here.</p>
+          <div className="flex flex-col items-center justify-center p-8 space-y-2 text-muted-foreground text-center select-none">
+            <Shield className="h-7 w-7 opacity-40 animate-pulse" />
+            <p className="text-[11px] font-mono tracking-wider">No log entries for this filter</p>
+            <p className="text-[10px]">Commands, state changes, and ingest events appear here.</p>
           </div>
         ) : (
           filteredLogs.map((log) => (
-            <div key={log.id} className="flex items-start space-x-2.5 leading-relaxed group hover:bg-zinc-950/40 px-1 py-0.5 rounded transition">
-              <span className="text-[10px] text-zinc-600 select-none">[{log.timestamp}]</span>
+            <div key={log.id} className="flex items-start space-x-2.5 leading-relaxed group hover:bg-muted/50 px-1 py-0.5 rounded transition">
+              <span className="text-[10px] text-muted-foreground select-none">[{log.timestamp}]</span>
               <span className={`text-[11px] select-none ${getLogStyle(log.type)}`}>
                 [{getLogSymbol(log.type)}]
               </span>
-              <span className="text-zinc-300 flex-1 whitespace-pre-wrap selection:text-white">
+              <span className="text-foreground flex-1 whitespace-pre-wrap">
                 {log.message}
               </span>
               <button
@@ -154,7 +153,7 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
                 onClick={() => {
                   navigator.clipboard.writeText(log.message);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-700 hover:text-zinc-400 transition select-none cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition select-none cursor-pointer"
                 title="Copy log text"
               >
                 <Copy className="h-3 w-3" />
@@ -166,16 +165,16 @@ export default function TerminalLogPanel({ logs, onClearLogs, onAddSimulatedLog 
       </div>
 
       {/* Terminal Prompt Bar */}
-      <form onSubmit={handleSimulateSubmit} className="bg-[#06070a] border-t border-zinc-900 px-4 py-2 flex items-center space-x-2 text-xs text-zinc-500">
-        <span className="text-emerald-500 font-bold select-none">root@kali-pentest-graph:/#</span>
+      <form onSubmit={handleSimulateSubmit} className="border-t border-border bg-muted/30 px-4 py-2 flex items-center space-x-2 text-xs text-muted-foreground">
+        <span className="text-emerald-600 dark:text-emerald-400 font-bold select-none">phantom@workflow:/#</span>
         <input
           type="text"
           value={simCmd}
           onChange={(e) => setSimCmd(e.target.value)}
-          placeholder="Simulate shell inputs... (e.g. 'help', 'mock_exploit', 'clear')"
-          className="bg-transparent text-zinc-200 outline-none flex-1 border-none focus:ring-0 font-mono text-xs placeholder:text-zinc-700 text-zinc-300"
+          placeholder="Simulate shell inputs… (help, clear, mock_exploit)"
+          className="bg-transparent text-foreground outline-none flex-1 border-none focus:ring-0 font-mono text-xs placeholder:text-muted-foreground/60"
         />
-        <span className="text-[10px] text-zinc-700 font-mono select-none justify-self-end">PRESS ENTER</span>
+        <span className="text-[10px] font-mono select-none">ENTER</span>
       </form>
     </div>
   );

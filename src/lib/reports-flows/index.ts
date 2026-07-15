@@ -23,6 +23,10 @@ const SERVICE_TO_FLOW: Record<TipoServicio, ReportFlow> = {
   'AV Infraestructura': AV_INFRA_REPORT_FLOW,
   'AV Cloud': AV_INFRA_REPORT_FLOW,
   Cloud: PENTEST_REPORT_FLOW,
+  Compliance: PENTEST_REPORT_FLOW,
+  SCA: SAST_REPORT_FLOW,
+  Contenedores: SAST_REPORT_FLOW,
+  CSPM: AV_INFRA_REPORT_FLOW,
 };
 
 export function getReportFlow(tipoServicio?: string | null): ReportFlow {

@@ -14,7 +14,7 @@ import next from 'next';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const bindAddress = process.env.BIND_ADDRESS || '0.0.0.0';
+const bindAddress = process.env.BIND_ADDRESS || '::';
 const port = parseInt(process.env.PORT || '3000', 10);
 const certPath =
   process.env.SSL_CERT_PATH || path.join(__dirname, 'certificates', 'localhost.pem');
@@ -54,7 +54,7 @@ createServer(httpsOptions, (req, res) => {
   const parsedUrl = parse(req.url, true);
   void handle(req, res, parsedUrl);
 }).listen(port, bindAddress, () => {
-  const bindLabel = bindAddress === '0.0.0.0' ? 'all interfaces (0.0.0.0)' : bindAddress;
+  const bindLabel = (bindAddress === '0.0.0.0' || bindAddress === '::') ? 'all interfaces (dual-stack)' : bindAddress;
   console.log(`[+] Next.js production HTTPS on ${bindLabel}:${port}`);
   console.log(`    https://localhost:${port}`);
   for (const ip of localIpv4s()) {

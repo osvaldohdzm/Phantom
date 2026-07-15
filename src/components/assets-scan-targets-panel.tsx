@@ -21,13 +21,14 @@ type AssetsScanTargetsPanelProps = {
   onPromoted?: () => void;
 };
 
-const SOURCE_OPTIONS: AssetSourceType[] = [
-  'inventory',
-  'external_recon',
-  'external_attack_surface',
-  'internal_recon',
-  'internal_attack_surface',
-];
+const DEST_OPTIONS = [
+  { id: 'host_inventory', label: 'Host Inventory' },
+  { id: 'app_inventory', label: 'Apps Inventory' },
+  { id: 'external_recon', label: 'External Reconnaissance' },
+  { id: 'external_attack_surface', label: 'External Attack Surface' },
+  { id: 'internal_recon', label: 'Internal Reconnaissance' },
+  { id: 'internal_attack_surface', label: 'Internal Attack Surface' },
+] as const;
 
 export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanTargetsPanelProps) {
   const { t, uiLanguage, format } = useUiT();
@@ -36,11 +37,31 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
   );
   const [targets, setTargets] = useState<AssetScanTarget[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [promoteSource, setPromoteSource] = useState<AssetSourceType>('internal_attack_surface');
+  const [promoteSource, setPromoteSource] = useState<string>('host_inventory');
+  const [hasUserOverridden, setHasUserOverridden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'refresh' | 'promote' | 'pass' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-detect destination based on selected scan targets' tool sources
+  useEffect(() => {
+    if (hasUserOverridden || selected.size === 0) return;
+    const selectedRows = targets.filter(t => selected.has(t.id));
+    const hasAppTool = selectedRows.some(row => 
+      (row.tool_sources ?? []).some(src => {
+        const lowerSrc = src.toLowerCase();
+        return lowerSrc.includes('acunetix') || lowerSrc.includes('zap') || lowerSrc.includes('burp') || lowerSrc.includes('web');
+      })
+    );
+    setPromoteSource(hasAppTool ? 'app_inventory' : 'host_inventory');
+  }, [selected, targets, hasUserOverridden]);
+
+  useEffect(() => {
+    if (selected.size === 0) {
+      setHasUserOverridden(false);
+    }
+  }, [selected]);
 
   const statusFilters = useMemo(
     () =>
@@ -119,10 +140,24 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
     setNotice(null);
     setError(null);
     try {
+      let sourceType: AssetSourceType = 'inventory';
+      let assetType: string | undefined = undefined;
+
+      if (promoteSource === 'host_inventory') {
+        sourceType = 'inventory';
+        assetType = 'Host';
+      } else if (promoteSource === 'app_inventory') {
+        sourceType = 'inventory';
+        assetType = 'App';
+      } else {
+        sourceType = promoteSource as AssetSourceType;
+      }
+
       const res = await promoteAssetScanTargets({
         target_ids: ids,
-        source_type: promoteSource,
+        source_type: sourceType,
         engagement_id: engagementId,
+        asset_type: assetType,
       });
       setNotice(res.message ?? String(res.processed));
       onPromoted?.();
@@ -205,11 +240,14 @@ export function AssetsScanTargetsPanel({ engagementId, onPromoted }: AssetsScanT
               <select
                 className="h-7 rounded border border-input bg-background px-1.5 text-[10px]"
                 value={promoteSource}
-                onChange={(e) => setPromoteSource(e.target.value as AssetSourceType)}
+                onChange={(e) => {
+                  setPromoteSource(e.target.value);
+                  setHasUserOverridden(true);
+                }}
               >
-                {SOURCE_OPTIONS.map((k) => (
-                  <option key={k} value={k}>
-                    {assetSourceLabel(k, uiLanguage)}
+                {DEST_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
                   </option>
                 ))}
               </select>

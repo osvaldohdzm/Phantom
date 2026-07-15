@@ -22,6 +22,10 @@ const SERVICE_TYPE_KEYS: Record<string, UiMessageKey> = {
   Infraestructura: 'engSvcInfra',
   Cloud: 'engSvcCloud',
   Mobile: 'engSvcMobile',
+  Compliance: 'engSvcCompliance',
+  SCA: 'engSvcSca',
+  Contenedores: 'engSvcContainer',
+  CSPM: 'engSvcCspm',
 };
 
 const STATUS_KEYS: Record<string, UiMessageKey> = {

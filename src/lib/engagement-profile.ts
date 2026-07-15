@@ -17,6 +17,10 @@ export const TIPOS_SERVICIO = [
   'Infraestructura',
   'Cloud',
   'Mobile',
+  'Compliance',
+  'SCA',
+  'Contenedores',
+  'CSPM',
 ] as const;
 export type TipoServicio = (typeof TIPOS_SERVICIO)[number];
 
@@ -262,11 +266,14 @@ export function sectionsForTipoServicio(tipo: string): EngagementSectionId[] {
     case 'Mobile':
       return [...common, 'herramientas', 'dast'];
     case 'SAST':
+    case 'SCA':
+    case 'Contenedores':
       return ['accesos', 'reglas', 'sast', 'reporting'];
     case 'AV Infraestructura':
     case 'Infraestructura':
     case 'Cloud':
     case 'AV Cloud':
+    case 'CSPM':
       return [...common, 'herramientas', 'pentest_infra'];
     case 'Pentest':
       return [...common, 'herramientas', 'pentest_infra'];

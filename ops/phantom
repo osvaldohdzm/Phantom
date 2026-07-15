@@ -23,8 +23,9 @@ case "$CMD" in
 Phantom — operaciones
 
   Docker (servidor)
-    install          Preparar .env y build imágenes
-    install --system Instalar Docker en Ubuntu (sudo)
+  install          Preparar .env y build imágenes
+  install --docker Instalar Docker Desktop en macOS + build imágenes
+  install --system Instalar Docker en Ubuntu (sudo)
     start            Levantar stack Docker
     stop             Detener stack (conserva datos)
     restart [svc]    Reiniciar contenedores

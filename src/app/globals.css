@@ -226,6 +226,1392 @@
   .surface-muted {
     @apply rounded-xl border border-border bg-muted/40;
   }
+
+  /* Phantom Engine — inherits light/dark from app shell */
+  .phantom-workspace {
+    @apply relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground;
+  }
+
+  .phantom-toolbar {
+    @apply flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/80 px-4 py-2 backdrop-blur-sm;
+  }
+
+  .phantom-panel {
+    @apply bg-card text-card-foreground;
+  }
+
+  .phantom-panel-sidebar {
+    @apply bg-sidebar text-sidebar-foreground;
+  }
+
+  .phantom-canvas {
+    @apply bg-muted/30;
+  }
+
+  .phantom-input-chip {
+    @apply flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs;
+  }
+
+  .phantom-btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/60;
+  }
+
+  .phantom-btn-primary {
+    @apply border-primary/30 bg-primary/10 text-primary hover:bg-primary/15;
+  }
+
+  .phantom-terminal {
+    @apply border-t border-border bg-card font-mono text-foreground;
+  }
+
+  /* ── Phantom Engine · cyber ops surface ── */
+  .phantom-workspace {
+    --phantom-accent: oklch(0.55 0.14 195);
+    --phantom-accent-dim: color-mix(in oklch, var(--phantom-accent) 18%, transparent);
+    --phantom-panel-border: color-mix(in oklch, var(--phantom-accent) 22%, var(--border));
+  }
+
+  .dark .phantom-workspace {
+    --phantom-accent: oklch(0.72 0.12 195);
+    --phantom-accent-dim: color-mix(in oklch, var(--phantom-accent) 14%, transparent);
+  }
+
+  .phantom-engine-tabs {
+    @apply inline-flex rounded-lg border p-0.5 gap-0.5;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 88%, var(--phantom-accent-dim));
+  }
+
+  .phantom-engine-tab {
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-all;
+    color: var(--muted-foreground);
+  }
+
+  .phantom-engine-tab:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--muted) 60%, transparent);
+  }
+
+  .phantom-engine-tab--active {
+    color: var(--foreground);
+    background: var(--card);
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--phantom-accent) 35%, transparent),
+      0 4px 14px color-mix(in oklch, var(--phantom-accent) 12%, transparent);
+  }
+
+  .phantom-map-sidebar {
+    @apply flex w-[21rem] shrink-0 flex-col border-r;
+    border-color: var(--phantom-panel-border);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--card) 96%, var(--phantom-accent-dim)) 0%,
+      color-mix(in oklch, var(--sidebar) 94%, transparent) 100%
+    );
+    box-shadow: inset -1px 0 0 color-mix(in oklch, var(--phantom-accent) 8%, transparent);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+    z-index: 30;
+  }
+
+  .phantom-map-sidebar--collapsed {
+    @apply w-0 overflow-hidden border-r-0;
+    transform: translateX(-100%);
+  }
+
+  .phantom-map-sidebar--touch {
+    @apply fixed inset-y-0 left-0 z-50 w-[min(22rem,85vw)];
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .phantom-map-sidebar--touch.phantom-map-sidebar--collapsed {
+    transform: translateX(-100%);
+    width: min(22rem, 85vw);
+  }
+
+  .phantom-map-sidebar-backdrop {
+    @apply fixed inset-0 z-40;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+    animation: phantom-fade-in 0.2s ease;
+  }
+
+  .phantom-map-sidebar-toggle {
+    @apply pointer-events-auto absolute left-3 top-3 z-30 flex size-9 items-center justify-center rounded-lg border shadow-lg backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
+    background: color-mix(in oklch, var(--card) 92%, transparent);
+    color: var(--muted-foreground);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .phantom-map-sidebar-toggle:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--card) 98%, transparent);
+  }
+
+  .phantom-map-sidebar-close {
+    @apply flex size-8 items-center justify-center self-end rounded-md text-muted-foreground transition;
+    margin: 0.5rem 0.5rem 0;
+  }
+
+  .phantom-map-sidebar-close:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--muted) 55%, transparent);
+  }
+
+  .phantom-map-sidebar-header {
+    @apply border-b p-3 space-y-2;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 70%, transparent);
+  }
+
+  .phantom-map-sidebar-title {
+    @apply w-full rounded-lg border px-2.5 py-2 text-sm font-semibold outline-none transition-shadow;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+  }
+
+  .phantom-map-sidebar-title:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 35%, transparent);
+  }
+
+  .phantom-side-tabs {
+    @apply grid border-b p-1 gap-0.5;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 35%, transparent);
+  }
+
+  .phantom-side-tab {
+    @apply rounded-md py-2 text-[9px] font-bold uppercase tracking-widest transition-colors;
+    color: var(--muted-foreground);
+  }
+
+  .phantom-side-tab:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--muted) 50%, transparent);
+  }
+
+  .phantom-side-tab--active {
+    color: color-mix(in oklch, var(--phantom-accent) 85%, var(--foreground));
+    background: color-mix(in oklch, var(--phantom-accent) 12%, var(--card));
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--phantom-accent) 28%, transparent);
+  }
+
+  .phantom-map-stage {
+    @apply relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .phantom-map-stage--light {
+    background:
+      radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in oklch, var(--phantom-accent) 8%, transparent), transparent 55%),
+      linear-gradient(165deg, #f4f7fb 0%, #eef3f9 42%, #f8fafc 100%);
+  }
+
+  .phantom-map-stage--light::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(color-mix(in oklch, var(--phantom-accent) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklch, var(--phantom-accent) 6%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 90% 85% at 50% 45%, black 30%, transparent 100%);
+  }
+
+  .phantom-map-stage--dark {
+    background:
+      radial-gradient(ellipse 100% 70% at 50% 0%, color-mix(in oklch, var(--phantom-accent) 10%, transparent), transparent 50%),
+      linear-gradient(180deg, #0a0e14 0%, #0c1018 50%, #080b10 100%);
+  }
+
+  .phantom-map-stage--dark::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(
+      circle,
+      color-mix(in oklch, var(--phantom-accent) 14%, transparent) 1px,
+      transparent 1px
+    );
+    background-size: 28px 28px;
+    opacity: 0.55;
+  }
+
+  .phantom-hud {
+    @apply rounded-xl border px-3 py-2 text-xs font-medium shadow-lg backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    box-shadow: 0 8px 32px color-mix(in oklch, var(--phantom-accent) 10%, transparent);
+  }
+
+  .phantom-hud-dock {
+    @apply flex items-center gap-1 rounded-full border px-2 py-1.5 shadow-xl backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
+    background: color-mix(in oklch, var(--card) 90%, transparent);
+  }
+
+  .phantom-hud-btn {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors;
+    color: var(--muted-foreground);
+  }
+
+  .phantom-hud-btn:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--muted) 55%, transparent);
+  }
+
+  .phantom-hud-btn--active {
+    color: color-mix(in oklch, var(--phantom-accent) 90%, var(--foreground));
+    background: color-mix(in oklch, var(--phantom-accent) 14%, transparent);
+  }
+
+  .phantom-layout-section {
+    @apply rounded-lg border p-2.5;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--background) 92%, var(--phantom-accent-dim));
+  }
+
+  .phantom-range {
+    @apply h-1.5 w-full cursor-pointer appearance-none rounded-full;
+    background: color-mix(in oklch, var(--muted) 70%, var(--border));
+    accent-color: var(--phantom-accent);
+  }
+
+  .phantom-range::-webkit-slider-thumb {
+    @apply size-3.5 appearance-none rounded-full border-2 shadow-sm;
+    border-color: color-mix(in oklch, var(--phantom-accent) 60%, var(--border));
+    background: var(--card);
+    box-shadow: 0 0 8px color-mix(in oklch, var(--phantom-accent) 25%, transparent);
+  }
+
+  .phantom-toggle-row {
+    @apply flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors;
+    border-color: color-mix(in oklch, var(--phantom-accent) 18%, var(--border));
+    background: color-mix(in oklch, var(--card) 85%, transparent);
+  }
+
+  .phantom-toggle-row--active {
+    border-color: color-mix(in oklch, var(--phantom-accent) 45%, var(--border));
+    background: color-mix(in oklch, var(--phantom-accent) 10%, var(--card));
+  }
+
+  .phantom-map-layout-bar {
+    @apply rounded-full border px-3 py-2 shadow-lg backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
+    background: color-mix(in oklch, var(--card) 92%, transparent);
+  }
+
+  .phantom-map-legend {
+    @apply max-w-[11rem] rounded-xl border px-3 py-2.5 shadow-lg backdrop-blur-md sm:max-w-[12.5rem];
+    border-color: color-mix(in oklch, var(--phantom-accent) 22%, var(--border));
+    background: color-mix(in oklch, var(--card) 90%, transparent);
+  }
+
+  .phantom-map-legend--filter {
+    @apply absolute bottom-4 right-4 z-10 max-h-[min(52vh,22rem)] overflow-y-auto;
+  }
+
+  .phantom-map-legend--collapsed {
+    @apply max-h-none overflow-visible px-2 py-1.5;
+  }
+
+  .phantom-map-legend-toggle {
+    @apply flex w-full items-center justify-between gap-2 text-left;
+  }
+
+  .phantom-map-legend-show-all {
+    @apply mt-1 text-[9px] font-medium text-[var(--phantom-accent)] underline-offset-2 hover:underline;
+  }
+
+  .phantom-map-legend-grid {
+    @apply mt-2 grid grid-cols-1 gap-y-1;
+  }
+
+  .phantom-map-legend-item {
+    @apply flex items-center gap-1.5 text-[9px] font-medium text-foreground;
+  }
+
+  .phantom-map-legend-item--btn {
+    @apply w-full rounded-md px-1 py-0.5 text-left transition hover:bg-muted/60;
+  }
+
+  .phantom-map-legend-item--hidden {
+    @apply opacity-40 line-through;
+  }
+
+  .phantom-map-legend-item img {
+    @apply size-[22px] shrink-0;
+  }
+
+  .phantom-map-search {
+    @apply pointer-events-auto relative flex w-48 sm:w-56 items-center gap-2 rounded-full border px-2.5 py-1 shadow-sm backdrop-blur-sm;
+    border-color: color-mix(in oklch, var(--phantom-accent) 20%, var(--border));
+    background: color-mix(in oklch, var(--background) 40%, transparent);
+  }
+
+  .phantom-map-search-input {
+    @apply min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground;
+  }
+
+  .phantom-map-search-clear {
+    @apply flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground;
+  }
+
+  .phantom-map-search-results {
+    @apply absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-xl border border-border bg-card/98 p-1 shadow-xl backdrop-blur-md;
+  }
+
+  .phantom-map-search-hit {
+    @apply flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-muted/70;
+  }
+
+  .phantom-map-search-empty {
+    @apply absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-border bg-card/95 px-3 py-2 text-center text-[10px] text-muted-foreground;
+  }
+
+  .phantom-map-minimap {
+    @apply absolute bottom-4 left-4 z-10 overflow-hidden rounded-xl border shadow-lg backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 22%, var(--border));
+    background: color-mix(in oklch, var(--card) 90%, transparent);
+  }
+
+  .phantom-map-minimap--collapsed {
+    @apply px-2 py-1;
+  }
+
+  .phantom-map-minimap-toggle {
+    @apply flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground transition hover:text-foreground;
+  }
+
+  .phantom-map-minimap-canvas {
+    @apply block cursor-crosshair rounded-b-xl;
+    width: 148px;
+    height: 96px;
+  }
+
+  .phantom-map-nmap-import {
+    @apply rounded-lg border border-dashed border-border bg-muted/20 p-2;
+  }
+
+  .phantom-map-inspector {
+    @apply flex w-72 shrink-0 flex-col border-l border-border bg-card/95 backdrop-blur-md;
+    max-height: 100%;
+    overscroll-behavior: contain;
+  }
+
+  .phantom-map-inspector--touch {
+    @apply fixed inset-x-0 bottom-0 z-50 w-full max-w-full border-l-0 border-t;
+    max-height: 55vh;
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+    animation: phantom-slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .phantom-map-inspector-backdrop {
+    @apply fixed inset-0 z-40;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    animation: phantom-fade-in 0.2s ease;
+  }
+
+  .phantom-map-inspector-drag-handle {
+    @apply mx-auto my-2 h-1 w-10 rounded-full;
+    background: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+  }
+
+  .phantom-map-inspector-header {
+    @apply flex items-start justify-between gap-2 border-b border-border px-3 py-3;
+  }
+
+  .phantom-map-inspector-close {
+    @apply flex size-7 items-center justify-center rounded-md text-lg leading-none text-muted-foreground transition hover:bg-muted hover:text-foreground;
+  }
+
+  .phantom-map-inspector-toolbar {
+    @apply flex gap-1 border-b border-border px-2 py-2;
+  }
+
+  .phantom-map-inspector-mini {
+    @apply flex flex-1 items-center justify-center rounded-md border border-transparent py-2 text-muted-foreground transition hover:border-border hover:bg-muted/50 hover:text-foreground;
+  }
+
+  .phantom-map-inspector-mini--active {
+    @apply border-primary/40 bg-primary/10 text-primary;
+  }
+
+  .phantom-map-inspector-body {
+    @apply min-h-0 flex-1 overflow-y-auto p-3;
+  }
+
+  .phantom-map-field-label {
+    @apply text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .phantom-map-add-popover {
+    @apply fixed z-[60] w-64 rounded-xl border p-3 shadow-2xl backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
+    background: color-mix(in oklch, var(--card) 96%, transparent);
+  }
+
+  .phantom-map-add-popover-title {
+    @apply mb-2 text-xs font-bold uppercase tracking-wide text-foreground;
+  }
+
+  .phantom-map-add-search {
+    @apply mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-2;
+  }
+
+  .phantom-map-add-list {
+    @apply max-h-48 space-y-0.5 overflow-y-auto;
+  }
+
+  .phantom-map-add-item {
+    @apply flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-muted/60;
+  }
+
+  .phantom-map-add-section {
+    @apply mb-1 mt-2 text-[9px] font-bold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .phantom-map-context-menu {
+    @apply fixed z-[60] min-w-[11rem] rounded-lg border p-1 shadow-2xl backdrop-blur-md;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 96%, transparent);
+  }
+
+  .phantom-map-context-item {
+    @apply flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition hover:bg-muted/60;
+    min-height: 36px;
+  }
+
+  .phantom-map-context-item--touch {
+    min-height: 48px;
+    @apply py-3 text-sm;
+  }
+
+  .phantom-map-context-menu--touch {
+    @apply fixed inset-x-0 bottom-0 z-50 rounded-t-xl p-2 pt-1;
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    min-width: 100%;
+    animation: phantom-slide-up 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+  }
+
+  .phantom-map-context-backdrop {
+    @apply fixed inset-0 z-40;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    animation: phantom-fade-in 0.2s ease;
+  }
+
+  .phantom-map-palette-backdrop {
+    @apply fixed inset-0 z-[70] flex items-start justify-center bg-black/25 p-4 pt-[12vh] backdrop-blur-[2px];
+  }
+
+  .phantom-map-palette {
+    @apply w-full max-w-lg rounded-xl border shadow-2xl;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 98%, transparent);
+  }
+
+  .phantom-map-palette-search {
+    @apply flex items-center gap-2 border-b border-border px-4 py-3;
+  }
+
+  .phantom-map-palette-section {
+    @apply max-h-[50vh] overflow-y-auto p-2;
+  }
+
+  .phantom-map-palette-heading {
+    @apply px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .phantom-map-palette-item {
+    @apply flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition hover:bg-muted/55;
+  }
+
+  .phantom-map-kbd {
+    @apply rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground;
+  }
+
+  .phantom-map-mode-banner {
+    @apply pointer-events-none absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full border px-4 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 35%, var(--border));
+    background: color-mix(in oklch, var(--card) 92%, transparent);
+  }
+
+  .phantom-map-stage--placement {
+    cursor: crosshair;
+  }
+
+  /* Long-press ripple feedback */
+  .phantom-map-longpress-ripple {
+    position: fixed;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 25;
+    transform: translate(-50%, -50%) scale(0);
+    animation: phantom-longpress-grow 0.6s ease-out forwards;
+    border: 2px solid color-mix(in oklch, var(--phantom-accent) 60%, transparent);
+    background: color-mix(in oklch, var(--phantom-accent) 15%, transparent);
+  }
+
+  @keyframes phantom-longpress-grow {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  }
+
+  @keyframes phantom-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes phantom-slide-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  .phantom-tree-node-icon {
+    @apply size-6 shrink-0 drop-shadow-sm;
+  }
+
+  .phantom-tree-node {
+    @apply mb-1 flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-all;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .phantom-tree-node:hover {
+    border-color: color-mix(in oklch, var(--phantom-accent) 22%, var(--border));
+    background: color-mix(in oklch, var(--card) 80%, var(--phantom-accent-dim));
+  }
+
+  .phantom-tree-node--selected {
+    border-color: color-mix(in oklch, var(--phantom-accent) 40%, var(--border));
+    background: color-mix(in oklch, var(--phantom-accent) 10%, var(--card));
+    box-shadow: 0 0 12px color-mix(in oklch, var(--phantom-accent) 12%, transparent);
+  }
+
+  .phantom-kind-badge {
+    @apply shrink-0 rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider;
+    color: color-mix(in oklch, var(--phantom-accent) 80%, var(--foreground));
+    background: color-mix(in oklch, var(--phantom-accent) 12%, var(--muted));
+    border: 1px solid color-mix(in oklch, var(--phantom-accent) 25%, transparent);
+  }
+
+  .phantom-stat-tile {
+    @apply rounded-lg border px-2 py-1.5 text-center;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--background) 92%, var(--phantom-accent-dim));
+  }
+
+  .phantom-stat-value {
+    @apply block font-mono text-sm font-bold leading-none;
+    color: color-mix(in oklch, var(--phantom-accent) 75%, var(--foreground));
+  }
+
+  .phantom-field {
+    @apply w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-shadow;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .phantom-field:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 30%, transparent);
+  }
+
+  .phantom-panel-card {
+    @apply rounded-xl border p-2.5;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 30%, var(--card));
+  }
+
+  /* Selection box for rectangular area select mode */
+  .phantom-selection-box {
+    position: absolute;
+    border: 1.5px dashed var(--phantom-accent);
+    background: color-mix(in oklch, var(--phantom-accent) 12%, transparent);
+    pointer-events: none;
+    z-index: 40;
+    backdrop-filter: blur(0.5px);
+    border-radius: 4px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Bulk action floating popup overlay */
+  .phantom-bulk-actions-panel {
+    @apply fixed left-1/2 top-16 z-[60] -translate-x-1/2 flex flex-col items-center gap-1 rounded-2xl border px-5 py-3.5 shadow-2xl backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 35%, var(--border));
+    background: color-mix(in oklch, var(--card) 95%, transparent);
+    animation: phantom-fade-in 0.2s ease;
+    min-width: 16rem;
+  }
+
+  /* Premium glowing activation ring for touch device long-press */
+  .phantom-map-longpress-feedback {
+    position: fixed;
+    pointer-events: none;
+    z-index: 99;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .phantom-longpress-ring-outer {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 2px dashed var(--phantom-accent);
+    border-radius: 50%;
+    animation: phantom-spin 1.5s linear infinite, phantom-ring-grow 0.6s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+    box-shadow: 0 0 15px color-mix(in oklch, var(--phantom-accent) 40%, transparent);
+  }
+
+  .phantom-longpress-orb {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--phantom-accent);
+    box-shadow: 0 0 20px 8px color-mix(in oklch, var(--phantom-accent) 60%, transparent);
+    animation: phantom-orb-grow 0.6s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  }
+
+  .phantom-longpress-plus {
+    position: absolute;
+    font-family: sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--foreground);
+    opacity: 0;
+    animation: phantom-plus-fade 0.6s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  }
+
+  @keyframes phantom-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes phantom-ring-grow {
+    0% { width: 10px; height: 10px; opacity: 0.3; }
+    100% { width: 56px; height: 56px; opacity: 1; }
+  }
+
+  @keyframes phantom-orb-grow {
+    0% { transform: scale(0.2); opacity: 0.5; }
+    100% { transform: scale(1); opacity: 0.95; }
+  }
+
+  @keyframes phantom-plus-fade {
+    0% { transform: scale(0.5); opacity: 0; }
+    70% { opacity: 0.3; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+
+  /* ======= Touch / Tablet responsive adaptations ======= */
+  @media (pointer: coarse) {
+    .phantom-hud-btn {
+      @apply px-3 py-2 text-[11px];
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    .phantom-hud-dock {
+      @apply gap-1.5 px-3 py-2;
+    }
+
+    .phantom-map-layout-bar {
+      @apply flex-col items-end gap-3 rounded-xl px-3 py-3;
+    }
+
+    .phantom-map-sidebar-toggle {
+      @apply size-11;
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    .phantom-map-inspector-toolbar {
+      @apply !gap-2 !p-2.5;
+    }
+
+    .phantom-map-inspector-mini {
+      @apply py-3;
+      min-height: 44px;
+    }
+
+    .phantom-map-inspector-close {
+      @apply !size-11 !text-lg;
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    .phantom-map-add-item {
+      @apply !py-3.5;
+      min-height: 48px;
+    }
+
+    .phantom-field {
+      @apply !px-3 !py-3 !text-base;
+      font-size: 16px !important; /* Critical to prevent iOS Safari auto-zoom on focus */
+      min-height: 46px;
+      border-radius: 0.75rem !important;
+    }
+
+    .phantom-side-tab {
+      @apply !py-3 !text-[11px];
+    }
+
+    .phantom-tree-node {
+      @apply !py-3;
+      min-height: 44px;
+      font-size: 13px !important;
+    }
+
+    .phantom-btn {
+      @apply !py-3 !text-sm !font-bold;
+      min-height: 46px;
+      border-radius: 0.75rem !important;
+    }
+
+    /* Larger inspector headers and spacing inside the touch sheet */
+    .phantom-map-inspector--touch {
+      max-height: 60vh !important;
+    }
+
+    .phantom-map-inspector--touch .phantom-map-inspector-header p.text-sm {
+      font-size: 16px !important;
+      font-weight: 700 !important;
+    }
+
+    .phantom-map-inspector--touch .phantom-map-inspector-header p.text-\[10px\] {
+      font-size: 12px !important;
+    }
+
+    .phantom-map-inspector--touch .phantom-map-field-label {
+      font-size: 13px !important;
+      margin-bottom: 0.25rem;
+      @apply font-bold text-muted-foreground/90 uppercase tracking-wider;
+    }
+
+    .phantom-map-inspector--touch .phantom-map-inspector-body {
+      @apply !space-y-4;
+    }
+
+    /* Selection banner for single node touch selection on iPad */
+    .phantom-selection-banner {
+      @apply fixed left-1/2 top-16 z-[60] -translate-x-1/2 flex items-center justify-between gap-1 rounded-full border px-4 py-2.5 shadow-2xl backdrop-blur-md;
+      border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+      background: color-mix(in oklch, var(--card) 95%, transparent);
+      animation: phantom-fade-in 0.2s ease;
+      min-width: 18rem;
+    }
+
+    .phantom-selection-banner button {
+      min-height: 38px;
+    }
+
+    /* Add Popover adaptations for touch devices */
+    .phantom-map-add-popover--touch {
+      @apply max-w-sm w-[90vw] p-4 rounded-2xl shadow-2xl border bg-card/98 backdrop-blur-lg;
+      border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+      animation: phantom-slide-up 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .phantom-map-add-popover--touch .phantom-map-add-popover-title {
+      font-size: 14px !important;
+      font-weight: 700 !important;
+    }
+
+    .phantom-map-add-popover--touch .phantom-map-add-search {
+      @apply !p-3 !rounded-xl !border;
+      min-height: 48px;
+    }
+
+    .phantom-map-add-popover--touch .phantom-map-add-search input {
+      font-size: 16px !important;
+    }
+
+    .phantom-map-add-popover--touch .phantom-map-add-item span.font-semibold {
+      font-size: 13px !important;
+    }
+
+    .phantom-map-add-popover--touch .phantom-map-add-item span.font-mono {
+      font-size: 11px !important;
+    }
+
+    /* Node Cardinal Handles for Drag-to-Connect UX on iPad */
+    .phantom-node-handles-container {
+      position: absolute;
+      pointer-events: none;
+      z-index: 50;
+      transform: translate(-50%, -50%);
+    }
+
+    .phantom-node-handle {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid var(--phantom-accent);
+      background: color-mix(in oklch, var(--card) 85%, transparent);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.15), 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 25%, transparent);
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--phantom-accent);
+      font-size: 14px;
+      font-weight: bold;
+      cursor: crosshair;
+      transform: translate(-50%, -50%);
+      transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.15s ease;
+      touch-action: none;
+    }
+
+    .phantom-node-handle:active,
+    .phantom-node-handle:hover {
+      background: var(--phantom-accent);
+      color: var(--card);
+      transform: translate(-50%, -50%) scale(1.25);
+      box-shadow: 0 0 15px var(--phantom-accent);
+    }
+
+    .phantom-node-handle--n { top: -38px; left: 0; }
+    .phantom-node-handle--s { top: 38px; left: 0; }
+    .phantom-node-handle--e { top: 0; left: 38px; }
+    .phantom-node-handle--w { top: 0; left: -38px; }
+
+    /* Highlighting target nodes during link dragging */
+    .phantom-node-target-highlight {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 45;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px double var(--phantom-accent);
+      box-shadow: 0 0 25px 8px color-mix(in oklch, var(--phantom-accent) 45%, transparent);
+      animation: phantom-pulse-ring 1.2s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+    }
+
+    @keyframes phantom-pulse-ring {
+      0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
+      50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.4; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
+    }
+
+    /* Larger elements inside connection details bottom sheet */
+    .phantom-map-inspector--touch span.truncate.text-\[10px\] {
+      font-size: 13px !important;
+      font-weight: 700 !important;
+    }
+
+    .phantom-map-inspector--touch span.text-\[8px\] {
+      font-size: 11px !important;
+    }
+
+    .phantom-map-inspector--touch span.text-\[9px\] {
+      font-size: 12px !important;
+      padding: 0.25rem 0.6rem !important;
+    }
+
+    .phantom-map-inspector--touch .grid-cols-2 button {
+      font-size: 13px !important;
+      height: 48px !important;
+      min-height: 48px !important;
+    }
+
+    .phantom-map-inspector--touch button.border-rose-500\/25,
+    .phantom-map-inspector--touch button.border-rose-500\/10 {
+      font-size: 13px !important;
+      min-height: 48px !important;
+      @apply !py-3.5;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .phantom-map-sidebar:not(.phantom-map-sidebar--touch) {
+      @apply w-[18rem];
+    }
+
+    .phantom-map-minimap {
+      @apply hidden;
+    }
+
+    .phantom-map-legend--filter {
+      @apply bottom-20 right-2;
+    }
+  }
+
+  /* iOS Safari overscroll containment */
+  @supports (-webkit-touch-callout: none) {
+    .phantom-map-stage {
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: auto;
+    }
+
+    .phantom-map-inspector--touch {
+      overscroll-behavior: contain;
+    }
+  }
+
+  /* Workflow canvas — tactical grid (light + dark) */
+  .phantom-canvas {
+    background:
+      radial-gradient(ellipse 90% 60% at 50% 0%, color-mix(in oklch, var(--phantom-accent) 6%, transparent), transparent 60%),
+      var(--background);
+  }
+
+  .phantom-canvas-grid {
+    background-image: radial-gradient(
+      circle,
+      color-mix(in oklch, var(--phantom-accent) 16%, transparent) 1px,
+      transparent 1px
+    );
+  }
+
+  .phantom-workflow-sidebar {
+    @apply flex w-80 shrink-0 flex-col border-r h-full select-none;
+    border-color: var(--phantom-panel-border);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--card) 94%, var(--phantom-accent-dim)),
+      color-mix(in oklch, var(--sidebar) 96%, transparent)
+    );
+  }
+
+  .phantom-workflow-node-shell {
+    @apply rounded-xl border shadow-lg;
+    border-color: color-mix(in oklch, var(--phantom-accent) 25%, #334155);
+    background: linear-gradient(145deg, #0f172a 0%, #111827 55%, #0c1220 100%);
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--phantom-accent) 15%, transparent),
+      0 12px 40px rgba(15, 23, 42, 0.35);
+  }
+
+  /* Workflow node drawer — theme-aware (light + dark) */
+  .phantom-drawer {
+    @apply absolute right-0 top-0 bottom-0 flex flex-col border-l shadow-xl z-50;
+    width: 27.5rem;
+    border-color: var(--phantom-panel-border);
+    background: var(--card);
+    color: var(--foreground);
+  }
+
+  .phantom-drawer-header {
+    @apply flex items-center justify-between border-b p-5;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 35%, var(--card));
+  }
+
+  .phantom-drawer-section {
+    @apply flex flex-col gap-2 border-b p-4;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 22%, var(--card));
+  }
+
+  .phantom-drawer-tabs {
+    @apply flex border-b px-4;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 90%, var(--muted));
+  }
+
+  .phantom-drawer-tab {
+    @apply cursor-pointer border-b-2 px-4 py-3 text-xs font-mono font-medium uppercase tracking-wider transition;
+    color: var(--muted-foreground);
+    border-color: transparent;
+  }
+
+  .phantom-drawer-tab:hover {
+    color: var(--foreground);
+  }
+
+  .phantom-drawer-tab--active {
+    border-color: color-mix(in oklch, var(--phantom-accent) 70%, transparent);
+    color: color-mix(in oklch, var(--phantom-accent) 85%, var(--foreground));
+    background: color-mix(in oklch, var(--phantom-accent) 8%, transparent);
+  }
+
+  .phantom-drawer-footer {
+    @apply flex items-center justify-between border-t p-4;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 30%, var(--card));
+  }
+
+  .phantom-code-block {
+    @apply relative overflow-x-auto rounded-lg border p-3.5 font-mono text-xs;
+    border-color: color-mix(in oklch, var(--phantom-accent) 30%, #334155);
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+    color: #e2e8f0;
+    box-shadow: inset 0 1px 0 color-mix(in oklch, var(--phantom-accent) 12%, transparent);
+  }
+
+  .phantom-phase-btn {
+    @apply flex flex-col items-center justify-center rounded-md border px-1 py-1.5 text-center text-[9px] font-mono leading-tight transition cursor-pointer;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 40%, var(--card));
+    color: var(--muted-foreground);
+  }
+
+  .phantom-phase-btn:hover {
+    border-color: color-mix(in oklch, var(--phantom-accent) 35%, var(--border));
+    background: color-mix(in oklch, var(--phantom-accent) 8%, var(--card));
+  }
+
+  .phantom-state-btn {
+    @apply min-w-[72px] flex-1 rounded border px-2 py-1.5 text-center text-[10px] font-mono uppercase transition cursor-pointer;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 35%, var(--card));
+    color: var(--muted-foreground);
+  }
+
+  .phantom-state-btn:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--muted) 55%, var(--card));
+  }
+
+  /* ── Workflow canvas cards (light + dark) ── */
+  .phantom-wf-card {
+    @apply absolute flex w-60 shrink-0 flex-row rounded-xl border transition-all duration-200 z-10 select-none;
+    border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+    background: color-mix(in oklch, var(--card) 98%, var(--background));
+    color: var(--foreground);
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--phantom-accent) 8%, transparent),
+      0 10px 28px color-mix(in oklch, var(--phantom-accent) 10%, transparent);
+  }
+
+  .phantom-wf-card:hover {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--phantom-accent) 18%, transparent),
+      0 14px 36px color-mix(in oklch, var(--phantom-accent) 14%, transparent);
+  }
+
+  .dark .phantom-wf-card {
+    border-color: color-mix(in oklch, var(--phantom-accent) 20%, #334155);
+    background: linear-gradient(155deg, #111827 0%, #0f172a 52%, #0c1220 100%);
+    color: #f1f5f9;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.42);
+  }
+
+  .phantom-wf-card--dragging {
+    transition: none !important;
+    will-change: left, top;
+    z-index: 30;
+  }
+
+  .phantom-wf-card--selected {
+    box-shadow:
+      0 0 0 2px color-mix(in oklch, var(--phantom-accent) 45%, transparent),
+      0 14px 36px color-mix(in oklch, var(--phantom-accent) 18%, transparent);
+  }
+
+  .phantom-wf-card-inner {
+    @apply relative flex min-w-0 flex-1 flex-col;
+  }
+
+  .phantom-wf-drag-handle {
+    @apply flex shrink-0 cursor-grab touch-manipulation flex-col items-center justify-center gap-0.5 self-stretch rounded-l-xl border-r px-1 py-2 active:cursor-grabbing;
+    width: 2.25rem;
+    border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--phantom-accent) 14%, var(--muted)),
+      color-mix(in oklch, var(--phantom-accent) 6%, var(--card))
+    );
+    color: color-mix(in oklch, var(--phantom-accent) 75%, var(--foreground));
+  }
+
+  .phantom-wf-drag-handle:active {
+    background: color-mix(in oklch, var(--phantom-accent) 22%, var(--muted));
+  }
+
+  .phantom-wf-drag-label {
+    @apply font-mono text-[7px] font-bold uppercase tracking-wider leading-none;
+  }
+
+  @media (min-width: 768px) {
+    .phantom-wf-drag-label {
+      @apply sr-only;
+    }
+    .phantom-wf-drag-handle {
+      width: 1.75rem;
+    }
+  }
+
+  .phantom-wf-card-header {
+    @apply flex items-center justify-between rounded-none border-b px-3 py-2.5 transition-colors duration-150;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 50%, var(--card));
+  }
+
+  .dark .phantom-wf-card-header {
+    background: #131620;
+    border-color: #1e293b;
+  }
+
+  .phantom-wf-card-body {
+    @apply flex flex-1 flex-col space-y-2 p-3 text-left;
+  }
+
+  .phantom-wf-cmd {
+    @apply flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[9px] select-text;
+    border-color: color-mix(in oklch, var(--phantom-accent) 25%, #334155);
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+    color: #38bdf8;
+  }
+
+  .phantom-wf-tag {
+    @apply rounded px-1 font-mono text-[8px];
+    background: color-mix(in oklch, var(--muted) 55%, var(--card));
+    color: var(--muted-foreground);
+  }
+
+  .dark .phantom-wf-tag {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  .phantom-wf-ai {
+    @apply border-t px-3 pb-2 pt-1;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 28%, var(--card));
+  }
+
+  .dark .phantom-wf-ai {
+    background: rgba(15, 23, 42, 0.35);
+    border-color: #1e293b;
+  }
+
+  .phantom-wf-ai-btn {
+    @apply flex w-full items-center justify-between rounded border px-2 py-1 text-left font-mono text-[9px] transition cursor-pointer;
+    border-color: color-mix(in oklch, #a855f7 25%, var(--border));
+    background: color-mix(in oklch, #a855f7 8%, var(--card));
+    color: color-mix(in oklch, #7c3aed 80%, var(--foreground));
+  }
+
+  .phantom-wf-ai-btn:hover {
+    border-color: color-mix(in oklch, #a855f7 45%, var(--border));
+    background: color-mix(in oklch, #a855f7 14%, var(--card));
+  }
+
+  .phantom-wf-anchor-out {
+    @apply absolute -right-2 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 pointer-events-auto transition-transform sm:-right-1 sm:h-3.5 sm:w-3.5;
+    border-color: var(--card);
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.65);
+  }
+
+  .phantom-wf-anchor-in {
+    @apply absolute -left-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 pointer-events-none select-none;
+    border-color: var(--card);
+    background: color-mix(in oklch, var(--muted) 70%, #64748b);
+  }
+
+  .dark .phantom-wf-anchor-in {
+    background: #334155;
+    border-color: #0c1220;
+  }
+
+  .phantom-flyout {
+    @apply absolute z-50 rounded-lg border p-2 shadow-2xl backdrop-blur-md;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 94%, transparent);
+  }
+
+  .phantom-flyout-item {
+    @apply flex w-full cursor-pointer flex-col rounded px-2 py-1.5 text-left text-xs transition;
+    color: var(--foreground);
+  }
+
+  .phantom-flyout-item:hover {
+    background: color-mix(in oklch, var(--muted) 55%, var(--card));
+  }
+
+  .phantom-minimap {
+    @apply absolute bottom-6 right-6 z-20 h-24 w-32 overflow-hidden rounded-lg border p-1.5 shadow-xl;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 92%, transparent);
+  }
+
+  .dark .phantom-minimap {
+    background: rgba(15, 23, 42, 0.92);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .phantom-canvas-touch-dock {
+    @apply fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 shadow-xl backdrop-blur-md;
+    border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+    background: color-mix(in oklch, var(--card) 94%, transparent);
+  }
+
+  .phantom-canvas-touch-btn {
+    @apply flex size-11 items-center justify-center rounded-full border border-border bg-muted/40 text-foreground transition active:scale-95;
+  }
+
+  .phantom-canvas-touch-zoom {
+    @apply min-w-[3rem] text-center font-mono text-xs font-bold text-foreground;
+  }
+
+  .phantom-canvas-touch-hint {
+    @apply fixed bottom-[4.5rem] left-1/2 z-30 -translate-x-1/2 rounded-full border px-3 py-1 text-center text-[10px] text-muted-foreground backdrop-blur-sm;
+    border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    background: color-mix(in oklch, var(--card) 80%, transparent);
+  }
+
+  .phantom-touch-btn {
+    @apply min-h-9 min-w-9;
+  }
+
+  .phantom-coords-badge {
+    @apply pointer-events-none absolute right-6 top-6 z-20 rounded-md border px-3 py-1.5 font-mono text-[9px] select-none;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    color: var(--muted-foreground);
+  }
+
+  .phantom-phase-lane {
+    @apply mx-4 mt-4 flex flex-col rounded-lg border p-2 text-left shadow-md backdrop-blur-md;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--card) 85%, transparent);
+  }
+
+  .phantom-phase-lane--cyan { color: #0891b2; border-color: color-mix(in oklch, #06b6d4 35%, var(--border)); }
+  .phantom-phase-lane--emerald { color: #059669; border-color: color-mix(in oklch, #10b981 35%, var(--border)); }
+  .phantom-phase-lane--purple { color: #7c3aed; border-color: color-mix(in oklch, #a855f7 35%, var(--border)); }
+  .phantom-phase-lane--rose { color: #e11d48; border-color: color-mix(in oklch, #f43f5e 35%, var(--border)); }
+  .phantom-phase-lane--amber { color: #d97706; border-color: color-mix(in oklch, #f59e0b 35%, var(--border)); }
+  .phantom-phase-lane--fuchsia { color: #c026d3; border-color: color-mix(in oklch, #d946ef 35%, var(--border)); }
+
+  .phantom-wf-state-pill {
+    @apply rounded px-1.5 py-0.5 font-mono text-[8px] font-semibold uppercase;
+    background: color-mix(in oklch, var(--muted) 55%, var(--card));
+    color: var(--muted-foreground);
+  }
+
+  .dark .phantom-wf-state-pill {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  .phantom-toolbar-accent {
+    @apply inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[9.5px] font-mono font-bold uppercase transition cursor-pointer;
+    border-color: color-mix(in oklch, var(--phantom-accent) 30%, var(--border));
+    background: color-mix(in oklch, var(--phantom-accent) 10%, var(--card));
+    color: color-mix(in oklch, var(--phantom-accent) 75%, var(--foreground));
+  }
+
+  .phantom-toolbar-accent:hover {
+    background: color-mix(in oklch, var(--phantom-accent) 16%, var(--card));
+    color: var(--foreground);
+  }
+
+  /* Form controls — readable in light + dark (no bg-black/35) */
+  .phantom-input {
+    @apply rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-shadow;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .phantom-input::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.85;
+  }
+
+  .phantom-input:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 28%, transparent);
+    border-color: color-mix(in oklch, var(--phantom-accent) 40%, var(--border));
+  }
+
+  .phantom-input-sm {
+    @apply rounded-md border px-1.5 py-1 text-[10px] outline-none transition-shadow;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .phantom-input-sm:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 25%, transparent);
+  }
+
+  .phantom-label {
+    @apply block font-mono text-[9px] font-bold uppercase tracking-wide;
+    color: var(--muted-foreground);
+  }
+
+  .phantom-hint {
+    @apply font-sans text-[10px] leading-relaxed;
+    color: var(--muted-foreground);
+  }
+
+  .phantom-section {
+    @apply rounded-xl border p-3;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 28%, var(--card));
+  }
+
+  .phantom-chip {
+    @apply inline-flex items-center rounded border px-2 py-0.5 font-mono text-[9px] uppercase;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 45%, var(--card));
+    color: var(--foreground);
+  }
+
+  .phantom-json-editor {
+    @apply w-full resize-none rounded-lg border font-mono text-[10px] leading-relaxed outline-none;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .phantom-json-editor:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 25%, transparent);
+  }
+
+  .dark .phantom-json-editor {
+    background: #0a0e14;
+    color: #cbd5e1;
+    border-color: color-mix(in oklch, var(--phantom-accent) 20%, #334155);
+  }
+
+  .phantom-cmd-input {
+    @apply w-full resize-y rounded-lg border font-mono text-[10px] outline-none;
+    border-color: var(--phantom-panel-border);
+    background: var(--background);
+    color: #be185d;
+  }
+
+  .dark .phantom-cmd-input {
+    color: #f472b6;
+    background: color-mix(in oklch, var(--muted) 30%, #0f172a);
+  }
+
+  .phantom-cmd-input:focus {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--phantom-accent) 22%, transparent);
+  }
+
+  .phantom-footer-btn {
+    @apply flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-mono font-semibold transition;
+    border-color: var(--phantom-panel-border);
+    background: color-mix(in oklch, var(--muted) 35%, var(--card));
+    color: var(--foreground);
+  }
+
+  .phantom-footer-btn:hover {
+    background: color-mix(in oklch, var(--muted) 55%, var(--card));
+  }
 }
 
 /* ── AI field fill animations ── */
@@ -303,4 +1689,85 @@
 
 .ai-progress-glow {
   box-shadow: 0 0 8px rgba(167, 139, 250, 0.4);
+}
+
+/* ── Fullscreen target map styles ── */
+.phantom-map-fullscreen-active {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: var(--background) !important;
+}
+
+/* ── Excalidraw-style Red Team Toolbar ── */
+.phantom-canvas-toolbar {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: color-mix(in oklch, var(--card) 90%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  padding: 0.375rem;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.phantom-canvas-toolbar-btn {
+  @apply flex size-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/65 hover:text-foreground relative;
+}
+
+.phantom-canvas-toolbar-btn--active {
+  @apply bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+}
+
+.phantom-canvas-toolbar-btn--active:hover {
+  @apply bg-emerald-500/15;
+}
+
+.phantom-canvas-toolbar-divider {
+  @apply w-px h-5 bg-border mx-1 self-center;
+}
+
+/* ── Resolved Command Terminal HUD ── */
+.phantom-terminal-hud {
+  position: absolute;
+  bottom: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: 90%;
+  max-width: 48rem;
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklch, var(--phantom-accent) 20%, var(--border));
+  border-radius: var(--radius-xl);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.phantom-terminal-hud-header {
+  @apply flex items-center justify-between border-b border-border/40 pb-1.5;
+}
+
+.phantom-terminal-hud-title {
+  @apply text-xs font-bold font-mono tracking-wide text-foreground flex items-center gap-1.5;
+}
+
+.phantom-terminal-hud-close {
+  @apply text-muted-foreground hover:text-foreground text-sm font-semibold transition px-1;
+}
+
+.phantom-terminal-hud-resolved {
+  @apply max-h-24 overflow-y-auto rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2 font-mono text-[10px] leading-relaxed text-foreground whitespace-pre-wrap break-all relative;
 }

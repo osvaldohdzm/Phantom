@@ -728,3 +728,41 @@ def list_audit_events(
         )
         for r in rows
     ]
+
+
+import os
+
+@router.get("/system-logs")
+def get_system_logs(
+    ctx: AuthContext = Depends(require_platform_admin),
+    lines: int = Query(200, ge=10, le=2000),
+) -> dict:
+    log_path = os.path.join(os.getcwd(), "..", "storage", "logs", "phantom.log")
+    log_path = os.path.abspath(log_path)
+
+    if not os.path.exists(log_path):
+        alt_path = os.path.join(os.getcwd(), "storage", "logs", "phantom.log")
+        alt_path = os.path.abspath(alt_path)
+        if os.path.exists(alt_path):
+            log_path = alt_path
+        else:
+            return {
+                "log_path": log_path,
+                "exists": False,
+                "lines": [],
+                "message": "Archivo de logs no encontrado. Asegúrese de que Phantom está iniciado y escribe en storage/logs/phantom.log"
+            }
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            all_lines = f.readlines()
+            sliced = all_lines[-lines:]
+            sliced = [line.rstrip() for line in sliced]
+        return {
+            "log_path": log_path,
+            "exists": True,
+            "lines": sliced,
+            "message": f"Mostrando las últimas {len(sliced)} líneas de log"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al leer archivo de logs: {str(e)}")

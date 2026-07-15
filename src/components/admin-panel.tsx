@@ -12,11 +12,12 @@ import { canViewPlatformAudit, canViewTenantAudit } from '@/lib/rbac-permissions
 
 import { TenantBrandingPanel } from '@/components/tenant-branding-panel';
 import { DatabaseConfigPanel } from '@/components/database-config-panel';
+import { SystemLogsPanel } from '@/components/system-logs-panel';
 import { useUiT } from '@/lib/use-ui-locale';
 import type { UiMessageKey } from '@/lib/ui-locale';
 
 type TenantAdminTab = 'tenant-settings' | 'users' | 'tenant-audit';
-type PlatformAdminTab = 'tenants' | 'database' | 'audit';
+type PlatformAdminTab = 'tenants' | 'database' | 'audit' | 'logs';
 type AdminTab = TenantAdminTab | PlatformAdminTab;
 
 export function AdminPanel() {
@@ -49,6 +50,7 @@ export function AdminPanel() {
     { id: 'tenants', labelKey: 'platformTabTenants', show: isPlatformAdmin },
     { id: 'database', labelKey: 'platformTabDatabase', show: isPlatformAdmin },
     { id: 'audit', labelKey: 'platformTabAudit', show: showPlatformAudit },
+    { id: 'logs', labelKey: 'platformTabLogs' as any, show: isPlatformAdmin },
   ];
 
   const tabDescriptions: Record<AdminTab, UiMessageKey> = {
@@ -58,6 +60,7 @@ export function AdminPanel() {
     tenants: 'platformDescTenants',
     database: 'platformDescDatabase',
     audit: 'platformDescAudit',
+    logs: 'platformDescLogs' as any,
   };
 
   return (
@@ -72,6 +75,8 @@ export function AdminPanel() {
               {t('usersActiveTenant')}:{' '}
               <span className="font-medium text-foreground">{activeTenant.nombre}</span>
             </>
+          ) : tab === 'logs' ? (
+            'Consola de logs del backend y peticiones HTTP en tiempo real.'
           ) : (
             t(tabDescriptions[tab])
           )}
@@ -123,7 +128,7 @@ export function AdminPanel() {
                     size="sm"
                     onClick={() => setTab(tabItem.id)}
                   >
-                    {t(tabItem.labelKey)}
+                    {tabItem.id === 'logs' ? 'Logs de Aplicación' : t(tabItem.labelKey)}
                   </Button>
                 ))}
             </div>
@@ -144,6 +149,7 @@ export function AdminPanel() {
       {tab === 'database' && isPlatformAdmin ? <DatabaseConfigPanel /> : null}
       {tab === 'tenants' && isPlatformAdmin ? <TenantsCrudPanel /> : null}
       {tab === 'audit' ? <AuditEventsPanel scope="platform" /> : null}
+      {tab === 'logs' && isPlatformAdmin ? <SystemLogsPanel /> : null}
     </div>
   );
 }

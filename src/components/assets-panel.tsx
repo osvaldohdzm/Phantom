@@ -1,26 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Map, Server, Table2 } from 'lucide-react';
+import { Loader2, Map, Server, Table2, ShieldCheck, Database, KeyRound, Radio } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AssetsScanTargetsPanel } from '@/components/assets-scan-targets-panel';
 import { AssetsSourceGrid } from '@/components/assets-source-grid';
 import { AssetsTargetMapPanel } from '@/components/assets-target-map-panel';
+import { AccessVaultPanel } from '@/components/access-vault-panel';
 import { type AssetSourceType } from '@/lib/asset-spreadsheet-columns';
 import { assetSourceLabel } from '@/lib/ui-locale';
 import { engagementLabel } from '@/lib/default-engagement';
 import { useProjectSelection } from '@/lib/use-project-selection';
 import { useUiT } from '@/lib/use-ui-locale';
 
-const SOURCE_TABS: AssetSourceType[] = [
-  'inventory',
-  'external_recon',
-  'external_attack_surface',
-  'internal_recon',
-  'internal_attack_surface',
-];
+type ViewMode =
+  | 'host_inventory'
+  | 'app_inventory'
+  | 'access_inventory'
+  | 'scan-targets'
+  | 'external_recon'
+  | 'external_attack_surface'
+  | 'internal_recon'
+  | 'internal_attack_surface';
 
-type ViewMode = 'scan-targets' | AssetSourceType;
 type DisplayMode = 'grid' | 'map';
 
 function isAttackSurfaceView(view: ViewMode): view is 'external_attack_surface' | 'internal_attack_surface' {
@@ -29,19 +31,16 @@ function isAttackSurfaceView(view: ViewMode): view is 'external_attack_surface' 
 
 export function AssetsPanel() {
   const { t, uiLanguage, format } = useUiT();
-  const [view, setView] = useState<ViewMode>('scan-targets');
+  const [view, setView] = useState<ViewMode>('host_inventory');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('grid');
   const [gridReload, setGridReload] = useState(0);
   const { engagements, engagementId, setEngagementId, loading: loadingEng } = useProjectSelection();
 
-  const tab = view === 'scan-targets' ? 'inventory' : view;
   const needsProject =
-    view !== 'scan-targets' &&
-    view !== 'inventory' &&
-    (view === 'external_recon' ||
-      view === 'external_attack_surface' ||
-      view === 'internal_recon' ||
-      view === 'internal_attack_surface');
+    view === 'external_recon' ||
+    view === 'external_attack_surface' ||
+    view === 'internal_recon' ||
+    view === 'internal_attack_surface';
 
   const showTargetMap = isAttackSurfaceView(view);
 
@@ -54,55 +53,94 @@ export function AssetsPanel() {
     <div className="max-w-[min(100%,1400px)] mx-auto space-y-6">
       <div>
         <h1 className="type-h1 flex items-center gap-2">
-          <Server className="size-7 text-cyan-500" />
-          {t('assetsTitle')}
+          <Server className="size-7 text-cyan-500 animate-pulse" />
+          Gestor de Activos y Accesos
         </h1>
-        <p className="type-body text-muted-foreground mt-2 max-w-3xl">{t('assetsSubtitle')}</p>
+        <p className="type-body text-muted-foreground mt-2 max-w-3xl">
+          Administra el inventario de hosts, aplicaciones y credenciales seguras (Vault) del engagement, integrando hallazgos desde escaneos automáticos y recolección manual.
+        </p>
       </div>
 
-      <Card>
+      <Card className="bg-muted/15 border-border/40 backdrop-blur-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">{t('assetsSourceCardTitle')}</CardTitle>
-          <CardDescription>{t('assetsSourceCardDesc')}</CardDescription>
+          <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <Radio className="size-4 text-cyan-500 animate-pulse" />
+            Navegación de Fuentes y Vault
+          </CardTitle>
+          <CardDescription>Selecciona la categoría de inventario o superficie que deseas ver.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onSelectView('scan-targets')}
-              className={[
-                'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
-                view === 'scan-targets'
-                  ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-800 dark:text-cyan-200'
-                  : 'border-border text-muted-foreground hover:bg-muted/60',
-              ].join(' ')}
-            >
-              {t('assetsTabFromScans')}
-            </button>
-            {SOURCE_TABS.map((source) => (
-              <button
-                key={source}
-                type="button"
-                onClick={() => onSelectView(source)}
-                className={[
-                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
-                  view === source
-                    ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-800 dark:text-cyan-200'
-                    : 'border-border text-muted-foreground hover:bg-muted/60',
-                ].join(' ')}
-              >
-                {assetSourceLabel(source, uiLanguage)}
-              </button>
-            ))}
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Core Inventory Group */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground/80 uppercase tracking-wider block">
+                Inventario Core & Accesos
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'host_inventory', label: 'Host Inventory', icon: Server },
+                  { id: 'app_inventory', label: 'Apps Inventory', icon: Database },
+                  { id: 'access_inventory', label: 'Access Inventory (Vault)', icon: KeyRound },
+                  { id: 'scan-targets', label: t('assetsTabFromScans'), icon: ShieldCheck },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => onSelectView(tab.id as ViewMode)}
+                      className={[
+                        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all hover:bg-muted/40 cursor-pointer',
+                        view === tab.id
+                          ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 shadow-sm'
+                          : 'border-border text-muted-foreground hover:text-foreground',
+                      ].join(' ')}
+                    >
+                      <Icon className="size-3.5" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Recon Group */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground/80 uppercase tracking-wider block">
+                Recon & Superficie de Ataque
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'external_recon', label: assetSourceLabel('external_recon', uiLanguage) },
+                  { id: 'external_attack_surface', label: assetSourceLabel('external_attack_surface', uiLanguage) },
+                  { id: 'internal_recon', label: assetSourceLabel('internal_recon', uiLanguage) },
+                  { id: 'internal_attack_surface', label: assetSourceLabel('internal_attack_surface', uiLanguage) },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => onSelectView(tab.id as ViewMode)}
+                    className={[
+                      'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all hover:bg-muted/40 cursor-pointer',
+                      view === tab.id
+                        ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 shadow-sm'
+                        : 'border-border text-muted-foreground hover:text-foreground',
+                    ].join(' ')}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <label className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-muted-foreground">{t('assetsProjectLabel')}</span>
+          <div className="pt-3 border-t border-border/20 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground font-medium">{t('assetsProjectLabel')}</span>
             {loadingEng ? (
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
             ) : (
               <select
-                className="h-8 min-w-[14rem] rounded-md border border-input bg-background px-2 text-xs"
+                className="h-8 min-w-[14rem] rounded-md border border-input bg-background/50 px-2 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none"
                 value={engagementId}
                 onChange={(e) => setEngagementId(e.target.value)}
               >
@@ -115,31 +153,43 @@ export function AssetsPanel() {
               </select>
             )}
             {needsProject && !engagementId ? (
-              <span className="text-amber-700 dark:text-amber-400">
+              <span className="text-amber-600 dark:text-amber-400 font-medium">
                 {format('assetsProjectRecommended', {
-                  source: assetSourceLabel(tab, uiLanguage),
+                  source: view,
                 })}
               </span>
             ) : null}
-          </label>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-border/40 shadow-md">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle className="text-base">
+              <CardTitle className="text-base font-bold text-foreground">
                 {view === 'scan-targets'
                   ? t('assetsScanTargetsCardTitle')
-                  : assetSourceLabel(view, uiLanguage)}
+                  : view === 'host_inventory'
+                    ? 'Host Inventory'
+                    : view === 'app_inventory'
+                      ? 'Apps Inventory'
+                      : view === 'access_inventory'
+                        ? 'Access Inventory (Vault Cifrado)'
+                        : assetSourceLabel(view as AssetSourceType, uiLanguage)}
               </CardTitle>
               <CardDescription>
                 {view === 'scan-targets'
                   ? t('assetsScanTargetsCardDesc')
-                  : showTargetMap && displayMode === 'map'
-                    ? t('assetsTargetMapCardDesc')
-                    : t('assetsGridCardDesc')}
+                  : view === 'access_inventory'
+                    ? 'Bitácora cifrada (AES-256) de contraseñas y llaves de acceso del engagement.'
+                    : view === 'host_inventory'
+                      ? 'Edición y control del inventario de hosts, servidores e infraestructura.'
+                      : view === 'app_inventory'
+                        ? 'Edición y control de aplicaciones web, portales, APIs y servicios lógicos.'
+                        : showTargetMap && displayMode === 'map'
+                          ? t('assetsTargetMapCardDesc')
+                          : t('assetsGridCardDesc')}
               </CardDescription>
             </div>
             {showTargetMap ? (
@@ -148,7 +198,7 @@ export function AssetsPanel() {
                   type="button"
                   onClick={() => setDisplayMode('grid')}
                   className={[
-                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium',
+                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium cursor-pointer',
                     displayMode === 'grid'
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground',
@@ -161,7 +211,7 @@ export function AssetsPanel() {
                   type="button"
                   onClick={() => setDisplayMode('map')}
                   className={[
-                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium',
+                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium cursor-pointer',
                     displayMode === 'map'
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground',
@@ -180,16 +230,32 @@ export function AssetsPanel() {
               engagementId={engagementId || null}
               onPromoted={() => setGridReload((n) => n + 1)}
             />
+          ) : view === 'access_inventory' ? (
+            <AccessVaultPanel engagementId={engagementId || null} />
+          ) : view === 'host_inventory' ? (
+            <AssetsSourceGrid
+              key={`host-${engagementId || 'global'}-${gridReload}`}
+              sourceType="inventory"
+              subType="host"
+              engagementId={engagementId || null}
+            />
+          ) : view === 'app_inventory' ? (
+            <AssetsSourceGrid
+              key={`app-${engagementId || 'global'}-${gridReload}`}
+              sourceType="inventory"
+              subType="app"
+              engagementId={engagementId || null}
+            />
           ) : showTargetMap && displayMode === 'map' ? (
             <AssetsTargetMapPanel
               key={`${view}-${engagementId || 'global'}-${gridReload}`}
-              sourceType={view}
+              sourceType={view as any}
               engagementId={engagementId || null}
             />
           ) : (
             <AssetsSourceGrid
               key={`${view}-${engagementId || 'global'}-${gridReload}`}
-              sourceType={view}
+              sourceType={view as any}
               engagementId={engagementId || null}
             />
           )}

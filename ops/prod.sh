@@ -19,6 +19,23 @@ cleanup() {
   echo "[-] Shutting down..."
   [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true
   [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
+  
+  # Kill remaining child processes on ports 8000 and 3000
+  local bp fp
+  if command -v lsof &>/dev/null; then
+    bp=$(lsof -t -i:8000 2>/dev/null || true)
+    fp=$(lsof -t -i:3000 2>/dev/null || true)
+    [[ -n "$bp" ]] && kill -9 $bp 2>/dev/null || true
+    [[ -n "$fp" ]] && kill -9 $fp 2>/dev/null || true
+  fi
+
+  # Kill any python processes running from this project's virtual environment
+  local venv_pids
+  venv_pids=$(ps aux | grep -i "$ROOT/backend/.venv" | grep -v grep | awk '{print $2}' || true)
+  if [[ -n "$venv_pids" ]]; then
+    # shellcheck disable=SC2086
+    kill -9 $venv_pids 2>/dev/null || true
+  fi
   echo "[+] Stopped."
 }
 trap cleanup EXIT INT TERM
@@ -83,12 +100,12 @@ echo "[+] Database bootstrap (single process)..."
 python -m app.bootstrap_db
 export PHANTOM_DB_BOOTSTRAPPED=1
 
+mkdir -p "$ROOT/storage/logs"
 uvicorn app.main:app \
   --host 127.0.0.1 \
   --port 8000 \
   --workers "$UVICORN_WORKERS" \
-  --no-access-log \
-  --log-level warning &
+  --log-level info 2>&1 | tee -a "$ROOT/storage/logs/phantom.log" &
 BACKEND_PID=$!
 cd "$ROOT"
 
@@ -100,7 +117,7 @@ npm run build
 
 echo "[+] Frontend — HTTPS on port ${PORT:-3000} (all interfaces)..."
 # macOS exports HOSTNAME=MacBook-....local — never use for bind; use BIND_ADDRESS.
-export BIND_ADDRESS="0.0.0.0"
+export BIND_ADDRESS="::"
 export PORT="${PORT:-3000}"
 export SSL_CERT_PATH="$CERT"
 export SSL_KEY_PATH="$KEY"

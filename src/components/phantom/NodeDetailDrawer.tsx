@@ -168,63 +168,62 @@ export default function NodeDetailDrawer({
 
   const getStyleForType = (type: NodeClass) => {
     switch (type) {
-      case 'discovery': return 'border-cyan-500/30 text-cyan-400 bg-cyan-950/20';
-      case 'web': return 'border-emerald-500/30 text-emerald-400 bg-emerald-950/20';
-      case 'custom': return 'border-purple-500/30 text-purple-400 bg-purple-950/20';
-      case 'ad': return 'border-amber-500/30 text-amber-500 bg-amber-950/20';
-      case 'exploitation': return 'border-rose-500/30 text-rose-455 text-rose-400 bg-rose-950/20';
-      case 'post-exploitation': return 'border-fuchsia-500/30 text-fuchsia-400 bg-fuchsia-950/20';
-      default: return 'border-slate-505/30 text-slate-400 bg-slate-950/20';
+      case 'discovery': return 'border-cyan-500/35 text-cyan-700 bg-cyan-500/10 dark:text-cyan-400 dark:bg-cyan-950/20';
+      case 'web': return 'border-emerald-500/35 text-emerald-700 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-950/20';
+      case 'custom': return 'border-purple-500/35 text-purple-700 bg-purple-500/10 dark:text-purple-400 dark:bg-purple-950/20';
+      case 'ad': return 'border-amber-500/35 text-amber-700 bg-amber-500/10 dark:text-amber-500 dark:bg-amber-950/20';
+      case 'exploitation': return 'border-rose-500/35 text-rose-700 bg-rose-500/10 dark:text-rose-400 dark:bg-rose-950/20';
+      case 'post-exploitation': return 'border-fuchsia-500/35 text-fuchsia-700 bg-fuchsia-500/10 dark:text-fuchsia-400 dark:bg-fuchsia-950/20';
+      default: return 'border-border text-muted-foreground bg-muted/50';
     }
   };
 
   const getStateColor = (state: NodeState) => {
     switch (state) {
-      case 'pending': return 'bg-zinc-700 text-zinc-300';
+      case 'pending': return 'bg-muted text-foreground dark:bg-zinc-700 dark:text-zinc-300';
       case 'running': return 'bg-blue-600 text-white animate-pulse';
       case 'success': return 'bg-emerald-600 text-white';
       case 'failed': return 'bg-rose-600 text-white';
-      case 'discarded': return 'bg-zinc-800 text-zinc-500 line-through';
+      case 'discarded': return 'bg-muted text-muted-foreground line-through dark:bg-zinc-800 dark:text-zinc-500';
     }
   };
 
   return (
-    <div id={`drawer-${node.id}`} className="fixed right-0 top-0 bottom-0 w-110 bg-[#0A0B0E] border-l border-white/10 text-slate-200 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-300">
-      {/* Drawer Header */}
-      <div className="p-5 border-b border-white/10 flex items-center justify-between bg-[#0F1116]">
+    <div id={`drawer-${node.id}`} className="phantom-drawer animate-in slide-in-from-right duration-300">
+      <div className="phantom-drawer-header">
         <div className="flex items-center space-x-3">
-          <div className="p-2 rounded bg-black/30 border border-white/10">
-            <Terminal className="h-5 w-5 text-emerald-400" />
+          <div className="rounded border border-border bg-muted/50 p-2">
+            <Terminal className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${getStyleForType(node.type)}`}>
                 {node.type}
               </span>
-              <span className="text-[10px] font-mono uppercase text-slate-500">ID: {node.id}</span>
+              <span className="text-[10px] font-mono uppercase text-muted-foreground">ID: {node.id}</span>
             </div>
             <input
               type="text"
               value={node.title}
               onChange={(e) => updateField('title', e.target.value)}
-              className="font-sans font-medium text-base text-slate-100 bg-transparent border-b border-transparent hover:border-white/20 focus:border-emerald-500 focus:outline-none transition py-0.5 mt-0.5 w-full font-bold"
+              className="mt-0.5 w-full border-b border-transparent bg-transparent py-0.5 font-sans text-base font-bold text-foreground transition hover:border-border focus:border-emerald-500 focus:outline-none"
             />
           </div>
         </div>
         <button
           id={`btn-close-drawer`}
           onClick={onClose}
-          className="p-1 rounded hover:bg-white/5 text-slate-400 hover:text-white transition"
+          className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Pentesting Phase Selector - Above State Machine */}
-      <div className="p-4 border-b border-white/10 bg-black/10 flex flex-col space-y-2 select-none">
+      {/* Pentesting Phase Selector */}
+      <div className="phantom-drawer-section select-none">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-mono text-slate-400 uppercase tracking-wider">Fase Pentesting / CTF</label>
-          <span className="text-[9px] font-mono text-purple-400 uppercase">Organiza la alineación</span>
+          <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Fase Pentesting / CTF</label>
+          <span className="text-[9px] font-mono uppercase text-purple-600 dark:text-purple-400">Organiza la alineación</span>
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {([
@@ -242,10 +241,8 @@ export default function NodeDetailDrawer({
                 updateField('type', phase.id);
                 onLogMessage('info', `Nodo "${node.title}" clasificado a la fase: ${phase.label}`);
               }}
-              className={`text-[9px] font-mono leading-tight px-1 py-1.5 rounded-md border text-center transition cursor-pointer flex flex-col items-center justify-center space-y-0.5 ${
-                node.type === phase.id
-                  ? phase.activeStyle
-                  : `bg-white/5 ${phase.style}`
+              className={`phantom-phase-btn space-y-0.5 ${
+                node.type === phase.id ? phase.activeStyle : phase.style
               }`}
               title={`Asignar nodo a la fase ${phase.label}`}
             >
@@ -257,19 +254,17 @@ export default function NodeDetailDrawer({
       </div>
 
       {/* Node Status Selector */}
-      <div className="p-4 border-b border-white/10 bg-black/20 flex flex-col space-y-2">
-        <label className="text-xs font-mono text-slate-400 uppercase tracking-wider">Node State Machine</label>
+      <div className="phantom-drawer-section">
+        <label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Node State Machine</label>
         <div className="flex flex-wrap gap-1">
           {(['pending', 'running', 'success', 'failed', 'discarded'] as NodeState[]).map((st) => (
             <button
               id={`btn-state-${st}`}
               key={st}
               onClick={() => updateState(st)}
-              className={`text-[10px] font-mono uppercase px-2 py-1.5 rounded transition cursor-pointer flex-1 text-center min-w-[72px] ${
-                node.state === st
-                  ? getStateColor(st)
-                  : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-white'
-              }`}
+              className={
+                node.state === st ? getStateColor(st) : 'phantom-state-btn'
+              }
             >
               {st}
             </button>
@@ -278,17 +273,13 @@ export default function NodeDetailDrawer({
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-white/10 bg-[#0F1116] px-4">
+      <div className="phantom-drawer-tabs">
         {(['command', 'evidence', 'ai'] as const).map((tab) => (
           <button
             id={`tab-drawer-${tab}`}
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-3 text-xs font-mono uppercase border-b-2 font-medium tracking-wider transition cursor-pointer ${
-              activeTab === tab
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-550 hover:text-slate-300'
-            }`}
+            className={`phantom-drawer-tab ${activeTab === tab ? 'phantom-drawer-tab--active' : ''}`}
           >
             {tab === 'command' && 'Command Engine'}
             {tab === 'evidence' && 'Structured Evidence'}
@@ -308,33 +299,33 @@ export default function NodeDetailDrawer({
               <textarea
                 value={node.description}
                 onChange={(e) => updateField('description', e.target.value)}
-                className="w-full text-xs text-zinc-300 bg-zinc-900/50 border border-zinc-800 rounded p-2.5 focus:outline-none focus:border-zinc-700 min-h-16 resize-y"
+                className="phantom-field min-h-16 resize-y"
               />
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-1.5">
                 <label className="text-xs font-mono text-purple-400 uppercase">Command Template</label>
-                <span className="text-[10px] text-zinc-500 font-mono">Accepts variables</span>
+                <span className="text-[10px] font-mono text-muted-foreground">Accepts variables</span>
               </div>
               <textarea
                 value={node.commandTemplate}
                 onChange={(e) => updateField('commandTemplate', e.target.value)}
-                className="w-full font-mono text-xs text-pink-400 bg-slate-950 border border-zinc-800 rounded p-2.5 focus:outline-none focus:border-zinc-700 min-h-20"
+                className="phantom-field min-h-20 font-mono text-pink-600 dark:text-pink-400"
               />
             </div>
 
             {/* Local custom parameters overrides */}
             <div>
               <label className="block text-xs font-mono text-purple-400 uppercase mb-2">Local Overrides</label>
-              <div className="space-y-2 bg-zinc-950/40 p-3 rounded border border-zinc-900">
+              <div className="phantom-panel-card space-y-2">
                 {Object.keys(node.customParams).length === 0 ? (
-                  <p className="text-[11px] text-zinc-600 italic font-mono">No specific parameters overridden. Using targets.</p>
+                  <p className="text-[11px] italic font-mono text-muted-foreground">No specific parameters overridden. Using targets.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(node.customParams).map(([paramName, paramVal]) => (
                       <div key={paramName} className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 font-mono mb-1">{paramName}</span>
+                        <span className="mb-1 text-[10px] font-mono text-muted-foreground">{paramName}</span>
                         <input
                           type="text"
                           value={paramVal}
@@ -342,14 +333,14 @@ export default function NodeDetailDrawer({
                             const newParams = { ...node.customParams, [paramName]: e.target.value };
                             updateField('customParams', newParams);
                           }}
-                          className="font-mono text-xs bg-zinc-900 border border-zinc-800 rounded px-2 py-1 focus:outline-none focus:border-zinc-700"
+                          className="phantom-field font-mono"
                         />
                       </div>
                     ))}
                   </div>
                 )}
                 {/* Simple parameter adder */}
-                <div className="mt-3 pt-3 border-t border-zinc-800/80 flex items-center space-x-2">
+                <div className="mt-3 flex items-center space-x-2 border-t border-border pt-3">
                   <select
                     id="param-adder"
                     onChange={(e) => {
@@ -358,7 +349,7 @@ export default function NodeDetailDrawer({
                       updateField('customParams', newParams);
                       e.target.value = '';
                     }}
-                    className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] font-mono text-zinc-300 focus:outline-none"
+                    className="phantom-field font-mono text-[11px]"
                   >
                     <option value="">+ Add variable overrides</option>
                     <option value="$PORT">$PORT (Port)</option>
@@ -374,14 +365,14 @@ export default function NodeDetailDrawer({
             </div>
 
             {/* Compiled Command Preview */}
-            <div className="pt-3 border-t border-zinc-900">
-              <label className="block text-xs font-mono text-purple-400 uppercase mb-2">Substituted Preview (Ready to copy)</label>
-              <div className="relative group bg-zinc-950 border border-zinc-800 rounded-md p-3.5 flex flex-col font-mono text-xs text-zinc-100 overflow-x-auto">
-                <span className="text-zinc-400 pr-10 whitespace-pre-wrap select-all">{renderedCommand}</span>
+            <div className="border-t border-border pt-3">
+              <label className="mb-2 block text-xs font-mono uppercase text-purple-600 dark:text-purple-400">Substituted Preview (Ready to copy)</label>
+              <div className="phantom-code-block group flex flex-col">
+                <span className="whitespace-pre-wrap pr-10 text-slate-200 select-all">{renderedCommand}</span>
                 <button
                   id={`btn-copy-command`}
                   onClick={handleCopy}
-                  className="absolute right-2 top-2 p-1.5 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition flex items-center space-x-1 cursor-pointer"
+                  className="absolute right-2 top-2 flex cursor-pointer items-center space-x-1 rounded border border-border bg-card/90 p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   title="Copy command to clipboard"
                 >
                   {copied ? (
@@ -408,7 +399,7 @@ export default function NodeDetailDrawer({
             </button>
 
             {explanation && (
-              <div className="bg-zinc-900/60 border border-zinc-800 rounded p-4 text-[11px] leading-relaxed font-sans space-y-2 whitespace-pre-wrap max-h-60 overflow-y-auto mt-2 text-zinc-300">
+              <div className="phantom-panel-card mt-2 max-h-60 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed">
                 {explanation}
               </div>
             )}
@@ -423,7 +414,7 @@ export default function NodeDetailDrawer({
                 <ShieldAlert className="h-4 w-4 text-emerald-400" />
                 <span className="text-xs font-mono text-emerald-400 uppercase font-semibold">Active Evidence Cabinet</span>
               </div>
-              <p className="text-[10px] text-zinc-400 font-sans">
+              <p className="text-[10px] font-sans text-muted-foreground">
                 Gather structural context. Discovered information propagates to rules and subsequent recommendations.
               </p>
             </div>
@@ -439,7 +430,7 @@ export default function NodeDetailDrawer({
                   const ports = e.target.value.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
                   updateEvidenceField('open_ports', ports);
                 }}
-                className="w-full text-xs font-mono bg-zinc-900 border border-zinc-800 rounded px-2.5 py-2 focus:outline-none focus:border-zinc-700"
+                className="phantom-field font-mono"
               />
             </div>
 
@@ -454,7 +445,7 @@ export default function NodeDetailDrawer({
                   const services = e.target.value.split(',').map(s => s.trim().toLowerCase()).filter(s => s !== '');
                   updateEvidenceField('services', services);
                 }}
-                className="w-full text-xs font-mono bg-zinc-900 border border-zinc-800 rounded px-2.5 py-2 focus:outline-none focus:border-zinc-700"
+                className="phantom-field font-mono"
               />
             </div>
 
@@ -465,7 +456,7 @@ export default function NodeDetailDrawer({
                 placeholder="Detail technical findings... e.g. Apache server version 2.4 discovered"
                 value={node.evidenceProduced.findings || ''}
                 onChange={(e) => updateEvidenceField('findings', e.target.value)}
-                className="w-full text-xs text-zinc-300 bg-zinc-900/50 border border-zinc-800 rounded p-2.5 focus:outline-none focus:border-zinc-700 min-h-24"
+                className="phantom-field min-h-24 resize-y"
               />
             </div>
 
@@ -485,9 +476,9 @@ export default function NodeDetailDrawer({
                   + Add row
                 </button>
               </div>
-              <div className="space-y-2 max-h-40 overflow-y-auto bg-zinc-950 p-2.5 rounded border border-zinc-800">
+              <div className="phantom-panel-card max-h-40 space-y-2 overflow-y-auto p-2.5">
                 {(node.evidenceProduced.credentials || []).length === 0 ? (
-                  <p className="text-[10px] font-mono text-zinc-600 text-center italic py-2">No credentials harvested on this node yet.</p>
+                  <p className="py-2 text-center text-[10px] italic font-mono text-muted-foreground">No credentials harvested on this node yet.</p>
                 ) : (
                   (node.evidenceProduced.credentials || []).map((cred, idx) => (
                     <div key={idx} className="flex gap-1.5 items-center">
@@ -500,7 +491,7 @@ export default function NodeDetailDrawer({
                           updated[idx] = { ...updated[idx], username: e.target.value };
                           updateEvidenceField('credentials', updated);
                         }}
-                        className="text-[11px] bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-zinc-200 focus:outline-none focus:border-zinc-700 font-mono w-1/3"
+                        className="phantom-field w-1/3 py-0.5 text-[11px] font-mono"
                       />
                       <input
                         type="text"
@@ -511,7 +502,7 @@ export default function NodeDetailDrawer({
                           updated[idx] = { ...updated[idx], password: e.target.value };
                           updateEvidenceField('credentials', updated);
                         }}
-                        className="text-[11px] bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-zinc-200 focus:outline-none focus:border-zinc-700 font-mono w-1/3"
+                        className="phantom-field w-1/3 py-0.5 text-[11px] font-mono"
                       />
                       <input
                         type="text"
@@ -522,7 +513,7 @@ export default function NodeDetailDrawer({
                           updated[idx] = { ...updated[idx], service: e.target.value };
                           updateEvidenceField('credentials', updated);
                         }}
-                        className="text-[11px] bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-zinc-200 focus:outline-none focus:border-zinc-700 font-mono w-1/4"
+                        className="phantom-field w-1/4 py-0.5 text-[11px] font-mono"
                       />
                       <button
                         id={`btn-del-cred-${idx}`}
@@ -550,7 +541,7 @@ export default function NodeDetailDrawer({
                   const urls = e.target.value.split('\n').map(u => u.trim()).filter(u => u !== '');
                   updateEvidenceField('extracted_urls', urls);
                 }}
-                className="w-full text-xs font-mono bg-zinc-900 border border-zinc-800 rounded p-2 focus:outline-none focus:border-zinc-700 min-h-16"
+                className="phantom-field min-h-16 font-mono"
               />
             </div>
           </div>
@@ -564,7 +555,7 @@ export default function NodeDetailDrawer({
                 <Cpu className="h-4 w-4 text-purple-400 animate-pulse" />
                 <span className="text-xs font-mono text-purple-300 uppercase font-semibold">Terminal Dump AI Cognitive Parser</span>
               </div>
-              <p className="text-[10px] text-zinc-400 font-sans">
+              <p className="text-[10px] font-sans text-muted-foreground">
                 Paste any raw offensive terminal scan, directory dump, or tool output. The Gemini AI engine will parse this log, automatically structure open ports, services, credentials, and notes, and update your node state directly with high fidelity!
               </p>
             </div>
@@ -575,7 +566,7 @@ export default function NodeDetailDrawer({
                 placeholder="Example: Paste raw 'nmap -sV $TARGET' console output or active shell outputs..."
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                className="w-full font-mono text-[10px] text-purple-200 bg-slate-950 border border-purple-950 rounded p-2.5 focus:outline-none focus:border-purple-800 min-h-64 resize-y"
+                className="phantom-field min-h-64 resize-y font-mono text-[10px] text-purple-700 dark:text-purple-200"
               />
             </div>
 
@@ -594,19 +585,19 @@ export default function NodeDetailDrawer({
       </div>
 
       {/* Drawer Footer Actions */}
-      <div className="p-4 border-t border-zinc-800 bg-zinc-950/80 flex items-center justify-between">
+      <div className="phantom-drawer-footer">
         <button
           id={`btn-delete-node`}
           onClick={() => {
             onDeleteNode(node.id);
           }}
-          className="flex items-center space-x-1 px-3 py-1.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition text-[11px] font-mono cursor-pointer"
+          className="flex cursor-pointer items-center space-x-1 rounded border border-rose-500/30 px-3 py-1.5 text-[11px] font-mono text-rose-600 transition hover:bg-rose-500/10 dark:text-rose-400"
         >
           <Trash2 className="h-3.5 w-3.5" />
           <span>Delete Node</span>
         </button>
 
-        <span className="text-[9px] font-mono text-zinc-600">
+        <span className="text-[9px] font-mono text-muted-foreground">
           Last updated: {node.updatedAt ? new Date(node.updatedAt).toLocaleTimeString() : 'n/a'}
         </span>
       </div>
