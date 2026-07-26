@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Map, Server, Table2, ShieldCheck, Database, KeyRound, Radio } from 'lucide-react';
+import { Loader2, Map, Server, Table2, ShieldCheck, Database, KeyRound, Radio, Cpu } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AssetsScanTargetsPanel } from '@/components/assets-scan-targets-panel';
 import { AssetsSourceGrid } from '@/components/assets-source-grid';
@@ -16,6 +16,7 @@ import { useUiT } from '@/lib/use-ui-locale';
 type ViewMode =
   | 'host_inventory'
   | 'app_inventory'
+  | 'enterprise_devices'
   | 'access_inventory'
   | 'scan-targets'
   | 'external_recon'
@@ -57,7 +58,7 @@ export function AssetsPanel() {
           Gestor de Activos y Accesos
         </h1>
         <p className="type-body text-muted-foreground mt-2 max-w-3xl">
-          Administra el inventario de hosts, aplicaciones y credenciales seguras (Vault) del engagement, integrando hallazgos desde escaneos automáticos y recolección manual.
+          Administra el inventario de hosts, aplicaciones, dispositivos médicos/IoT (Enterprise Devices) y credenciales seguras (Vault) del engagement, integrando hallazgos desde escaneos automáticos y recolección manual.
         </p>
       </div>
 
@@ -80,6 +81,7 @@ export function AssetsPanel() {
                 {[
                   { id: 'host_inventory', label: 'Host Inventory', icon: Server },
                   { id: 'app_inventory', label: 'Apps Inventory', icon: Database },
+                  { id: 'enterprise_devices', label: 'Enterprise Devices (Dispositivos Médicos / IoT / OT)', icon: Cpu },
                   { id: 'access_inventory', label: 'Access Inventory (Vault)', icon: KeyRound },
                   { id: 'scan-targets', label: t('assetsTabFromScans'), icon: ShieldCheck },
                 ].map((tab) => {
@@ -121,7 +123,7 @@ export function AssetsPanel() {
                     type="button"
                     onClick={() => onSelectView(tab.id as ViewMode)}
                     className={[
-                      'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all hover:bg-muted/40 cursor-pointer',
+                      'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all hover:bg-muted/40 cursor-pointer',
                       view === tab.id
                         ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 shadow-sm'
                         : 'border-border text-muted-foreground hover:text-foreground',
@@ -134,8 +136,8 @@ export function AssetsPanel() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-border/20 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-muted-foreground font-medium">{t('assetsProjectLabel')}</span>
+          <div className="flex items-center gap-2 pt-2 border-t border-border/40 text-xs">
+            <span className="text-muted-foreground font-medium">Proyecto / Scope del Engagement:</span>
             {loadingEng ? (
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
             ) : (
@@ -174,9 +176,11 @@ export function AssetsPanel() {
                     ? 'Host Inventory'
                     : view === 'app_inventory'
                       ? 'Apps Inventory'
-                      : view === 'access_inventory'
-                        ? 'Access Inventory (Vault Cifrado)'
-                        : assetSourceLabel(view as AssetSourceType, uiLanguage)}
+                      : view === 'enterprise_devices'
+                        ? 'Enterprise Devices Inventory (Dispositivos Médicos / IoT / OT / Baxter)'
+                        : view === 'access_inventory'
+                          ? 'Access Inventory (Vault Cifrado)'
+                          : assetSourceLabel(view as AssetSourceType, uiLanguage)}
               </CardTitle>
               <CardDescription>
                 {view === 'scan-targets'
@@ -187,9 +191,11 @@ export function AssetsPanel() {
                       ? 'Edición y control del inventario de hosts, servidores e infraestructura.'
                       : view === 'app_inventory'
                         ? 'Edición y control de aplicaciones web, portales, APIs y servicios lógicos.'
-                        : showTargetMap && displayMode === 'map'
-                          ? t('assetsTargetMapCardDesc')
-                          : t('assetsGridCardDesc')}
+                        : view === 'enterprise_devices'
+                          ? 'Edición y control del inventario especializado de dispositivos médicos (Baxter, infusion pumps), sensores IoT, sistemas OT y hardware industrial.'
+                          : showTargetMap && displayMode === 'map'
+                            ? t('assetsTargetMapCardDesc')
+                            : t('assetsGridCardDesc')}
               </CardDescription>
             </div>
             {showTargetMap ? (
@@ -244,6 +250,13 @@ export function AssetsPanel() {
               key={`app-${engagementId || 'global'}-${gridReload}`}
               sourceType="inventory"
               subType="app"
+              engagementId={engagementId || null}
+            />
+          ) : view === 'enterprise_devices' ? (
+            <AssetsSourceGrid
+              key={`enterprise-${engagementId || 'global'}-${gridReload}`}
+              sourceType="inventory"
+              subType="enterprise_device"
               engagementId={engagementId || null}
             />
           ) : showTargetMap && displayMode === 'map' ? (

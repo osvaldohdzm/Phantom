@@ -19,6 +19,7 @@ import {
   Layers,
   Save,
   CheckCircle2,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -34,134 +35,94 @@ import { MarkmapMarkdownView } from '@/components/phantom/methodologies/MarkmapM
 import { MarkmapMindmapView } from '@/components/phantom/methodologies/MarkmapMindmapView';
 import { PhantomAiBubble } from '@/components/phantom/methodologies/PhantomAiBubble';
 
-// Pre-seeded sample methodologies catalog
 const SEED_METHODOLOGIES: Methodology[] = [
-  {
-    id: 'meth-ad-2026',
-    title: 'Active Directory & Internal Infrastructure Pentest',
-    code: 'AD-POL-01',
-    description: 'Metodología estructurada para auditorías internas de infraestructura y Active Directory (Recon, Kerberos, SMB, Pivoting).',
-    category: 'Infrastructure & AD',
-    tags: ['attacker', 'domain', 'target', 'ad', 'smb'],
-    createdAt: '2026-07-01',
-    updatedAt: '2026-07-25',
-    nodes: [
-      {
-        id: 'node-att-1',
-        parentId: null,
-        title: 'ATTACKER (Kali Linux Workstation)',
-        kind: 'attacker',
-        status: 'in-progress',
-        expanded: true,
-        depth: 0,
-        description: 'Equipo atacante / Kali Linux Workstation.',
-        variables: { LHOST: '10.10.14.5', LPORT: '4444' },
-      },
-      {
-        id: 'node-me-1',
-        parentId: 'node-att-1',
-        title: 'AD & Internal Security Methodology',
-        kind: 'methodology',
-        status: 'in-progress',
-        expanded: true,
-        depth: 1,
-      },
-      {
-        id: 'node-ph-1',
-        parentId: 'node-me-1',
-        title: 'Fase 1: Reconocimiento y Descubrimiento',
-        kind: 'phase',
-        status: 'in-progress',
-        expanded: true,
-        depth: 2,
-      },
-      {
-        id: 'node-tac-1',
-        parentId: 'node-ph-1',
-        title: 'Táctica: Enumeración SMB & Null Session',
-        kind: 'tactic',
-        status: 'done',
-        expanded: true,
-        depth: 3,
-      },
-      {
-        id: 'node-co-1',
-        parentId: 'node-tac-1',
-        title: "crackmapexec smb {RHOST} -u '' -p ''",
-        kind: 'command',
-        status: 'done',
-        expanded: true,
-        depth: 4,
-      },
-      {
-        id: 'node-dom-1',
-        parentId: null,
-        title: 'DOMAIN: baxter.local',
-        kind: 'domain',
-        status: 'in-progress',
-        expanded: true,
-        depth: 0,
-        description: 'Dominio corporativo alcanzado.',
-        variables: { DOMAIN: 'baxter.local' },
-      },
-      {
-        id: 'node-tgt-1',
-        parentId: null,
-        title: 'TARGET: Domain Controller DC-01 (192.168.0.112)',
-        kind: 'target',
-        status: 'in-progress',
-        expanded: true,
-        depth: 0,
-        variables: { RHOST: '192.168.0.112' },
-      },
-    ],
-  },
   {
     id: 'meth-owasp-web',
     title: 'OWASP Web Application Security Assessment',
     code: 'WEB-OWASP-02',
-    description: 'Metodología completa basada en OWASP Top 10 para pruebas de penetración web (SQLi, XSS, SSRF, Auth Bypass).',
+    description: 'Metodología estructurada de evaluación de seguridad web basada en el estándar OWASP WSTG v4.2.',
     category: 'Web Applications (OWASP)',
-    tags: ['attacker', 'domain', 'target', 'web', 'owasp'],
+    tags: ['target', 'attacker', 'methodology', 'web', 'owasp'],
     createdAt: '2026-07-05',
     updatedAt: '2026-07-20',
     nodes: [
       {
+        id: 'web-tgt-1',
+        parentId: null,
+        title: 'Entorno Cliente (Infraestructura Objetivo)',
+        kind: 'target',
+        status: 'in-progress',
+        expanded: true,
+        depth: 0,
+        description: 'Superficie de ataque y activos expuestos del cliente.',
+      },
+      {
+        id: 'web-dom-1',
+        parentId: 'web-tgt-1',
+        title: 'empresa.com',
+        kind: 'domain',
+        status: 'in-progress',
+        expanded: true,
+        depth: 1,
+        variables: { DOMAIN: 'empresa.com' },
+      },
+      {
+        id: 'web-asset-1',
+        parentId: 'web-dom-1',
+        title: 'Portal Web HTTPS (app.empresa.com)',
+        kind: 'asset',
+        status: 'in-progress',
+        expanded: true,
+        depth: 2,
+        variables: { TARGET_URL: 'https://app.empresa.com' },
+      },
+      {
         id: 'web-att-1',
         parentId: null,
-        title: 'ATTACKER (BurpSuite Proxy)',
+        title: 'Infraestructura Ofensiva (Red Team / Auditor)',
         kind: 'attacker',
         status: 'in-progress',
         expanded: true,
         depth: 0,
-        variables: { PROXY: '127.0.0.1:8080' },
+        description: 'Ecosistema de herramientas e IPs ofensivas del auditor.',
       },
       {
-        id: 'web-me-1',
+        id: 'web-node-1',
         parentId: 'web-att-1',
-        title: 'Metodología OWASP Testing Guide v4',
-        kind: 'methodology',
+        title: 'BurpSuite Proxy & Kali Linux (VPN: 10.10.0.55)',
+        kind: 'node',
         status: 'in-progress',
         expanded: true,
         depth: 1,
+        variables: { ATTACKER_IP: '10.10.0.55', PROXY: '127.0.0.1:8080' },
+      },
+      {
+        id: 'web-me-1',
+        parentId: null,
+        title: 'OWASP Testing Guide v4.2 Framework',
+        kind: 'methodology',
+        status: 'in-progress',
+        expanded: true,
+        depth: 0,
+        description: 'Marco sistemático de fases, tácticas y comandos de auditoría.',
       },
       {
         id: 'web-ph-1',
         parentId: 'web-me-1',
-        title: 'Fase 1: Reconocimiento y Endpoint Fuzzing',
+        title: 'Fase 1: Reconocimiento y Descubrimiento de Contenido',
         kind: 'phase',
         status: 'done',
         expanded: true,
-        depth: 2,
+        depth: 1,
       },
       {
         id: 'web-tac-1',
         parentId: 'web-ph-1',
-        title: 'Táctica: Content Discovery & Hidden Files',
+        title: 'Content Discovery & Endpoint Fuzzing',
         kind: 'tactic',
         status: 'done',
         expanded: true,
-        depth: 3,
+        depth: 2,
       },
       {
         id: 'web-co-1',
@@ -170,27 +131,85 @@ const SEED_METHODOLOGIES: Methodology[] = [
         kind: 'command',
         status: 'done',
         expanded: true,
-        depth: 4,
+        depth: 3,
       },
+    ],
+  },
+  {
+    id: 'meth-ad-2026',
+    title: 'Active Directory & Internal Infrastructure Pentest',
+    code: 'AD-POL-01',
+    description: 'Metodología estructurada para auditorías internas de infraestructura y Active Directory (Recon, Kerberos, SMB, Pivoting).',
+    category: 'Infrastructure & AD',
+    tags: ['target', 'attacker', 'methodology', 'ad', 'smb'],
+    createdAt: '2026-07-01',
+    updatedAt: '2026-07-25',
+    nodes: [
       {
-        id: 'web-dom-1',
+        id: 'node-tgt-1',
         parentId: null,
-        title: 'DOMAIN: empresa.com',
-        kind: 'domain',
-        status: 'in-progress',
-        expanded: true,
-        depth: 0,
-        variables: { DOMAIN: 'empresa.com' },
-      },
-      {
-        id: 'web-tgt-1',
-        parentId: null,
-        title: 'TARGET: Portal Web HTTPS (app.empresa.com)',
+        title: 'Dominio Interno Corporativo',
         kind: 'target',
         status: 'in-progress',
         expanded: true,
         depth: 0,
-        variables: { TARGET_URL: 'https://app.empresa.com' },
+      },
+      {
+        id: 'node-dom-1',
+        parentId: 'node-tgt-1',
+        title: 'baxter.local',
+        kind: 'domain',
+        status: 'in-progress',
+        expanded: true,
+        depth: 1,
+        variables: { DOMAIN: 'baxter.local' },
+      },
+      {
+        id: 'node-asset-1',
+        parentId: 'node-dom-1',
+        title: 'Domain Controller DC-01 (192.168.0.112)',
+        kind: 'asset',
+        status: 'in-progress',
+        expanded: true,
+        depth: 2,
+        variables: { RHOST: '192.168.0.112' },
+      },
+      {
+        id: 'node-att-1',
+        parentId: null,
+        title: 'Kali Workstation (LHOST: 10.10.14.5)',
+        kind: 'attacker',
+        status: 'in-progress',
+        expanded: true,
+        depth: 0,
+        variables: { LHOST: '10.10.14.5', LPORT: '4444' },
+      },
+      {
+        id: 'node-me-1',
+        parentId: null,
+        title: 'AD & Internal Security Methodology',
+        kind: 'methodology',
+        status: 'in-progress',
+        expanded: true,
+        depth: 0,
+      },
+      {
+        id: 'node-ph-1',
+        parentId: 'node-me-1',
+        title: 'Fase 1: Reconocimiento SMB & Null Session',
+        kind: 'phase',
+        status: 'done',
+        expanded: true,
+        depth: 1,
+      },
+      {
+        id: 'node-co-1',
+        parentId: 'node-ph-1',
+        title: "crackmapexec smb {RHOST} -u '' -p ''",
+        kind: 'command',
+        status: 'done',
+        expanded: true,
+        depth: 2,
       },
     ],
   },
@@ -355,6 +374,30 @@ export default function MethodologiesPhantomPage() {
     handleUpdateNodes(updated);
   };
 
+  const handleMergeProposedNodes = (proposedNodes: POLNode[]) => {
+    if (!activeMethodology) return;
+
+    // Filter out duplicates by title
+    const existingTitles = new Set(activeMethodology.nodes.map((n) => n.title.toLowerCase().trim()));
+    const newUniqueNodes = proposedNodes.filter((n) => !existingTitles.has(n.title.toLowerCase().trim()));
+
+    if (newUniqueNodes.length === 0) return;
+
+    const mergedNodes = [...activeMethodology.nodes, ...newUniqueNodes];
+    handleUpdateNodes(mergedNodes);
+
+    // Trigger save indicator toast
+    const toast = document.getElementById('save-toast-indicator');
+    if (toast) {
+      toast.innerText = `+${newUniqueNodes.length} Nodos Integrados`;
+      toast.classList.remove('opacity-0');
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+        toast.innerText = 'Guardado';
+      }, 3000);
+    }
+  };
+
   // Build lightweight context (< 200 tokens) for Phantom AI Assistant
   const activeNodeObj = activeMethodology?.nodes.find((n) => n.id === activeNodeId);
   const aiContext: PhantomAiContext = {
@@ -405,17 +448,51 @@ export default function MethodologiesPhantomPage() {
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.2 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/30 uppercase font-bold">
                     {activeMethodology.code}
                   </span>
-                  <h2 className="text-sm font-bold text-foreground leading-tight">
+                  <h2 className="text-sm font-bold text-foreground truncate max-w-xs md:max-w-md">
                     {activeMethodology.title}
                   </h2>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
-                  {activeMethodology.nodes.length} nodos | Guardado automáticamente {lastSavedTime}
-                </p>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {activeMethodology.nodes.length} nodos • Sincronización 3-Vistas
+                </span>
               </div>
+
+              {/* Explicit Save Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('phantom_methodologies_catalog', JSON.stringify(methodologies));
+                    setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                    const toast = document.getElementById('save-toast-indicator');
+                    if (toast) {
+                      toast.classList.remove('opacity-0');
+                      toast.classList.add('opacity-100');
+                      setTimeout(() => {
+                        toast.classList.remove('opacity-100');
+                        toast.classList.add('opacity-0');
+                      }, 2500);
+                    }
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shrink-0 hover:scale-[1.02]"
+                title="Guardar metodología inmediatamente"
+              >
+                <Save className="size-3.5" />
+                <span>Guardar</span>
+              </button>
+
+              {/* Toast Indicator */}
+              <span
+                id="save-toast-indicator"
+                className="opacity-0 transition-opacity duration-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1"
+              >
+                <Check className="size-3" />
+                Guardado
+              </span>
             </div>
 
             {/* View Mode Tabs Switcher */}
@@ -479,6 +556,7 @@ export default function MethodologiesPhantomPage() {
               <MarkmapMarkdownView
                 methodology={activeMethodology}
                 nodes={activeMethodology.nodes}
+                onUpdateNodes={handleUpdateNodes}
               />
             )}
 
@@ -498,6 +576,7 @@ export default function MethodologiesPhantomPage() {
       <PhantomAiBubble
         context={aiContext}
         onApplyCommandToActiveNode={handleApplyCommandToActiveNode}
+        onMergeProposedNodes={handleMergeProposedNodes}
       />
     </div>
   );

@@ -16,6 +16,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.catalog_sql import catalog_table
 from app.services.vulns_catalog_schema import invalidate_vulns_catalog_schema_cache
 
 CATALOG_DIR = Path(__file__).resolve().parents[2] / "catalog"
@@ -143,6 +144,11 @@ def bundled_is_newer(installed_version: str, bundled_version: str) -> bool:
     if not installed_version or installed_version in ("unknown", "0", "0.0.0"):
         return True
     return _version_key(bundled_version) > _version_key(installed_version)
+
+
+def _is_sqlite_mode() -> bool:
+    from app.config import settings
+    return settings.is_sqlite
 
 
 def ensure_catalog_meta_table(db: Session) -> None:

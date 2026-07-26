@@ -27,7 +27,7 @@ import { useUiT } from '@/lib/use-ui-locale';
 type Props = {
   sourceType: AssetSourceType;
   engagementId?: string | null;
-  subType?: 'host' | 'app';
+  subType?: 'host' | 'app' | 'enterprise_device';
 };
 
 function remapRows(rows: AssetGridRow[], columns: AssetGridColumn[]): AssetGridRow[] {
@@ -51,6 +51,13 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [gridVersion, setGridVersion] = useState(0);
 
+  const defaultAssetTypeValue =
+    subType === 'app'
+      ? 'App'
+      : subType === 'enterprise_device'
+        ? 'Enterprise Device / Dispositivo Médico'
+        : 'Host';
+
   useEffect(() => {
     const loaded = loadColumnLayout(sourceType, baseColumns);
     setColumns(loaded);
@@ -58,11 +65,11 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
     if (sourceType === 'inventory' && subType) {
       const assetTypeCol = loaded.find((c) => c.topLevel === 'asset_type');
       if (assetTypeCol) {
-        initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+        initRow[assetTypeCol.key] = defaultAssetTypeValue;
       }
     }
     setRows([initRow]);
-  }, [sourceType, baseColumns, subType]);
+  }, [sourceType, baseColumns, subType, defaultAssetTypeValue]);
 
   const updateColumns = useCallback(
     (next: AssetGridColumn[]) => {
@@ -88,12 +95,38 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
         if (subType === 'host') {
           filteredAssets = assets.filter((a) => {
             const t = (a.asset_type || '').toLowerCase();
-            return t !== 'app' && t !== 'webapp' && t !== 'web_app' && t !== 'web app' && t !== 'api';
+            return (
+              t !== 'app' &&
+              t !== 'webapp' &&
+              t !== 'web_app' &&
+              t !== 'web app' &&
+              t !== 'api' &&
+              !t.includes('device') &&
+              !t.includes('médico') &&
+              !t.includes('medico') &&
+              !t.includes('iot') &&
+              !t.includes('ot') &&
+              !t.includes('baxter')
+            );
           });
         } else if (subType === 'app') {
           filteredAssets = assets.filter((a) => {
             const t = (a.asset_type || '').toLowerCase();
             return t === 'app' || t === 'webapp' || t === 'web_app' || t === 'web app' || t === 'api';
+          });
+        } else if (subType === 'enterprise_device') {
+          filteredAssets = assets.filter((a) => {
+            const t = (a.asset_type || '').toLowerCase();
+            return (
+              t.includes('device') ||
+              t.includes('médico') ||
+              t.includes('medico') ||
+              t.includes('iot') ||
+              t.includes('ot') ||
+              t.includes('baxter') ||
+              t.includes('enterprise') ||
+              t.includes('equipo')
+            );
           });
         }
       }
@@ -103,7 +136,7 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
       if (sourceType === 'inventory' && subType) {
         const assetTypeCol = columns.find((c) => c.topLevel === 'asset_type');
         if (assetTypeCol) {
-          initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+          initRow[assetTypeCol.key] = defaultAssetTypeValue;
         }
       }
       setRows(gridRows.length ? gridRows : [initRow]);
@@ -113,14 +146,14 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
       if (sourceType === 'inventory' && subType) {
         const assetTypeCol = columns.find((c) => c.topLevel === 'asset_type');
         if (assetTypeCol) {
-          initRow[assetTypeCol.key] = subType === 'app' ? 'App' : 'Host';
+          initRow[assetTypeCol.key] = defaultAssetTypeValue;
         }
       }
       setRows([initRow]);
     } finally {
       setLoading(false);
     }
-  }, [columns, engagementId, sourceType, subType, t]);
+  }, [columns, engagementId, sourceType, subType, t, defaultAssetTypeValue]);
 
   useEffect(() => {
     void load();
@@ -131,7 +164,7 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
       const payload = gridRowToAssetPayload(row, columns, sourceType, engagementId);
       if (sourceType === 'inventory' && subType) {
         if (!payload.asset_type) {
-          payload.asset_type = subType === 'app' ? 'App' : 'Host';
+          payload.asset_type = defaultAssetTypeValue;
         }
       }
       return payload;

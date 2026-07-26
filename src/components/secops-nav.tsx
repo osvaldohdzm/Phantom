@@ -43,6 +43,7 @@ type NavItem = {
   roles?: UserRole[];
   adminOnly?: boolean;
   isCatalog?: boolean;
+  isTool?: boolean;
 };
 
 const nav: NavItem[] = [
@@ -58,10 +59,11 @@ const nav: NavItem[] = [
   { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield, isCatalog: true },
   { href: '/evaluaciones-catalogo', labelKey: 'navEvaluationsCatalog', icon: ClipboardList, isCatalog: true },
   { href: '/vul-catalog', labelKey: 'navBaseCatalog', icon: Database, isCatalog: true },
-  // Tools & agents
-  { href: '/tools/methodologies-phantom', labelKey: 'navMethodologiesPhantom', icon: FolderTree },
+  // Tools sub-menu items
+  { href: '/tools/methodologies-phantom', labelKey: 'navMethodologiesPhantom', icon: FolderTree, isTool: true },
+  { href: '/tools', labelKey: 'navTools', icon: Wrench, isTool: true },
+  // Admin & Portal items
   { href: '/agents', labelKey: 'navAgents', icon: Bot, adminOnly: true },
-  { href: '/tools', labelKey: 'navTools', icon: Wrench },
   { href: '/portal?editor=true', labelKey: 'navClientPortalEditor', icon: Sliders, adminOnly: true },
   { href: '/admin', labelKey: 'navAdministration', icon: Settings, adminOnly: true },
 ];
@@ -102,9 +104,11 @@ function SecOpsSidebarNavInner() {
   const { t } = useUiT();
   const items = visibleNav(role);
 
-  const mainItems = items.filter((item) => !item.isCatalog);
+  const mainItems = items.filter((item) => !item.isCatalog && !item.isTool);
   const catalogItems = items.filter((item) => item.isCatalog);
-  const afterHrefs = ['/agents', '/tools', '/portal?editor=true', '/admin'];
+  const toolItems = items.filter((item) => item.isTool);
+  const afterHrefs = ['/agents', '/portal?editor=true', '/admin'];
+
   const itemsBeforeCatalog = mainItems.filter((item) => !afterHrefs.includes(item.href));
   const itemsAfterCatalog = mainItems.filter((item) => afterHrefs.includes(item.href));
 
@@ -116,12 +120,25 @@ function SecOpsSidebarNavInner() {
 
   const [isCatalogsOpen, setIsCatalogsOpen] = useState(isCatalogRouteActive);
 
-  // Auto-expand if the route changes to a catalog
+  // Determine if any tools route is active to auto-expand it
+  const isToolRouteActive = toolItems.some((item) => {
+    if (!pathname) return false;
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  });
+
+  const [isToolsOpen, setIsToolsOpen] = useState(isToolRouteActive);
+
   useEffect(() => {
     if (isCatalogRouteActive) {
       setIsCatalogsOpen(true);
     }
   }, [isCatalogRouteActive]);
+
+  useEffect(() => {
+    if (isToolRouteActive) {
+      setIsToolsOpen(true);
+    }
+  }, [isToolRouteActive]);
 
   const renderLink = (href: string, labelKey: SecOpsNavLabelKey, Icon: any, isSubItem = false) => {
     const active = isActive(pathname, search, href, items);
@@ -179,7 +196,35 @@ function SecOpsSidebarNavInner() {
         </div>
       )}
 
-      {/* 3. Main navigation after Catalogs */}
+      {/* 3. Tools colapsable sub-menu */}
+      {toolItems.length > 0 && (
+        <div className="space-y-0.5">
+          <button
+            type="button"
+            onClick={() => setIsToolsOpen(!isToolsOpen)}
+            className={cn(
+              'w-full flex items-center gap-2.5 rounded-xl px-3 min-h-11 text-sm font-medium transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-none select-none',
+              isToolRouteActive && 'text-foreground font-semibold'
+            )}
+          >
+            <Wrench className="size-[1.125rem] shrink-0 text-muted-foreground/80" />
+            <span className="flex-1 text-left leading-snug">{t('navTools')}</span>
+            <ChevronRight className={cn(
+              'size-3.5 text-muted-foreground/60 shrink-0 transition-transform duration-300 ease-out',
+              isToolsOpen && 'rotate-90 text-primary'
+            )} />
+          </button>
+
+          <div className={cn(
+            'pl-0.5 border-l border-border/20 ml-[1.125rem] transition-all duration-300 ease-in-out overflow-hidden space-y-0.5',
+            isToolsOpen ? 'opacity-100 max-h-60 py-1' : 'opacity-0 max-h-0 pointer-events-none'
+          )}>
+            {toolItems.map((item) => renderLink(item.href, item.labelKey, item.icon, true))}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Main navigation after Tools */}
       {itemsAfterCatalog.map((item) => renderLink(item.href, item.labelKey, item.icon))}
     </nav>
   );
@@ -206,7 +251,7 @@ function shortMobileLabel(label: string) {
   if (label === 'Compliance') return 'Comp.';
   if (label === 'Servicio de vulnes') return 'Vulnes';
   if (label === 'Reportes Word') return 'Reportes';
-  if (label === 'Phantom Modeling') return 'Phantom';
+  if (label === 'Methodologies Phantom') return 'Phantom';
   return label;
 }
 

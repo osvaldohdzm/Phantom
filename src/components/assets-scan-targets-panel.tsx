@@ -24,6 +24,7 @@ type AssetsScanTargetsPanelProps = {
 const DEST_OPTIONS = [
   { id: 'host_inventory', label: 'Host Inventory' },
   { id: 'app_inventory', label: 'Apps Inventory' },
+  { id: 'enterprise_devices', label: 'Enterprise Devices (Dispositivos Médicos / IoT / OT / Baxter)' },
   { id: 'external_recon', label: 'External Reconnaissance' },
   { id: 'external_attack_surface', label: 'External Attack Surface' },
   { id: 'internal_recon', label: 'Internal Reconnaissance' },

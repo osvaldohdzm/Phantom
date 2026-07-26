@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type NodeKind = 
+export type NodeKind =
   // Root level core concepts
   | 'attacker'
   | 'domain'
   | 'target'
+  | 'asset'
+  | 'node'
   // Attacker & Methodology hierarchy
   | 'methodology'
   | 'playbook'
@@ -16,6 +18,8 @@ export type NodeKind =
   | 'technique'
   | 'subtechnique'
   | 'command'
+  | 'script'
+  | 'snippet'
   | 'check'
   | 'payload'
   | 'exploit'
@@ -63,7 +67,7 @@ export interface POLNode {
   payloads?: string;
 }
 
-export type MethodologyCategory = 
+export type MethodologyCategory =
   | 'Infrastructure & AD'
   | 'Web Applications (OWASP)'
   | 'Cloud Security (AWS/Azure)'
@@ -104,12 +108,14 @@ export interface PhantomAiContext {
   };
 }
 
-export const ROOT_KINDS: NodeKind[] = ['attacker', 'domain', 'target'];
+export const ROOT_KINDS: NodeKind[] = ['target', 'attacker', 'domain', 'methodology'];
 
 export const KINDS: NodeKind[] = [
+  'target',
   'attacker',
   'domain',
-  'target',
+  'asset',
+  'node',
   'methodology',
   'playbook',
   'phase',
@@ -117,6 +123,8 @@ export const KINDS: NodeKind[] = [
   'technique',
   'subtechnique',
   'command',
+  'script',
+  'snippet',
   'check',
   'payload',
   'exploit',
@@ -148,6 +156,8 @@ export const KIND_COLORS: Record<NodeKind, { bg: string; text: string; border: s
   attacker: { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/30' },
   domain: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
   target: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
+  asset: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  node: { bg: 'bg-sky-500/10', text: 'text-sky-400', border: 'border-sky-500/30' },
   methodology: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/30' },
   playbook: { bg: 'bg-fuchsia-500/10', text: 'text-fuchsia-400', border: 'border-fuchsia-500/30' },
   phase: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/30' },
@@ -155,6 +165,8 @@ export const KIND_COLORS: Record<NodeKind, { bg: string; text: string; border: s
   technique: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
   subtechnique: { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/30' },
   command: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
+  script: { bg: 'bg-emerald-600/15', text: 'text-emerald-400', border: 'border-emerald-500/40' },
+  snippet: { bg: 'bg-blue-600/15', text: 'text-blue-400', border: 'border-blue-500/40' },
   check: { bg: 'bg-green-500/10', text: 'text-green-400', border: 'border-green-500/30' },
   payload: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
   exploit: { bg: 'bg-rose-600/10', text: 'text-rose-300', border: 'border-rose-500/30' },
