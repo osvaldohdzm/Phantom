@@ -56,9 +56,22 @@ def mask_database_url(url: str) -> str:
     return url.replace(f":{raw_password}@", ":••••••@")
 
 
+import os
+
+def detect_execution_environment(host: str | None) -> str:
+    # Check for Kubernetes
+    if os.path.exists("/var/run/secrets/kubernetes.io") or os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return "kubernetes"
+    # Check for Docker
+    if os.path.exists("/.dockerenv") or os.environ.get("PHANTOM_STORAGE_ROOT") or host == "postgres" or host == "db":
+        return "docker"
+    return "local"
+
+
 def runtime_database_info() -> dict[str, Any]:
     parsed = parse_database_url(settings.database_url)
     redis_parsed = urlparse(settings.redis_url)
+    env = detect_execution_environment(parsed["host"])
     return {
         "active": True,
         "read_only": True,
@@ -83,6 +96,7 @@ def runtime_database_info() -> dict[str, Any]:
             "La conexión activa se define en backend/.env antes de arrancar. "
             "Esta pantalla no modifica tu instancia en ejecución."
         ),
+        "environment": env,
     }
 
 

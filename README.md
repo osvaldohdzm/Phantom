@@ -31,50 +31,77 @@ Eso regenera el certificado con la IP del host, abre el puerto en `ufw` si aplic
 
 Cambiar credenciales desde servidor: `./phantom change`
 
-### Comandos habituales
+## Desarrollo local & Flujo Operativo (macOS / Linux)
 
+### 1. Migración de Base de Datos Local a Docker
+Si vienes de tener PostgreSQL instalado de forma nativa en tu Mac/Linux y deseas migrar todos tus datos y esquemas a un contenedor Docker de manera profesional y persistente (con almacenamiento físico local ignorado de git en `./postgres-data`), utiliza el script automatizado:
 ```bash
-./phantom install              # preparar .env + build
-./phantom start                # levantar stack Docker
-./phantom update               # git pull + despliegue
-./phantom logs                 # ver logs
-./phantom stop                 # parar
-./phantom health               # estado web + API
+# Detiene el servicio de macOS, inicia la base en Docker y restaura los datos con pg_restore
+./migrate_db_to_docker.sh
 ```
 
-Ver todos: `./phantom help` o `make help` — detalle en [`ops/README.md`](./ops/README.md) y [`docs/architecture/repository-layout.md`](./docs/architecture/repository-layout.md).
-
+### 2. Flujo de Desarrollo Híbrido (El más rápido ⚡)
+Para evitar la reconstrucción de contenedores de Next.js (`next build`) en cada cambio, te recomendamos correr la base de datos y caché en Docker, y la aplicación de forma nativa en caliente:
 ```bash
-make start    # equivalente a ./phantom start
-make update
-```
-
-Compatible con **Podman Compose** (`podman compose up -d --build`).
-
-## Desarrollo local (macOS / Linux)
-
-```bash
-# 1. Base de datos
+# 1. Inicia solo Postgres y Redis en Docker
 docker compose up -d postgres redis
 
-# 2. Backend
-cp backend/.env.example backend/.env   # ajustar DATABASE_URL
-cd backend && python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cd ..
-
-# 3. Frontend
-npm ci
-
-# 4. Certificados TLS locales (mkcert)
-brew install mkcert && mkcert -install   # macOS
-./scripts/generate-certs.sh
-
-# 5. Arrancar
+# 2. Levanta la aplicación en caliente (Hot-Reloading activo en frontend y backend)
 ./phantom dev
 ```
+Cualquier cambio que realices en el código frontend (Next.js) o backend (FastAPI) se reflejará en **milisegundos** en tu navegador sin reconstrucciones.
 
-Producción nativa (sin Docker): `./phantom prod`
+### 3. Flujo en Docker (Producción / Pruebas completas)
+Si deseas levantar toda la arquitectura empaquetada (Web, API, Ingestor Go, Parser Rust, Postgres, Redis) en contenedores de producción local:
+```bash
+# Iniciar todo el stack en Docker (con validación de entorno)
+./start.sh   # O equivalentemente: ./phantom start
+
+# Detener todos los servicios conservando datos persistentes
+./phantom stop
+
+# Ver logs en tiempo real (puedes filtrar por servicio, ej: web, api)
+./phantom logs       # Todos los logs
+./phantom logs web   # Solo logs de la interfaz
+./phantom logs api   # Solo logs de la API
+
+# Reiniciar un servicio específico sin recompilar el resto
+./phantom restart web
+./phantom restart api
+```
+
+### 4. Diagnóstico y Depuración
+Si tienes conflictos de puertos o problemas de red en tu sistema, usa la suite de diagnóstico:
+```bash
+./phantom debug
+```
+Este comando analizará sockets ocupados, reenvíos de Docker, disponibilidad de Redis y la integridad del archivo de entorno `.env`.
+
+---
+
+## Comandos Completos del CLI (`./phantom`)
+La plataforma expone un CLI unificado para controlar todas las operaciones a través de `./phantom <comando>`:
+
+| Comando | Descripción |
+|---------|-------------|
+| `./phantom install` | Prepara el entorno `.env` y construye todas las imágenes de Docker. |
+| `./phantom start` | Levanta el stack completo de Docker en modo producción/HTTPS (`./start.sh`). |
+| `./phantom stop` | Apaga el stack completo de Docker sin eliminar datos persistentes. |
+| `./phantom restart [svc]` | Reinicia todos los contenedores o uno en específico (ej. `web`, `api`). |
+| `./phantom logs [svc]` | Muestra logs en tiempo real. Soporta filtrar por servicio individual. |
+| `./phantom health` | Realiza un chequeo de salud contra los endpoints de la API y el portal. |
+| `./phantom update` | Realiza un `git pull` automatizado, reconstruye imágenes y reinicia el stack. |
+| `./phantom dev` | Inicia el frontend y backend nativos con TLS y hot-reloading. |
+| `./phantom prod` | Inicia el backend y frontend nativos en modo producción (sin Docker). |
+| `./phantom debug` | Inicia la suite de desarrollo local con diagnóstico de puertos y servicios. |
+| `./phantom change` | Cambia las credenciales del usuario Administrador del portal. |
+| `./phantom backup` | Realiza un respaldo completo de la base de datos y archivos subidos. |
+| `./phantom clean` | Limpia archivos temporales, cachés de compilación y dumps locales. |
+| `./phantom sbom` | Genera análisis de SBOM y escaneo de vulnerabilidades de dependencias. |
+| `./phantom fix-docker` | Regenera certificados TLS para la IP del host y ajusta cortafuegos (UFW). |
+
+Ver todos los atajos en `Makefile` ejecutando `make help`. Detalle técnico en [`ops/README.md`](./ops/README.md) y [`docs/architecture/repository-layout.md`](./docs/architecture/repository-layout.md).
+
 
 ## Estructura
 

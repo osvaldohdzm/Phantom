@@ -18,6 +18,21 @@ const MODE_LABEL: Record<string, string> = {
   other: 'Otro motor',
 };
 
+const ENV_LABEL: Record<string, { label: string; class: string }> = {
+  local: {
+    label: 'Local (Mac / Linux nativo)',
+    class: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
+  },
+  docker: {
+    label: 'Contenedor Docker (Compose / Colima)',
+    class: 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300',
+  },
+  kubernetes: {
+    label: 'Kubernetes Cluster (Pod k8s)',
+    class: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-700 dark:text-indigo-300',
+  },
+};
+
 export function DatabaseConfigPanel() {
   const [runtime, setRuntime] = useState<AdminDatabaseRuntime | null>(null);
   const [profiles, setProfiles] = useState<AdminDeploymentProfile[]>([]);
@@ -97,6 +112,8 @@ export function DatabaseConfigPanel() {
 
   if (!runtime) return null;
 
+  const activeEnv = runtime.environment || 'local';
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 flex gap-3">
@@ -121,9 +138,17 @@ export function DatabaseConfigPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Database className="size-5" />
-            Conexión activa (runtime)
+          <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-lg">
+            <div className="flex items-center gap-2">
+              <Database className="size-5" />
+              Conexión activa (runtime)
+            </div>
+            {ENV_LABEL[activeEnv] ? (
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ENV_LABEL[activeEnv].class}`}>
+                <Server className="size-3" />
+                {ENV_LABEL[activeEnv].label}
+              </span>
+            ) : null}
           </CardTitle>
           <CardDescription>
             Motor en uso ahora mismo por este servidor · {MODE_LABEL[runtime.mode] ?? runtime.mode}

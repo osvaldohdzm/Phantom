@@ -1,4 +1,4 @@
-/** Shared vis-network + canvas theming for Phantom Engine maps */
+/** Shared vis-network + canvas theming for Phantom Modeling maps */
 
 export type PhantomGraphTheme = {
   canvasClass: string;

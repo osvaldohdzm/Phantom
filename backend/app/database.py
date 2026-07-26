@@ -10,9 +10,29 @@ class Base(DeclarativeBase):
     pass
 
 
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+LOCAL_SQLITE_PATH = BACKEND_DIR / "phantom_local.db"
+
+
 def _create_engine():
     url = settings.database_url
-    if settings.is_sqlite:
+    if not settings.is_sqlite and ("localhost" in url or "127.0.0.1" in url):
+        import socket
+        try:
+            s = socket.create_connection(("127.0.0.1", 5432), timeout=0.8)
+            s.close()
+        except Exception:
+            # Automatic fallback to local SQLite when PostgreSQL port 5432 is offline
+            url = f"sqlite:///{LOCAL_SQLITE_PATH}"
+            settings.database_url = url
+
+    if url.startswith("sqlite") and "./" in url:
+        url = f"sqlite:///{LOCAL_SQLITE_PATH}"
+        settings.database_url = url
+
+    if url.startswith("sqlite"):
         eng = create_engine(
             url,
             connect_args={"check_same_thread": False},

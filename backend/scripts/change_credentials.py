@@ -64,13 +64,15 @@ def _read_secret(prompt: str) -> str:
         return getpass.getpass(prompt)
 
 
-def _prompt_password(login: str) -> str:
+def _prompt_password(login: str, *, force: bool = False) -> str:
     while True:
         pwd = _read_secret("Nueva contraseña: ")
-        errors = validate_password_strength(pwd, login=login)
-        if errors:
-            print("[!] " + "; ".join(errors))
-            continue
+        if not force:
+            errors = validate_password_strength(pwd, login=login)
+            if errors:
+                print("[!] " + "; ".join(errors))
+                print("    (Usa --force para omitir la validación en dev)")
+                continue
         confirm = _read_secret("Confirmar contraseña: ")
         if pwd != confirm:
             print("[!] Las contraseñas no coinciden. Intenta de nuevo.")
@@ -80,6 +82,11 @@ def _prompt_password(login: str) -> str:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cambia credenciales del administrador Phantom.")
+    parser.add_argument(
+        "-f", "--force",
+        action="store_true",
+        help="Omitir validación estricta de complejidad de contraseña (útil en dev).",
+    )
     parser.add_argument(
         "--rename-user",
         metavar="LOGIN",
@@ -108,7 +115,6 @@ def main() -> int:
         if user.nombre:
             print(f"Nombre:  {user.nombre}")
         print()
-        print("Solo se cambiará la contraseña (la entrada no se muestra en pantalla).")
 
         new_login = (args.rename_user or "").strip().lower() or user.email
         if args.rename_user:
@@ -119,7 +125,8 @@ def main() -> int:
                 print("[!] El usuario no puede contener espacios.")
                 return 1
 
-        new_password = _prompt_password(new_login)
+        print("La entrada no se mostrará en pantalla al tipear.")
+        new_password = _prompt_password(new_login, force=args.force)
 
         if new_login != user.email:
             taken = db.query(User).filter(User.email == new_login, User.id != user.id).first()

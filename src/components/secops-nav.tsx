@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Suspense, useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Layout,
@@ -22,6 +23,12 @@ import {
   ClipboardList,
   ClipboardCheck,
   Shield,
+  Sliders,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Library,
+  FolderTree,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -35,75 +42,162 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   roles?: UserRole[];
   adminOnly?: boolean;
+  isCatalog?: boolean;
 };
 
 const nav: NavItem[] = [
   { href: '/', labelKey: 'navTablero', icon: LayoutDashboard },
   { href: '/assets', labelKey: 'navAssets', icon: Server },
-  { href: '/vul-mgmt', labelKey: 'navVulnerabilities', icon: ShieldAlert },
   { href: '/reports', labelKey: 'navServices', icon: FileText },
-  { href: '/evaluaciones', labelKey: 'navEvaluationsActive', icon: ClipboardCheck },
+  { href: '/vul-mgmt', labelKey: 'navVulnerabilities', icon: ShieldAlert },
   { href: '/pruebas-seguridad', labelKey: 'navSecurityTestsActive', icon: ShieldAlert },
-  { href: '/evaluaciones-catalogo', labelKey: 'navEvaluationsCatalog', icon: ClipboardList },
-  { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield },
-  { href: '/vulns-catalog', labelKey: 'navOperationalCatalog', icon: BookOpen },
+  { href: '/evaluaciones', labelKey: 'navEvaluationsActive', icon: ClipboardCheck },
   { href: '/compliance', labelKey: 'navCompliance', icon: Scale },
-  { href: '/canvas', labelKey: 'navEvidenceCanvas', icon: Layout },
-  { href: '/vul-catalog', labelKey: 'navBaseCatalog', icon: Database },
-  { href: '/ingesta-excel', labelKey: 'navExcelIngest', icon: FileSpreadsheet },
-  { href: '/tools/phantom', labelKey: 'navPhantomEngine', icon: GitBranch },
-  { href: '/pent-lifecycle', labelKey: 'navPentLifecycle', icon: Crosshair },
-  { href: '/tools/nmap', labelKey: 'navToolsNmap', icon: Wrench },
-  { href: '/tools/exposure', labelKey: 'navExposureReport', icon: Activity },
-  { href: '/portal', labelKey: 'navClientPortal', icon: ExternalLink },
+  // Catalog sub-menu items
+  { href: '/vulns-catalog', labelKey: 'navOperationalCatalog', icon: BookOpen, isCatalog: true },
+  { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield, isCatalog: true },
+  { href: '/evaluaciones-catalogo', labelKey: 'navEvaluationsCatalog', icon: ClipboardList, isCatalog: true },
+  { href: '/vul-catalog', labelKey: 'navBaseCatalog', icon: Database, isCatalog: true },
+  // Tools & agents
+  { href: '/tools/methodologies-phantom', labelKey: 'navMethodologiesPhantom', icon: FolderTree },
+  { href: '/agents', labelKey: 'navAgents', icon: Bot, adminOnly: true },
+  { href: '/tools', labelKey: 'navTools', icon: Wrench },
+  { href: '/portal?editor=true', labelKey: 'navClientPortalEditor', icon: Sliders, adminOnly: true },
   { href: '/admin', labelKey: 'navAdministration', icon: Settings, adminOnly: true },
 ];
 
 function visibleNav(role: UserRole | null) {
-  if (!role || role === 'client_viewer') return nav.filter((n) => n.href === '/portal');
+  const isPortalEnabled = typeof window !== 'undefined' ? localStorage.getItem('spectre_portal_enabled') !== 'false' : true;
+  if (!role || role === 'client_viewer') {
+    if (!isPortalEnabled) return [];
+    return nav.filter((n) => n.href === '/portal');
+  }
   return nav.filter((n) => !n.adminOnly || canAdminTenant(role));
 }
 
-function isActive(pathname: string | null, href: string) {
+function isActive(pathname: string | null, search: string, href: string, allItems: NavItem[]) {
   if (!pathname) return false;
+  // Links that include query params need exact match including search
+  if (href.includes('?')) {
+    const [hrefPath, hrefQuery] = href.split('?');
+    return pathname === hrefPath && search === `?${hrefQuery}`;
+  }
   if (href === '/') return pathname === '/';
+  // For plain hrefs: if a more specific query-param nav item is currently active
+  // for this same pathname, do NOT activate the plain item (prevents double highlight).
+  const hasMoreSpecificMatch = allItems.some((item) => {
+    if (!item.href.includes('?')) return false;
+    const [itemPath, itemQuery] = item.href.split('?');
+    return itemPath === pathname && search === `?${itemQuery}`;
+  });
+  if (hasMoreSpecificMatch) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SecOpsSidebarNav() {
+function SecOpsSidebarNavInner() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : '';
   const { role } = useAuth();
   const { t } = useUiT();
   const items = visibleNav(role);
+
+  const mainItems = items.filter((item) => !item.isCatalog);
+  const catalogItems = items.filter((item) => item.isCatalog);
+  const afterHrefs = ['/agents', '/tools', '/portal?editor=true', '/admin'];
+  const itemsBeforeCatalog = mainItems.filter((item) => !afterHrefs.includes(item.href));
+  const itemsAfterCatalog = mainItems.filter((item) => afterHrefs.includes(item.href));
+
+  // Determine if any catalog route is active to auto-expand it
+  const isCatalogRouteActive = catalogItems.some((item) => {
+    if (!pathname) return false;
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  });
+
+  const [isCatalogsOpen, setIsCatalogsOpen] = useState(isCatalogRouteActive);
+
+  // Auto-expand if the route changes to a catalog
+  useEffect(() => {
+    if (isCatalogRouteActive) {
+      setIsCatalogsOpen(true);
+    }
+  }, [isCatalogRouteActive]);
+
+  const renderLink = (href: string, labelKey: SecOpsNavLabelKey, Icon: any, isSubItem = false) => {
+    const active = isActive(pathname, search, href, items);
+    const label = t(labelKey);
+    return (
+      <Link
+        key={href}
+        href={href}
+        className={cn(
+          'flex items-center gap-2.5 rounded-xl px-3 transition-all duration-200',
+          isSubItem
+            ? 'pl-5 min-h-[2.125rem] text-[11px] font-medium tracking-wide whitespace-nowrap'
+            : 'min-h-11 text-sm font-medium',
+          active
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-sm'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+        )}
+      >
+        <Icon className={cn(isSubItem ? 'size-3.5 shrink-0' : 'size-[1.125rem] shrink-0 transition-transform duration-200 group-hover:scale-105', active ? 'text-primary' : 'text-muted-foreground/80')} />
+        <span className="flex-1 leading-snug truncate">{label}</span>
+      </Link>
+    );
+  };
+
   return (
-    <nav className="flex-1 px-4 py-6 space-y-1">
-      {items.map(({ href, labelKey, icon: Icon }) => {
-        const active = isActive(pathname, href);
-        const label = t(labelKey);
-        return (
-          <Link
-            key={href}
-            href={href}
+    <nav className="flex-1 px-4 py-6 space-y-1 select-none">
+      {/* 1. Main navigation before Catalogs */}
+      {itemsBeforeCatalog.map((item) => renderLink(item.href, item.labelKey, item.icon))}
+
+      {/* 2. Catalogs colapsable sub-menu */}
+      {catalogItems.length > 0 && (
+        <div className="space-y-0.5">
+          <button
+            type="button"
+            onClick={() => setIsCatalogsOpen(!isCatalogsOpen)}
             className={cn(
-              'flex items-center gap-3 rounded-xl px-4 min-h-11 text-sm font-medium transition-colors',
-              active
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+              'w-full flex items-center gap-2.5 rounded-xl px-3 min-h-11 text-sm font-medium transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted/50 focus:outline-none select-none',
+              isCatalogRouteActive && 'text-foreground font-semibold'
             )}
           >
-            <Icon className={cn('size-[1.125rem] shrink-0', active ? 'text-primary' : '')} />
-            <span className="flex-1 leading-snug">{label}</span>
-          </Link>
-        );
-      })}
+            <Library className="size-[1.125rem] shrink-0 text-muted-foreground/80" />
+            <span className="flex-1 text-left leading-snug">Catalogs</span>
+            <ChevronRight className={cn(
+              'size-3.5 text-muted-foreground/60 shrink-0 transition-transform duration-300 ease-out',
+              isCatalogsOpen && 'rotate-90 text-primary'
+            )} />
+          </button>
+
+          <div className={cn(
+            'pl-0.5 border-l border-border/20 ml-[1.125rem] transition-all duration-300 ease-in-out overflow-hidden space-y-0.5',
+            isCatalogsOpen ? 'opacity-100 max-h-60 py-1' : 'opacity-0 max-h-0 pointer-events-none'
+          )}>
+            {catalogItems.map((item) => renderLink(item.href, item.labelKey, item.icon, true))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Main navigation after Catalogs */}
+      {itemsAfterCatalog.map((item) => renderLink(item.href, item.labelKey, item.icon))}
     </nav>
   );
 }
 
+export function SecOpsSidebarNav() {
+  return (
+    <Suspense fallback={null}>
+      <SecOpsSidebarNavInner />
+    </Suspense>
+  );
+}
+
+
 function shortMobileLabel(label: string) {
   if (label === 'Catálogo Vulns' || label === 'Vulnerabilities Catalog') return 'Catalog';
   if (label === 'Ingesta Excel' || label === 'Excel Ingest') return 'Excel';
-  if (label === 'Herramientas · Nmap' || label === 'Tools · Nmap') return 'Nmap';
+  if (label === 'Herramientas · Nmap' || label === 'Tools') return 'Nmap';
   if (label === 'Network Exposure Live Report') return 'Exposure';
   if (label === 'PENT-Lifecycle') return 'PENT';
   if (label === 'SEC-Services') return 'SEC';
@@ -112,19 +206,21 @@ function shortMobileLabel(label: string) {
   if (label === 'Compliance') return 'Comp.';
   if (label === 'Servicio de vulnes') return 'Vulnes';
   if (label === 'Reportes Word') return 'Reportes';
-  if (label === 'Phantom Engine') return 'Phantom';
+  if (label === 'Phantom Modeling') return 'Phantom';
   return label;
 }
 
-export function SecOpsMobileNav() {
+function SecOpsMobileNavInner() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : '';
   const { role } = useAuth();
   const { t } = useUiT();
   const items = visibleNav(role);
   return (
     <nav className="flex flex-wrap gap-2 justify-end type-small">
       {items.map(({ href, labelKey }) => {
-        const active = isActive(pathname, href);
+        const active = isActive(pathname, search, href, items);
         const label = t(labelKey);
         return (
           <Link
@@ -142,5 +238,13 @@ export function SecOpsMobileNav() {
         );
       })}
     </nav>
+  );
+}
+
+export function SecOpsMobileNav() {
+  return (
+    <Suspense fallback={null}>
+      <SecOpsMobileNavInner />
+    </Suspense>
   );
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import app.models  # noqa: F401 — registra tablas en Base.metadata
@@ -12,6 +13,8 @@ from app.database import Base, SessionLocal, engine
 from app.config import settings
 from app.models.evidence import ComplianceControl, ComplianceFramework
 from app.services.auth_seed import backfill_tenant_ids, seed_auth_data
+
+logger = logging.getLogger("phantom.db_startup")
 
 _DB_INIT_LOCK_ID = 0x5048414E  # PHAN
 _SCHEMA_READY_TABLE = "tenants"
@@ -407,7 +410,7 @@ def _migrate_vulns_catalog_columns() -> None:
 
 
 def run_schema_migrations() -> None:
-    if settings.is_sqlite:
+    if _is_engine_sqlite():
         Base.metadata.create_all(bind=engine)
         try:
             with engine.connect() as conn:
@@ -493,8 +496,7 @@ def run_schema_migrations() -> None:
             db.commit()
             print("Compliance controls seeded.")
     except Exception as e:
-        print(f"Error seeding: {e}")
-        db.rollback()
+        print(f"Compliance seed: {e}")
     finally:
         db.close()
 
@@ -520,14 +522,10 @@ def run_startup_seeds() -> None:
         backfill_tenant_ids(SessionLocal())
     except Exception as e:
         print(f"Tenant backfill: {e}")
-    try:
-        seed_compliance_controls()
-    except Exception:
-        pass
 
 
 def wait_for_schema_ready(timeout_seconds: float = 120.0) -> None:
-    if settings.is_sqlite:
+    if _is_engine_sqlite():
         return
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -547,43 +545,56 @@ def wait_for_schema_ready(timeout_seconds: float = 120.0) -> None:
     raise RuntimeError("Database schema not ready after startup wait")
 
 
+def _is_engine_sqlite() -> bool:
+    return settings.is_sqlite or str(engine.url).startswith("sqlite")
+
+
 def bootstrap_database() -> None:
     """Single-process schema + seeds (call before multi-worker Uvicorn)."""
-    if settings.is_sqlite:
+    if _is_engine_sqlite():
         run_schema_migrations()
         run_startup_seeds()
         return
-    lock_conn = engine.connect()
-    lock_conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": _DB_INIT_LOCK_ID})
     try:
-        run_schema_migrations()
-        run_startup_seeds()
-    finally:
-        lock_conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": _DB_INIT_LOCK_ID})
-        lock_conn.close()
+        lock_conn = engine.connect()
+        lock_conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": _DB_INIT_LOCK_ID})
+        try:
+            run_schema_migrations()
+            run_startup_seeds()
+        finally:
+            lock_conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": _DB_INIT_LOCK_ID})
+            lock_conn.close()
+    except Exception as err:
+        logger.warning(f"[!] PostgreSQL offline or connection failed on port 5432: {err}")
 
 
 def worker_startup(*, schema_prebootstrapped: bool) -> None:
     """Per-worker lifespan hook: migrate only if needed, never race seeds."""
-    if settings.is_sqlite:
+    if _is_engine_sqlite():
         if not schema_prebootstrapped:
             bootstrap_database()
         return
     if schema_prebootstrapped:
-        wait_for_schema_ready()
+        try:
+            wait_for_schema_ready()
+        except Exception as err:
+            logger.warning(f"[!] PostgreSQL schema check skipped: {err}")
         return
 
-    lock_conn = engine.connect()
-    got_lock = lock_conn.execute(
-        text("SELECT pg_try_advisory_lock(:id)"), {"id": _DB_INIT_LOCK_ID}
-    ).scalar()
     try:
-        if got_lock:
-            run_schema_migrations()
-            run_startup_seeds()
-        else:
-            wait_for_schema_ready()
-    finally:
-        if got_lock:
-            lock_conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": _DB_INIT_LOCK_ID})
-        lock_conn.close()
+        lock_conn = engine.connect()
+        got_lock = lock_conn.execute(
+            text("SELECT pg_try_advisory_lock(:id)"), {"id": _DB_INIT_LOCK_ID}
+        ).scalar()
+        try:
+            if got_lock:
+                run_schema_migrations()
+                run_startup_seeds()
+            else:
+                wait_for_schema_ready()
+        finally:
+            if got_lock:
+                lock_conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": _DB_INIT_LOCK_ID})
+            lock_conn.close()
+    except Exception as err:
+        logger.warning(f"[!] PostgreSQL offline or connection failed on port 5432: {err}")

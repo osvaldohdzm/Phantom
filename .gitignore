@@ -78,3 +78,15 @@ backend/storage/templates/*
 test-gen.ts
 test-parser.js
 test-parser.ts
+
+# postgres container persistent storage data
+/postgres-data/
+
+# database dumps & sqlite files
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+
+

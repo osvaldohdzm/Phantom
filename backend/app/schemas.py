@@ -1103,6 +1103,7 @@ class AdminDatabaseRuntimeRead(BaseModel):
     jwt_expire_minutes: int = 480
     can_switch_from_ui: bool = False
     switch_note: str
+    environment: Optional[str] = "local"
 
 
 class AdminDeploymentProfileRead(BaseModel):

@@ -33,6 +33,10 @@ import {
   ArrowDown,
   ChevronsUp,
   ChevronsDown,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -53,7 +57,7 @@ const ANNOTATION_BASE_Z = 1000;
 
 type Tool = "select" | "arrow" | "rect" | "circle" | "text" | "counter" | "censor";
 
-interface CanvasElement {
+export interface CanvasElement {
   id: string;
   type: "image" | "arrow" | "rect" | "circle" | "text" | "counter" | "censor";
   x: number;
@@ -163,10 +167,40 @@ function getExportRegion(stage: Konva.Stage): { x: number; y: number; width: num
   };
 }
 
-export function HackerCanvas() {
+export interface HackerCanvasProps {
+  initialImage?: string;
+  initialElements?: CanvasElement[];
+  onSave?: (finalImage: string, elementsState: CanvasElement[]) => void;
+  onCancel?: () => void;
+}
+
+export function HackerCanvas({ initialImage, initialElements, onSave, onCancel }: HackerCanvasProps = {}) {
   const { theme } = useTheme();
   const canvasBg = CANVAS_BG[theme];
   const [elements, setElements] = useState<CanvasElement[]>([]);
+  const [history, setHistory] = useState<CanvasElement[][]>([]);
+
+  const commitToHistory = useCallback((currentElements: CanvasElement[]) => {
+    setHistory((prev) => {
+      const nextHistory = [...prev, currentElements];
+      if (nextHistory.length > 50) {
+        nextHistory.shift();
+      }
+      return nextHistory;
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const prevElements = prev[prev.length - 1];
+      setElements(prevElements);
+      setSelectedId(null);
+      return prev.slice(0, prev.length - 1);
+    });
+  }, []);
+
+  const [zoomScale, setZoomScale] = useState(1.0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState("#06b6d4");
@@ -190,6 +224,49 @@ export function HackerCanvas() {
   const elementsRef = useRef(elements);
   elementsRef.current = elements;
 
+  // Load initial image or elements on mount
+  useEffect(() => {
+    if (initialElements && initialElements.length > 0) {
+      setElements(initialElements);
+      initialElements.forEach((el) => {
+        if (el.type === "image" && el.src) {
+          const img = new Image();
+          img.onload = () => {
+            imageCache.current.set(el.id, img);
+          };
+          img.src = el.src;
+        }
+      });
+    } else if (initialImage) {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxInitial = 850;
+        if (w > maxInitial || h > maxInitial) {
+          const ratio = Math.min(maxInitial / w, maxInitial / h);
+          w *= ratio;
+          h *= ratio;
+        }
+        const newId = `img-init-${Date.now()}`;
+        imageCache.current.set(newId, img);
+        setElements([
+          {
+            id: newId,
+            type: "image",
+            src: initialImage,
+            x: 80,
+            y: 80,
+            width: w,
+            height: h,
+            zIndex: IMAGE_BASE_Z,
+          },
+        ]);
+      };
+      img.src = initialImage;
+    }
+  }, [initialImage, initialElements]);
+
   const [stageWidth, setStageWidth] = useState(1200);
   const sortedElements = useMemo(() => sortByZ(elements), [elements]);
   const selectedEl = elements.find((e) => e.id === selectedId);
@@ -208,6 +285,7 @@ export function HackerCanvas() {
   }, []);
 
   const reorderLayer = useCallback((id: string, action: "front" | "back" | "forward" | "backward") => {
+    commitToHistory(elementsRef.current);
     setElements((prev) => {
       const sorted = sortByZ(prev);
       const idx = sorted.findIndex((e) => e.id === id);
@@ -231,6 +309,7 @@ export function HackerCanvas() {
   }, []);
 
   const deleteSelected = useCallback(() => {
+    commitToHistory(elementsRef.current);
     if (cropTargetId) {
       setCropTargetId(null);
       setCropRect(null);
@@ -243,7 +322,7 @@ export function HackerCanvas() {
       setElements([]);
       setCounter(1);
     }
-  }, [selectedId, cropTargetId]);
+  }, [selectedId, cropTargetId, commitToHistory]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -258,10 +337,14 @@ export function HackerCanvas() {
         setCropRect(null);
         setTool("select");
       }
+      if ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        undo();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, cropTargetId, deleteSelected]);
+  }, [selectedId, cropTargetId, deleteSelected, undo]);
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -287,6 +370,7 @@ export function HackerCanvas() {
           }
           const newId = `img-${Date.now()}`;
           imageCache.current.set(newId, img);
+          commitToHistory(elementsRef.current);
           setElements((prev) => [
             ...prev,
             {
@@ -318,6 +402,7 @@ export function HackerCanvas() {
     async (box: { x: number; y: number; width: number; height: number }) => {
       const stage = stageRef.current;
       if (!stage) return;
+      commitToHistory(elementsRef.current);
       setBaking(true);
       setSelectedId(null);
       await new Promise((r) => requestAnimationFrame(r));
@@ -413,12 +498,27 @@ export function HackerCanvas() {
     [bakeCensor]
   );
 
+  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault();
+    const zoomFactor = e.evt.deltaY < 0 ? 1.12 : 0.88;
+    setZoomScale((oldScale) => {
+      const newScale = Math.min(5.0, Math.max(0.2, oldScale * zoomFactor));
+      return parseFloat(newScale.toFixed(2));
+    });
+  };
+
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (cropTargetId || baking) return;
     const stage = e.target.getStage();
     if (!stage) return;
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
+    const rawPos = stage.getPointerPosition();
+    if (!rawPos) return;
+
+    const scale = stage.scaleX() || 1;
+    const pos = {
+      x: (rawPos.x - stage.x()) / scale,
+      y: (rawPos.y - stage.y()) / scale,
+    };
 
     if (tool === "select") {
       if (isBackgroundTarget(e.target, stage)) setSelectedId(null);
@@ -471,6 +571,31 @@ export function HackerCanvas() {
         };
         setDrawingId(id);
         break;
+      case "text":
+        newElement = {
+          id,
+          type: "text",
+          x: pos.x,
+          y: pos.y,
+          text: "Texto de evidencia",
+          color,
+          strokeWidth: 1,
+          zIndex: topZ,
+        };
+        break;
+      case "counter":
+        newElement = {
+          id,
+          type: "counter",
+          x: pos.x,
+          y: pos.y,
+          text: String(counter),
+          color,
+          strokeWidth: 1,
+          zIndex: topZ,
+        };
+        setCounter((c) => c + 1);
+        break;
       case "censor":
         newElement = {
           id,
@@ -484,38 +609,12 @@ export function HackerCanvas() {
         };
         setDrawingId(id);
         break;
-      case "text":
-        newElement = {
-          id,
-          type: "text",
-          x: pos.x,
-          y: pos.y,
-          text: "Texto",
-          color,
-          zIndex: topZ,
-        };
-        setSelectedId(id);
-        setTool("select");
-        break;
-      case "counter":
-        newElement = {
-          id,
-          type: "counter",
-          x: pos.x,
-          y: pos.y,
-          text: String(counter),
-          color,
-          zIndex: topZ,
-        };
-        setCounter((c) => c + 1);
-        setSelectedId(id);
-        setTool("select");
-        break;
       default:
         break;
     }
 
     if (newElement) {
+      commitToHistory(elementsRef.current);
       setElements((prev) => [...prev, newElement!]);
       setSelectedId(id);
     }
@@ -524,8 +623,15 @@ export function HackerCanvas() {
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (!drawingId) return;
     const stage = e.target.getStage();
-    const pos = stage?.getPointerPosition();
-    if (!pos) return;
+    if (!stage) return;
+    const rawPos = stage.getPointerPosition();
+    if (!rawPos) return;
+
+    const scale = stage.scaleX() || 1;
+    const pos = {
+      x: (rawPos.x - stage.x()) / scale,
+      y: (rawPos.y - stage.y()) / scale,
+    };
 
     setElements((prev) =>
       prev.map((el) => {
@@ -582,6 +688,7 @@ export function HackerCanvas() {
     };
 
     try {
+      commitToHistory(elementsRef.current);
       setBaking(true);
       const { dataUrl, width, height } = await cropImageDataUrl(imgEl.src, crop);
       const img = new Image();
@@ -654,7 +761,7 @@ export function HackerCanvas() {
       const region = getExportRegion(stageRef.current);
       const dataUrl = stageRef.current.toDataURL({
         ...region,
-        pixelRatio: 2,
+        pixelRatio: 3,
       });
 
       if (mode === "download") {
@@ -684,7 +791,10 @@ export function HackerCanvas() {
 
   const editText = (el: CanvasElement) => {
     const next = window.prompt("Editar texto", el.text ?? "");
-    if (next !== null && next.trim()) updateElement(el.id, { text: next.trim() });
+    if (next !== null && next.trim()) {
+      commitToHistory(elementsRef.current);
+      updateElement(el.id, { text: next.trim() });
+    }
   };
 
   const bindSelect = (id: string) => ({
@@ -699,12 +809,18 @@ export function HackerCanvas() {
 
   const bindDrag = (id: string) => ({
     draggable: tool === "select" && !isExporting && !cropTargetId,
+    onDragStart: () => {
+      commitToHistory(elementsRef.current);
+    },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
       updateElement(id, { x: e.target.x(), y: e.target.y() });
     },
   });
 
   const bindTransform = (id: string) => ({
+    onTransformStart: () => {
+      commitToHistory(elementsRef.current);
+    },
     onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
       const node = e.target;
       const scaleX = node.scaleX();
@@ -946,6 +1062,36 @@ export function HackerCanvas() {
             </div>
           )}
 
+          {tool === "counter" && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-border p-1 bg-muted/40 text-[10px]">
+              <span className="font-bold text-muted-foreground ml-1">Paso #{counter}</span>
+              <button
+                type="button"
+                onClick={() => setCounter((c) => Math.max(1, c - 1))}
+                className="px-1.5 py-0.5 rounded border border-border bg-background hover:bg-muted text-foreground font-mono font-bold"
+                title="Decrementar paso"
+              >
+                -
+              </button>
+              <button
+                type="button"
+                onClick={() => setCounter((c) => c + 1)}
+                className="px-1.5 py-0.5 rounded border border-border bg-background hover:bg-muted text-foreground font-mono font-bold"
+                title="Incrementar paso"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => setCounter(1)}
+                className="px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition-colors"
+                title="Reiniciar contador a 1"
+              >
+                Reiniciar #1
+              </button>
+            </div>
+          )}
+
           {tool !== "censor" && (
             <div className="flex gap-1 ml-1">
               {["#ef4444", "#f59e0b", "#10b981", "#06b6d4", "#8b5cf6", "#1e293b"].map((c) => (
@@ -1007,6 +1153,44 @@ export function HackerCanvas() {
               </LayerButton>
             </div>
           )}
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-muted/40 border border-border rounded-lg p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setZoomScale((s) => parseFloat(Math.max(0.2, s - 0.15).toFixed(2)))}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Alejar Zoom (Ctrl + Rueda Abajo)"
+            >
+              <ZoomOut className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomScale(1.0)}
+              className="px-1.5 py-0.5 rounded font-mono font-bold text-[10px] text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+              title="Restablecer Zoom a 100%"
+            >
+              {Math.round(zoomScale * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomScale((s) => parseFloat(Math.min(5.0, s + 0.15).toFixed(2)))}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Acercar Zoom (Ctrl + Rueda Arriba)"
+            >
+              <ZoomIn className="size-3.5" />
+            </button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={history.length === 0}
+            onClick={undo}
+            title="Deshacer (Ctrl+Z)"
+          >
+            <RotateCcw className="size-4 mr-1" />
+            Deshacer
+          </Button>
           <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setShowHelp((v) => !v)}>
             <HelpCircle className="size-4 mr-1" />
             Ayuda
@@ -1015,6 +1199,53 @@ export function HackerCanvas() {
             <Trash2 className="size-4 mr-2" />
             {selectedId || cropTargetId ? "Borrar" : "Limpiar"}
           </Button>
+          {onSave && (
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              size="sm"
+              onClick={async () => {
+                if (!stageRef.current) return;
+                const oldId = selectedId;
+                const oldScaleX = stageRef.current.scaleX();
+                const oldScaleY = stageRef.current.scaleY();
+                setSelectedId(null);
+                setCropTargetId(null);
+
+                stageRef.current.scaleX(1);
+                stageRef.current.scaleY(1);
+                stageRef.current.draw();
+
+                await new Promise((r) => setTimeout(r, 80));
+                const region = getExportRegion(stageRef.current);
+                const dataUrl = stageRef.current.toDataURL({
+                  ...region,
+                  pixelRatio: 2,
+                });
+
+                stageRef.current.scaleX(oldScaleX);
+                stageRef.current.scaleY(oldScaleY);
+                stageRef.current.draw();
+
+                onSave(dataUrl, elementsRef.current);
+                setSelectedId(oldId);
+              }}
+            >
+              <Check className="size-4 mr-2" />
+              Guardar en Matriz
+            </Button>
+          )}
+          {onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={onCancel}
+            >
+              Cancelar
+            </Button>
+          )}
           <Button type="button" variant="outline" size="sm" onClick={() => exportCanvas("copy")} disabled={!elements.length || baking}>
             {showCopySuccess ? <Check className="size-4 mr-2 text-emerald-600" /> : <Copy className="size-4 mr-2" />}
             Copiar
@@ -1036,7 +1267,7 @@ export function HackerCanvas() {
           )}
           <span className="hidden sm:inline">
             {" "}
-            · Ctrl+V pega · Supr borra · Esc cancela
+            · Ctrl+V pega · Supr borra · Esc cancela · Ctrl+Rueda Zoom ({Math.round(zoomScale * 100)}%)
           </span>
         </div>
       )}
@@ -1050,7 +1281,10 @@ export function HackerCanvas() {
         <Stage
           width={stageWidth}
           height={600}
+          scaleX={zoomScale}
+          scaleY={zoomScale}
           ref={stageRef}
+          onWheel={handleWheel}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
@@ -1059,7 +1293,7 @@ export function HackerCanvas() {
           onTouchEnd={handleStageMouseUp}
           className={cursorClass}
         >
-          <Layer>
+          <Layer imageSmoothingEnabled={true}>
             <Rect name="canvas-bg" width={2000} height={2000} fill={canvasBg} listening />
             {sortedElements.map(renderElement)}
             {cropTargetId && cropRect && (

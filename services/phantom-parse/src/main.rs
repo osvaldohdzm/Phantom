@@ -37,7 +37,8 @@ struct DedupResponse {
     duration_ms: u128,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let addr: SocketAddr = std::env::var("PARSE_RUST_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8081".to_string())
         .parse()

@@ -35,3 +35,11 @@ coverage
 test-*.ts
 test-*.js
 test-gen.ts
+
+# Large data and build directories
+postgres-data/
+*.dump
+**/target/
+logs/
+storage/
+

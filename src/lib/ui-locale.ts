@@ -129,7 +129,7 @@ const MESSAGES = {
     navEvidenceCanvas: 'Evidence Canvas',
     navBaseCatalog: 'Catálogo Base',
     navExcelIngest: 'Ingesta Excel',
-    navPhantomEngine: 'Phantom Engine',
+    navPhantomEngine: 'Phantom Modeling',
     phantomMapTitle: 'Mapa de objetivo',
     phantomMapNamePlaceholder: 'Nombre de la caja / engagement',
     phantomMapNodes: 'Nodos',
@@ -246,6 +246,7 @@ const MESSAGES = {
     phantomMapViewTimeline: 'Timeline',
     phantomMapViewPrivilege: 'Capas de privilegio',
     phantomMapViewZones: 'Zonas de red',
+    phantomMapViewOutline: 'Bosquejo / Outline',
     phantomMapTabLoot: 'Loot',
     phantomMapLootInventory: 'Inventario de loot',
     phantomMapLootHint: 'Credenciales, flags, sesiones y dumps del grafo.',
@@ -301,7 +302,11 @@ const MESSAGES = {
     navPentLifecycle: 'PENT-Lifecycle',
     navToolsNmap: 'Herramientas · Nmap',
     navExposureReport: 'Network Exposure Live Report',
+    navMethodologiesPhantom: 'Methodologies Phantom',
+    navTools: 'Herramientas',
     navClientPortal: 'Portal cliente',
+    navClientPortalEditor: 'Editor portal de clientes',
+    navAgents: 'Agentes',
     navAdministration: 'Administración',
     // Assets (M2)
     assetsTitle: 'Activos',
@@ -891,7 +896,7 @@ const MESSAGES = {
     navEvidenceCanvas: 'Evidence Canvas',
     navBaseCatalog: 'Base Catalog',
     navExcelIngest: 'Excel Ingest',
-    navPhantomEngine: 'Phantom Engine',
+    navPhantomEngine: 'Phantom Modeling',
     phantomMapTitle: 'Target map',
     phantomMapNamePlaceholder: 'Box / engagement name',
     phantomMapNodes: 'Nodes',
@@ -1008,6 +1013,7 @@ const MESSAGES = {
     phantomMapViewTimeline: 'Timeline',
     phantomMapViewPrivilege: 'Privilege layers',
     phantomMapViewZones: 'Network zones',
+    phantomMapViewOutline: 'Pentest outline',
     phantomMapTabLoot: 'Loot',
     phantomMapLootInventory: 'Loot inventory',
     phantomMapLootHint: 'Credentials, flags, sessions and dumps from the graph.',
@@ -1063,7 +1069,11 @@ const MESSAGES = {
     navPentLifecycle: 'PENT-Lifecycle',
     navToolsNmap: 'Tools · Nmap',
     navExposureReport: 'Network Exposure Live Report',
+    navMethodologiesPhantom: 'Methodologies Phantom',
+    navTools: 'Tools',
     navClientPortal: 'Client portal',
+    navClientPortalEditor: 'Client portal editor',
+    navAgents: 'Agents',
     navAdministration: 'Administration',
     // Assets (M2)
     assetsTitle: 'Assets',
@@ -1679,6 +1689,10 @@ export type SecOpsNavLabelKey = Extract<
   | 'navPentLifecycle'
   | 'navToolsNmap'
   | 'navExposureReport'
+  | 'navMethodologiesPhantom'
+  | 'navTools'
   | 'navClientPortal'
+  | 'navClientPortalEditor'
+  | 'navAgents'
   | 'navAdministration'
 >;

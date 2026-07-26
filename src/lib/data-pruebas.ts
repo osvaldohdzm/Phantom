@@ -24,6 +24,7 @@ export interface SecurityTestItem {
   evidencias: {
     imagen: string;
     nota: string;
+    canvasState?: any[];
   }[];
   herramientaSugerida: string;
   herramientaIncluyePrueba: string;

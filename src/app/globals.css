@@ -227,7 +227,7 @@
     @apply rounded-xl border border-border bg-muted/40;
   }
 
-  /* Phantom Engine — inherits light/dark from app shell */
+  /* Phantom Modeling — inherits light/dark from app shell */
   .phantom-workspace {
     @apply relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground;
   }
@@ -264,7 +264,7 @@
     @apply border-t border-border bg-card font-mono text-foreground;
   }
 
-  /* ── Phantom Engine · cyber ops surface ── */
+  /* ── Phantom Modeling · cyber ops surface ── */
   .phantom-workspace {
     --phantom-accent: oklch(0.55 0.14 195);
     --phantom-accent-dim: color-mix(in oklch, var(--phantom-accent) 18%, transparent);
@@ -303,11 +303,9 @@
   .phantom-map-sidebar {
     @apply flex w-[21rem] shrink-0 flex-col border-r;
     border-color: var(--phantom-panel-border);
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--card) 96%, var(--phantom-accent-dim)) 0%,
-      color-mix(in oklch, var(--sidebar) 94%, transparent) 100%
-    );
+    background: linear-gradient(180deg,
+        color-mix(in oklch, var(--card) 96%, var(--phantom-accent-dim)) 0%,
+        color-mix(in oklch, var(--sidebar) 94%, transparent) 100%);
     box-shadow: inset -1px 0 0 color-mix(in oklch, var(--phantom-accent) 8%, transparent);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     will-change: transform;
@@ -430,11 +428,9 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background-image: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--phantom-accent) 14%, transparent) 1px,
-      transparent 1px
-    );
+    background-image: radial-gradient(circle,
+        color-mix(in oklch, var(--phantom-accent) 14%, transparent) 1px,
+        transparent 1px);
     background-size: 28px 28px;
     opacity: 0.55;
   }
@@ -764,18 +760,35 @@
   }
 
   @keyframes phantom-longpress-grow {
-    0% { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
-    100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    0% {
+      transform: translate(-50%, -50%) scale(0);
+      opacity: 0.8;
+    }
+
+    100% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0;
+    }
   }
 
   @keyframes phantom-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
   }
 
   @keyframes phantom-slide-up {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
+    from {
+      transform: translateY(100%);
+    }
+
+    to {
+      transform: translateY(0);
+    }
   }
 
   .phantom-tree-node-icon {
@@ -897,24 +910,55 @@
   }
 
   @keyframes phantom-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @keyframes phantom-ring-grow {
-    0% { width: 10px; height: 10px; opacity: 0.3; }
-    100% { width: 56px; height: 56px; opacity: 1; }
+    0% {
+      width: 10px;
+      height: 10px;
+      opacity: 0.3;
+    }
+
+    100% {
+      width: 56px;
+      height: 56px;
+      opacity: 1;
+    }
   }
 
   @keyframes phantom-orb-grow {
-    0% { transform: scale(0.2); opacity: 0.5; }
-    100% { transform: scale(1); opacity: 0.95; }
+    0% {
+      transform: scale(0.2);
+      opacity: 0.5;
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 0.95;
+    }
   }
 
   @keyframes phantom-plus-fade {
-    0% { transform: scale(0.5); opacity: 0; }
-    70% { opacity: 0.3; }
-    100% { transform: scale(1); opacity: 1; }
+    0% {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+
+    70% {
+      opacity: 0.3;
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 
 
@@ -962,7 +1006,8 @@
 
     .phantom-field {
       @apply !px-3 !py-3 !text-base;
-      font-size: 16px !important; /* Critical to prevent iOS Safari auto-zoom on focus */
+      font-size: 16px !important;
+      /* Critical to prevent iOS Safari auto-zoom on focus */
       min-height: 46px;
       border-radius: 0.75rem !important;
     }
@@ -1086,10 +1131,25 @@
       box-shadow: 0 0 15px var(--phantom-accent);
     }
 
-    .phantom-node-handle--n { top: -38px; left: 0; }
-    .phantom-node-handle--s { top: 38px; left: 0; }
-    .phantom-node-handle--e { top: 0; left: 38px; }
-    .phantom-node-handle--w { top: 0; left: -38px; }
+    .phantom-node-handle--n {
+      top: -38px;
+      left: 0;
+    }
+
+    .phantom-node-handle--s {
+      top: 38px;
+      left: 0;
+    }
+
+    .phantom-node-handle--e {
+      top: 0;
+      left: 38px;
+    }
+
+    .phantom-node-handle--w {
+      top: 0;
+      left: -38px;
+    }
 
     /* Highlighting target nodes during link dragging */
     .phantom-node-target-highlight {
@@ -1106,9 +1166,20 @@
     }
 
     @keyframes phantom-pulse-ring {
-      0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
-      50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.4; }
-      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
+      0% {
+        transform: translate(-50%, -50%) scale(0.9);
+        opacity: 0.8;
+      }
+
+      50% {
+        transform: translate(-50%, -50%) scale(1.15);
+        opacity: 0.4;
+      }
+
+      100% {
+        transform: translate(-50%, -50%) scale(0.9);
+        opacity: 0.8;
+      }
     }
 
     /* Larger elements inside connection details bottom sheet */
@@ -1174,21 +1245,17 @@
   }
 
   .phantom-canvas-grid {
-    background-image: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--phantom-accent) 16%, transparent) 1px,
-      transparent 1px
-    );
+    background-image: radial-gradient(circle,
+        color-mix(in oklch, var(--phantom-accent) 16%, transparent) 1px,
+        transparent 1px);
   }
 
   .phantom-workflow-sidebar {
     @apply flex w-80 shrink-0 flex-col border-r h-full select-none;
     border-color: var(--phantom-panel-border);
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--card) 94%, var(--phantom-accent-dim)),
-      color-mix(in oklch, var(--sidebar) 96%, transparent)
-    );
+    background: linear-gradient(180deg,
+        color-mix(in oklch, var(--card) 94%, var(--phantom-accent-dim)),
+        color-mix(in oklch, var(--sidebar) 96%, transparent));
   }
 
   .phantom-workflow-node-shell {
@@ -1325,11 +1392,9 @@
     @apply flex shrink-0 cursor-grab touch-manipulation flex-col items-center justify-center gap-0.5 self-stretch rounded-l-xl border-r px-1 py-2 active:cursor-grabbing;
     width: 2.25rem;
     border-color: color-mix(in oklch, var(--phantom-accent) 28%, var(--border));
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--phantom-accent) 14%, var(--muted)),
-      color-mix(in oklch, var(--phantom-accent) 6%, var(--card))
-    );
+    background: linear-gradient(180deg,
+        color-mix(in oklch, var(--phantom-accent) 14%, var(--muted)),
+        color-mix(in oklch, var(--phantom-accent) 6%, var(--card)));
     color: color-mix(in oklch, var(--phantom-accent) 75%, var(--foreground));
   }
 
@@ -1345,6 +1410,7 @@
     .phantom-wf-drag-label {
       @apply sr-only;
     }
+
     .phantom-wf-drag-handle {
       width: 1.75rem;
     }
@@ -1487,12 +1553,35 @@
     background: color-mix(in oklch, var(--card) 85%, transparent);
   }
 
-  .phantom-phase-lane--cyan { color: #0891b2; border-color: color-mix(in oklch, #06b6d4 35%, var(--border)); }
-  .phantom-phase-lane--emerald { color: #059669; border-color: color-mix(in oklch, #10b981 35%, var(--border)); }
-  .phantom-phase-lane--purple { color: #7c3aed; border-color: color-mix(in oklch, #a855f7 35%, var(--border)); }
-  .phantom-phase-lane--rose { color: #e11d48; border-color: color-mix(in oklch, #f43f5e 35%, var(--border)); }
-  .phantom-phase-lane--amber { color: #d97706; border-color: color-mix(in oklch, #f59e0b 35%, var(--border)); }
-  .phantom-phase-lane--fuchsia { color: #c026d3; border-color: color-mix(in oklch, #d946ef 35%, var(--border)); }
+  .phantom-phase-lane--cyan {
+    color: #0891b2;
+    border-color: color-mix(in oklch, #06b6d4 35%, var(--border));
+  }
+
+  .phantom-phase-lane--emerald {
+    color: #059669;
+    border-color: color-mix(in oklch, #10b981 35%, var(--border));
+  }
+
+  .phantom-phase-lane--purple {
+    color: #7c3aed;
+    border-color: color-mix(in oklch, #a855f7 35%, var(--border));
+  }
+
+  .phantom-phase-lane--rose {
+    color: #e11d48;
+    border-color: color-mix(in oklch, #f43f5e 35%, var(--border));
+  }
+
+  .phantom-phase-lane--amber {
+    color: #d97706;
+    border-color: color-mix(in oklch, #f59e0b 35%, var(--border));
+  }
+
+  .phantom-phase-lane--fuchsia {
+    color: #c026d3;
+    border-color: color-mix(in oklch, #d946ef 35%, var(--border));
+  }
 
   .phantom-wf-state-pill {
     @apply rounded px-1.5 py-0.5 font-mono text-[8px] font-semibold uppercase;
@@ -1616,29 +1705,67 @@
 
 /* ── AI field fill animations ── */
 @keyframes ai-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes ai-scan {
-  0% { top: 0; opacity: 0.8; }
-  100% { top: 100%; opacity: 0; }
+  0% {
+    top: 0;
+    opacity: 0.8;
+  }
+
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
 }
 
 @keyframes ai-badge-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  60% { transform: scale(1.08); }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes ai-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.25); }
-  50% { box-shadow: 0 0 16px 2px rgba(139, 92, 246, 0.2); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.25);
+  }
+
+  50% {
+    box-shadow: 0 0 16px 2px rgba(139, 92, 246, 0.2);
+  }
 }
 
 @keyframes ai-content-in {
-  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 .ai-field-filling {
@@ -1677,12 +1804,10 @@
 }
 
 .ai-shimmer-bg {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(139, 92, 246, 0.1) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(139, 92, 246, 0.1) 50%,
+      transparent 100%);
   background-size: 200% 100%;
   animation: ai-shimmer 2s linear infinite;
 }

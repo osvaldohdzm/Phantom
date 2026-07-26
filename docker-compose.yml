@@ -8,12 +8,14 @@ services:
   postgres:
     image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-phantom}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-katana_security_db}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phantom} -d ${POSTGRES_DB:-katana_security_db}"]
       interval: 5s
@@ -21,9 +23,12 @@ services:
       retries: 12
       start_period: 10s
 
+
   redis:
     image: docker.io/library/redis:7-alpine
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -119,5 +124,5 @@ services:
       - api
 
 volumes:
-  pgdata:
   phantom_storage:
+

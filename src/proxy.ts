@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC = new Set(['/login']);
+const PUBLIC = new Set(['/login', '/login-client']);
 
 function isRscNavigation(request: NextRequest): boolean {
   return (

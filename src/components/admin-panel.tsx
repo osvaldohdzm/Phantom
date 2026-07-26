@@ -13,10 +13,11 @@ import { canViewPlatformAudit, canViewTenantAudit } from '@/lib/rbac-permissions
 import { TenantBrandingPanel } from '@/components/tenant-branding-panel';
 import { DatabaseConfigPanel } from '@/components/database-config-panel';
 import { SystemLogsPanel } from '@/components/system-logs-panel';
+import { AmatistaConfigPanel } from '@/components/amatista-config-panel';
 import { useUiT } from '@/lib/use-ui-locale';
 import type { UiMessageKey } from '@/lib/ui-locale';
 
-type TenantAdminTab = 'tenant-settings' | 'users' | 'tenant-audit';
+type TenantAdminTab = 'tenant-settings' | 'users' | 'tenant-audit' | 'amatista';
 type PlatformAdminTab = 'tenants' | 'database' | 'audit' | 'logs';
 type AdminTab = TenantAdminTab | PlatformAdminTab;
 
@@ -43,6 +44,7 @@ export function AdminPanel() {
   const tenantTabs: { id: TenantAdminTab; labelKey: UiMessageKey; show: boolean }[] = [
     { id: 'tenant-settings', labelKey: 'platformTabTenantSettings', show: true },
     { id: 'users', labelKey: 'platformTabUsers', show: true },
+    { id: 'amatista', labelKey: 'amatista' as any, show: true },
     { id: 'tenant-audit', labelKey: 'platformTabTenantAudit', show: showTenantAudit },
   ];
 
@@ -56,6 +58,7 @@ export function AdminPanel() {
   const tabDescriptions: Record<AdminTab, UiMessageKey> = {
     'tenant-settings': 'platformDescTenantSettings',
     users: 'usersAdminSubtitle',
+    amatista: 'amatista' as any,
     'tenant-audit': 'auditTenantDescription',
     tenants: 'platformDescTenants',
     database: 'platformDescDatabase',
@@ -77,6 +80,8 @@ export function AdminPanel() {
             </>
           ) : tab === 'logs' ? (
             'Consola de logs del backend y peticiones HTTP en tiempo real.'
+          ) : tab === 'amatista' ? (
+            'Configuración de la integración con Amatista App.'
           ) : (
             t(tabDescriptions[tab])
           )}
@@ -105,7 +110,7 @@ export function AdminPanel() {
                   size="sm"
                   onClick={() => setTab(tabItem.id)}
                 >
-                  {t(tabItem.labelKey)}
+                  {tabItem.id === 'amatista' ? 'Integración Amatista' : t(tabItem.labelKey)}
                 </Button>
               ))}
           </div>
@@ -145,6 +150,7 @@ export function AdminPanel() {
 
       {tab === 'tenant-settings' ? <TenantBrandingPanel /> : null}
       {tab === 'users' ? <UsersMembershipPanel /> : null}
+      {tab === 'amatista' ? <AmatistaConfigPanel /> : null}
       {tab === 'tenant-audit' ? <AuditEventsPanel scope="tenant" /> : null}
       {tab === 'database' && isPlatformAdmin ? <DatabaseConfigPanel /> : null}
       {tab === 'tenants' && isPlatformAdmin ? <TenantsCrudPanel /> : null}

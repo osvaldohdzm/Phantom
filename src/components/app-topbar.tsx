@@ -65,7 +65,7 @@ export function AppTopbar({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-4 border-b border-border bg-card/60 backdrop-blur-sm px-4 py-2 min-h-12',
+        'relative z-30 flex items-center justify-between gap-4 border-b border-border bg-card/60 backdrop-blur-sm px-4 py-2 min-h-12',
         className
       )}
     >
@@ -131,7 +131,7 @@ export function AppTopbar({ className }: { className?: string }) {
                 className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                 onClick={() => setMenuOpen(false)}
               >
-                {t('navProfile')}
+                My profile
               </Link>
               {role === 'client_viewer' ? (
                 <Link
@@ -139,7 +139,7 @@ export function AppTopbar({ className }: { className?: string }) {
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  {t('topbarClientPortal')}
+                  Client portal
                 </Link>
               ) : (
                 <Link
@@ -147,7 +147,7 @@ export function AppTopbar({ className }: { className?: string }) {
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  {t('topbarSecOpsDashboard')}
+                  SecOps dashboard
                 </Link>
               )}
               {role && canAdminTenant(role) ? (
@@ -156,7 +156,7 @@ export function AppTopbar({ className }: { className?: string }) {
                   className="block rounded-md px-3 py-2 text-xs hover:bg-muted"
                   onClick={() => setMenuOpen(false)}
                 >
-                  {t('navAdministration')}
+                  Administration
                 </Link>
               ) : null}
               <button
@@ -169,7 +169,7 @@ export function AppTopbar({ className }: { className?: string }) {
                 }}
               >
                 <LogOut className="size-3.5" aria-hidden />
-                {t('topbarLogout')}
+                Sign out
               </button>
             </div>
           ) : null}

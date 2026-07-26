@@ -368,6 +368,7 @@ export type AdminDatabaseRuntime = {
   jwt_expire_minutes: number;
   can_switch_from_ui: boolean;
   switch_note: string;
+  environment?: string | null;
 };
 
 export type AdminDeploymentProfile = {

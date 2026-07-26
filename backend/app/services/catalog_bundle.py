@@ -129,25 +129,51 @@ def _version_key(raw: str) -> tuple:
     if s.startswith("v"):
         s = s[1:]
     parts: list[Any] = []
-    for chunk in re.split(r"[.\-_]+", s):
-        if not chunk:
-            continue
-        if chunk.isdigit():
-            parts.append(int(chunk))
-        else:
-            parts.append(chunk)
-    return tuple(parts) if parts else ("",)
+def _version_key(v: str) -> tuple[int, ...]:
+    s = (v or "").strip()
+    if not s or s.lower() in _PLACEHOLDER_VERSIONS:
+        return (0,)
+    parts = re.findall(r"\d+", s)
+    if not parts:
+        return (0,)
+    return tuple(int(x) for x in parts)
 
 
 def bundled_is_newer(installed_version: str, bundled_version: str) -> bool:
-    if not bundled_version:
-        return False
     if not installed_version or installed_version in ("unknown", "0", "0.0.0"):
         return True
     return _version_key(bundled_version) > _version_key(installed_version)
 
 
 def ensure_catalog_meta_table(db: Session) -> None:
+    tbl = catalog_table("vulns_catalog_meta")
+    if _is_sqlite_mode():
+        db.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {tbl} (
+                  id INTEGER PRIMARY KEY DEFAULT 1,
+                  version TEXT NOT NULL DEFAULT 'unknown',
+                  imported_at TEXT,
+                  source_filename TEXT,
+                  row_count INTEGER NOT NULL DEFAULT 0,
+                  field_config_json TEXT,
+                  bundled_revision INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+        db.execute(
+            text(
+                f"""
+                INSERT OR IGNORE INTO {tbl} (id, version)
+                VALUES (1, 'unknown')
+                """
+            )
+        )
+        db.commit()
+        return
+
     db.execute(
         text(
             """
@@ -184,6 +210,32 @@ def ensure_catalog_meta_table(db: Session) -> None:
 
 
 def ensure_vulns_catalog_table(db: Session) -> None:
+    tbl = catalog_table("vulns_catalog")
+    if _is_sqlite_mode():
+        db.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {tbl} (
+                  "Id" INTEGER PRIMARY KEY
+                )
+                """
+            )
+        )
+        for col, col_type in _KNOWN_COLUMN_TYPES.items():
+            if col == "Id":
+                continue
+            try:
+                db.execute(
+                    text(
+                        f'ALTER TABLE {tbl} ADD COLUMN "{col}" TEXT'
+                    )
+                )
+            except Exception:
+                pass
+        db.commit()
+        invalidate_vulns_catalog_schema_cache()
+        return
+
     db.execute(text("CREATE SCHEMA IF NOT EXISTS core"))
     db.execute(
         text(
@@ -208,13 +260,17 @@ def ensure_vulns_catalog_table(db: Session) -> None:
 
 def _read_catalog_bytes(path: Path) -> bytes:
     if path.suffix == ".gz" or path.name.endswith(".csv.gz"):
-        with gzip.open(path, "rb") as fh:
-            return fh.read()
+        return gzip.decompress(path.read_bytes())
     return path.read_bytes()
 
 
-def _decode_csv_text(raw: bytes, encoding: str = "utf-8") -> str:
-    for enc in (encoding, "utf-8-sig", "utf-8", "cp1252", "latin-1"):
+def _decode_csv_text(raw: bytes, encoding_hint: str) -> str:
+    candidates = [encoding_hint, "utf-8", "utf-8-sig", "latin1", "cp1252"]
+    seen = set()
+    for enc in candidates:
+        if not enc or enc in seen:
+            continue
+        seen.add(enc)
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:
@@ -223,6 +279,25 @@ def _decode_csv_text(raw: bytes, encoding: str = "utf-8") -> str:
 
 
 def _ensure_dynamic_columns(db: Session, headers: list[str]) -> None:
+    tbl = catalog_table("vulns_catalog")
+    if _is_sqlite_mode():
+        existing = {
+            str(r["name"])
+            for r in db.execute(text(f"PRAGMA table_info({tbl})")).mappings()
+        }
+        for header in headers:
+            if header == "Id" or header in existing:
+                continue
+            try:
+                db.execute(
+                    text(f'ALTER TABLE {tbl} ADD COLUMN "{header}" TEXT')
+                )
+            except Exception:
+                pass
+        db.commit()
+        invalidate_vulns_catalog_schema_cache()
+        return
+
     existing = {
         str(r["column_name"])
         for r in db.execute(
@@ -266,19 +341,27 @@ def import_catalog_csv_bytes(
 
     headers = [h.strip() for h in reader.fieldnames if h and h.strip()]
     _ensure_dynamic_columns(db, headers)
+    tbl = catalog_table("vulns_catalog")
+    tbl_meta = catalog_table("vulns_catalog_meta")
 
-    table_cols = {
-        str(r["column_name"])
-        for r in db.execute(
-            text(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'core' AND table_name = 'vulns_catalog'
-                """
-            )
-        ).mappings()
-    }
+    if _is_sqlite_mode():
+        table_cols = {
+            str(r["name"])
+            for r in db.execute(text(f"PRAGMA table_info({tbl})")).mappings()
+        }
+    else:
+        table_cols = {
+            str(r["column_name"])
+            for r in db.execute(
+                text(
+                    f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = '{tbl.split('.')[-1]}'
+                    """
+                )
+            ).mappings()
+        }
     upsert_cols = [h for h in headers if h in table_cols]
     has_id = "Id" in upsert_cols
     update_set = ", ".join(
@@ -286,7 +369,10 @@ def import_catalog_csv_bytes(
     )
 
     if replace_all:
-        db.execute(text("TRUNCATE TABLE core.vulns_catalog"))
+        if _is_sqlite_mode():
+            db.execute(text(f"DELETE FROM {tbl}"))
+        else:
+            db.execute(text(f"TRUNCATE TABLE {tbl}"))
         db.commit()
 
     imported = 0
@@ -304,17 +390,10 @@ def import_catalog_csv_bytes(
             cols: list[str] = []
             values: dict[str, Any] = {}
             for col in upsert_cols:
-                if col not in row:
-                    continue
-                raw_val = row[col]
-                if raw_val is None or str(raw_val).strip() == "":
-                    if col == "Id":
-                        continue
+                if col in row:
+                    val = row[col]
                     cols.append(f'"{col}"')
-                    values[col] = None
-                    continue
-                cols.append(f'"{col}"')
-                values[col] = str(raw_val).strip()
+                    values[col] = val if val != "" else None
             if not cols:
                 skipped += 1
                 continue
@@ -325,7 +404,7 @@ def import_catalog_csv_bytes(
                 db.execute(
                     text(
                         f"""
-                        INSERT INTO core.vulns_catalog ({col_sql})
+                        INSERT INTO {tbl} ({col_sql})
                         VALUES ({placeholders})
                         ON CONFLICT ("Id") DO UPDATE SET {update_set}
                         """
@@ -335,7 +414,7 @@ def import_catalog_csv_bytes(
             else:
                 db.execute(
                     text(
-                        f"INSERT INTO core.vulns_catalog ({col_sql}) VALUES ({placeholders})"
+                        f"INSERT INTO {tbl} ({col_sql}) VALUES ({placeholders})"
                     ),
                     values,
                 )
@@ -350,7 +429,7 @@ def import_catalog_csv_bytes(
     flush_batch()
 
     count = db.execute(
-        text("SELECT COUNT(*)::int AS n FROM core.vulns_catalog")
+        text(f"SELECT COUNT(*) AS n FROM {tbl}")
     ).mappings().first()
     row_count = int(count["n"] if count else imported)
 
@@ -376,11 +455,15 @@ def import_bundled_catalog(
 
     ensure_vulns_catalog_table(db)
     ensure_catalog_meta_table(db)
+
+    tbl = catalog_table("vulns_catalog")
+    tbl_meta = catalog_table("vulns_catalog_meta")
+
     meta = db.execute(
         text(
-            """
+            f"""
             SELECT version, bundled_revision, row_count
-            FROM core.vulns_catalog_meta WHERE id = 1
+            FROM {tbl_meta} WHERE id = 1
             """
         )
     ).mappings().first()
@@ -392,7 +475,7 @@ def import_bundled_catalog(
     bundled_sha = str(manifest.get("sha256") or "").strip().lower()
 
     current_rows = db.execute(
-        text("SELECT COUNT(*)::int AS n FROM core.vulns_catalog")
+        text(f"SELECT COUNT(*) AS n FROM {tbl}")
     ).mappings().first()
     row_count_now = int(current_rows["n"] if current_rows else 0)
 
@@ -434,8 +517,8 @@ def import_bundled_catalog(
 
     db.execute(
         text(
-            """
-            UPDATE core.vulns_catalog_meta
+            f"""
+            UPDATE {tbl_meta}
             SET version = :version,
                 imported_at = :imported_at,
                 source_filename = :source_filename,

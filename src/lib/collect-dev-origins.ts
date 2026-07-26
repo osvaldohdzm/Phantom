@@ -17,6 +17,21 @@ export function collectDevOrigins(): string[] {
     // optional hostname
   }
 
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      const netInterface = interfaces[name];
+      if (netInterface) {
+        for (const info of netInterface) {
+          if (info.family === 'IPv4') {
+            origins.add(info.address);
+          }
+        }
+      }
+    }
+  } catch {
+    // optional interfaces scan
+  }
 
   for (const file of ['.env.local', '.env']) {
     try {

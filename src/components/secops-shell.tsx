@@ -21,7 +21,10 @@ function SecOpsShellInner({ children }: { children: React.ReactNode }) {
   const banner = resolveBrandingAssetUrl(branding.dashboard_banner_url);
   const secondaryLogo = resolveBrandingAssetUrl(branding.logo_secondary_url);
   const isEngineWorkspace =
-    pathname === '/tools/phantom' || (pathname?.startsWith('/tools/phantom/') ?? false);
+    pathname === '/tools/phantom' ||
+    (pathname?.startsWith('/tools/phantom/') ?? false) ||
+    pathname === '/tools/methodologies-phantom' ||
+    (pathname?.startsWith('/tools/methodologies-phantom/') ?? false);
 
   useEffect(() => {
     if (pathname) markSecOpsPath(pathname);

@@ -4,7 +4,7 @@ COPY services/phantom-parse/ ./
 RUN cargo build --release
 
 FROM docker.io/library/debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/phantom-parse /usr/local/bin/phantom-parse
 ENV PARSE_RUST_ADDR=0.0.0.0:8081
