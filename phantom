@@ -1,3 +1,2160 @@
 #!/usr/bin/env bash
-# Delega en ops/phantom — usa ./phantom help para ver todos los comandos.
-exec "$(cd "$(dirname "$0")" && pwd)/ops/phantom" "$@"
+# Phantom CLI Operativo — Control Único y Centralizado de Entornos
+set -euo pipefail
+
+PHANTOM_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PHANTOM_ROOT"
+
+NAMESPACE=""
+SUB_CMD=""
+ENV=""
+SYNC_DB=0
+ARGS=()
+
+# Parse parameters
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    local|docker|cluster|doctor|docs|plugin|backup|restore|migrate|release|update|version)
+      NAMESPACE="$1"
+      shift
+      ;;
+    native|k8s)
+      # Compatibility fallback for explicit modes
+      if [[ "$1" == "k8s" ]]; then
+        NAMESPACE="cluster"
+      else
+        NAMESPACE="local"
+      fi
+      shift
+      ;;
+    --env=*)
+      ENV="${1##*=}"
+      shift
+      ;;
+    dev|qa|prod)
+      ENV="$1"
+      shift
+      ;;
+    --sync|--sync-db|sync)
+      SYNC_DB=1
+      shift
+      ;;
+    help|-h|--help)
+      if [[ -z "$NAMESPACE" ]]; then
+        NAMESPACE="help"
+      else
+        SUB_CMD="help"
+      fi
+      shift
+      ;;
+    *)
+      if [[ -n "$NAMESPACE" && -z "$SUB_CMD" ]]; then
+        SUB_CMD="$1"
+      else
+        ARGS+=("$1")
+      fi
+      shift
+      ;;
+  esac
+done
+
+# If no namespace was detected, trigger backwards compatibility routing
+if [[ -z "$NAMESPACE" && -n "${SUB_CMD:-}" ]]; then
+  # Translate old commands to namespaces
+  case "$SUB_CMD" in
+    start|stop|restart|status)
+      if [[ "${PHANTOM_MODE:-}" == "docker" ]]; then
+        NAMESPACE="docker"
+      else
+        NAMESPACE="local"
+      fi
+      ;;
+    dev|prod|install|uninstall|clean|debug|sbom)
+      NAMESPACE="local"
+      ;;
+    build|logs)
+      NAMESPACE="docker"
+      ;;
+    fix-docker)
+      NAMESPACE="docker"
+      SUB_CMD="fix"
+      ;;
+    k8s|kubernetes)
+      NAMESPACE="cluster"
+      SUB_CMD="deploy"
+      ;;
+    verify-env|env|verify)
+      NAMESPACE="doctor"
+      SUB_CMD=""
+      ;;
+    passwd|password|change|change-password|credentials)
+      NAMESPACE="local"
+      SUB_CMD="passwd"
+      ;;
+    db-migrate|migrate-db)
+      NAMESPACE="migrate"
+      SUB_CMD=""
+      ;;
+    catalog-export)
+      NAMESPACE="local"
+      SUB_CMD="catalog-export"
+      ;;
+    catalog-import)
+      NAMESPACE="local"
+      SUB_CMD="catalog-import"
+      ;;
+    backup|db-backup)
+      NAMESPACE="backup"
+      SUB_CMD=""
+      ;;
+    restore|db-restore)
+      NAMESPACE="restore"
+      SUB_CMD=""
+      ;;
+    version|-v|--version)
+      NAMESPACE="version"
+      SUB_CMD=""
+      ;;
+    *)
+      NAMESPACE="help"
+      ;;
+  esac
+elif [[ -z "$NAMESPACE" && -z "$SUB_CMD" ]]; then
+  NAMESPACE="help"
+fi
+
+# Set appropriate PHANTOM_MODE for script internals compatibility
+if [[ "$NAMESPACE" == "docker" ]]; then
+  export PHANTOM_MODE="docker"
+elif [[ "$NAMESPACE" == "local" ]]; then
+  export PHANTOM_MODE="native"
+elif [[ "$NAMESPACE" == "cluster" ]]; then
+  export PHANTOM_MODE="k8s"
+fi
+
+# ==========================================
+# BIBLIOTECA DE FUNCIONES OPERACIONALES
+# ==========================================
+
+phantom_is_darwin() {
+  [[ "$(uname -s)" == "Darwin" ]]
+}
+
+phantom_sed_inplace() {
+  local expr="$1"
+  local file="$2"
+  if phantom_is_darwin; then
+    sed -i '' "$expr" "$file"
+  else
+    sed -i "$expr" "$file"
+  fi
+}
+
+phantom_docker_bin() {
+  if command -v docker &>/dev/null; then
+    command -v docker
+    return 0
+  fi
+  if [[ -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
+    echo /Applications/Docker.app/Contents/Resources/bin/docker
+    return 0
+  fi
+  return 1
+}
+
+phantom_compose() {
+  local docker_bin
+  local compose_file="$PHANTOM_ROOT/deploy/docker/docker-compose.yml"
+  if docker_bin="$(phantom_docker_bin 2>/dev/null)" && "$docker_bin" compose version &>/dev/null 2>&1; then
+    "$docker_bin" compose -f "$compose_file" "$@"
+  elif command -v podman &>/dev/null && podman compose version &>/dev/null 2>&1; then
+    podman compose -f "$compose_file" "$@"
+  else
+    echo "[!] Docker Compose o Podman Compose no está disponible." >&2
+    if phantom_is_darwin; then
+      echo "    macOS: ./phantom local install --docker   (instala Docker Desktop)" >&2
+      echo "    Sin Docker: ./phantom local install   o   ./phantom local dev" >&2
+    else
+      echo "    Ubuntu: sudo ./phantom local install --system" >&2
+    fi
+    exit 1
+  fi
+}
+
+phantom_require_compose() {
+  phantom_compose version >/dev/null
+}
+
+phantom_host_ip() {
+  if phantom_is_darwin; then
+    ipconfig getifaddr en0 2>/dev/null \
+      || ipconfig getifaddr en1 2>/dev/null \
+      || echo "127.0.0.1"
+    return
+  fi
+  hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1"
+}
+
+phantom_print_urls() {
+  if [[ -f .env ]]; then
+    set -a
+    source .env
+    set +a
+  fi
+  local http_port="${PHANTOM_HTTP_PORT:-3000}"
+  local ip
+  ip="$(phantom_host_ip)"
+  echo ""
+  echo "============================================================"
+  echo " Phantom está listo en contenedor Docker:"
+  echo "   https://${ip}:${http_port}"
+  echo "   https://localhost:${http_port}"
+  echo "============================================================"
+}
+
+phantom_ensure_env_file() {
+  if [[ -f .env ]]; then
+    return 0
+  fi
+  if [[ ! -f .env.example ]]; then
+    echo "[!] No existe .env ni .env.example" >&2
+    exit 1
+  fi
+  cp .env.example .env
+  echo "[+] Creado .env desde .env.example"
+}
+
+phantom_ensure_env_defaults() {
+  [[ -f .env ]] || return 0
+  local pair key val
+  while IFS= read -r pair; do
+    key="${pair%%=*}"
+    val="${pair#*=}"
+    [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || continue
+    if ! grep -qE "^${key}=" .env 2>/dev/null; then
+      echo "${key}=${val}" >> .env
+      echo "[+] Añadido ${key} a .env"
+    fi
+  done <<'EOF'
+POSTGRES_USER=phantom
+POSTGRES_PASSWORD=change_me_strong_password
+POSTGRES_DB=katana_security_db
+JWT_SECRET=change_me_jwt_secret_min_32_chars
+JWT_EXPIRE_MINUTES=480
+AUTH_REQUIRED=true
+PHANTOM_HTTP_PORT=3000
+EOF
+}
+
+phantom_set_env_var() {
+  local key="$1"
+  local val="$2"
+  if grep -qE "^${key}=" .env; then
+    phantom_sed_inplace "s|^${key}=.*|${key}=${val}|" .env
+  else
+    echo "${key}=${val}" >> .env
+  fi
+}
+
+phantom_generate_secrets_if_needed() {
+  [[ -f .env ]] || return 0
+  phantom_ensure_env_defaults
+  command -v openssl &>/dev/null || return 0
+
+  set -a
+  source .env
+  set +a
+  local changed=0 pw jwt
+
+  if [[ -z "${POSTGRES_PASSWORD:-}" || "${POSTGRES_PASSWORD}" == "change_me_strong_password" ]]; then
+    pw=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
+    phantom_set_env_var POSTGRES_PASSWORD "$pw"
+    changed=1
+  fi
+
+  if [[ -z "${JWT_SECRET:-}" || "${JWT_SECRET}" == "change_me_jwt_secret_min_32_chars" || ${#JWT_SECRET} -lt 32 ]]; then
+    jwt=$(openssl rand -base64 48 | tr -d '/+=' | head -c 48)
+    phantom_set_env_var JWT_SECRET "$jwt"
+    changed=1
+  fi
+
+  if [[ "$changed" -eq 1 ]]; then
+    echo "[+] Secretos generados en .env (POSTGRES_PASSWORD, JWT_SECRET)"
+  fi
+}
+
+phantom_ensure_tls_sans() {
+  [[ -f .env ]] || return 0
+  if grep -qE '^PHANTOM_TLS_SANS=' .env 2>/dev/null; then
+    return 0
+  fi
+  local ip
+  ip="$(phantom_host_ip)"
+  echo "PHANTOM_TLS_SANS=localhost,127.0.0.1,${ip}" >> .env
+  echo "[+] PHANTOM_TLS_SANS=localhost,127.0.0.1,${ip}"
+}
+
+phantom_has_compose() {
+  local docker_bin
+  if docker_bin="$(phantom_docker_bin 2>/dev/null)" && "$docker_bin" compose version &>/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v podman &>/dev/null && podman compose version &>/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+phantom_use_native_mode() {
+  if [[ "${PHANTOM_MODE:-}" == "native" ]]; then
+    return 0
+  fi
+  if [[ "${PHANTOM_MODE:-}" == "docker" ]]; then
+    return 1
+  fi
+  phantom_is_darwin && ! phantom_has_compose
+}
+
+phantom_ensure_backend_env() {
+  [[ -f backend/.env ]] && return 0
+
+  if [[ -f backend/.env.embedded.example ]]; then
+    cp backend/.env.embedded.example backend/.env
+    echo "[+] Creado backend/.env (SQLite embebido — sin Postgres)"
+  elif [[ -f backend/.env.example ]]; then
+    cp backend/.env.example backend/.env
+    echo "[+] Creado backend/.env desde backend/.env.example"
+  else
+    echo "[!] Falta backend/.env y no hay plantilla" >&2
+    exit 1
+  fi
+
+  if [[ -f .env ]]; then
+    local jwt
+    jwt=$(grep -E "^JWT_SECRET=" .env | cut -d= -f2 || echo "")
+    if [[ -n "$jwt" ]]; then
+      phantom_sed_inplace "s|^JWT_SECRET=.*|JWT_SECRET=${jwt}|" backend/.env
+    fi
+  fi
+}
+
+phantom_install_native() {
+  echo "============================================================"
+  echo " Phantom — instalación (nativo, sin Docker)"
+  echo "============================================================"
+  
+  phantom_ensure_env_file
+  phantom_generate_secrets_if_needed
+  phantom_ensure_tls_sans
+  phantom_ensure_backend_env
+
+  echo "[*] Verificando entorno…"
+  run_verify_env || true
+
+  if ! command -v python3 &>/dev/null; then
+    echo "[!] python3 no encontrado." >&2
+    if phantom_is_darwin; then
+      echo "    macOS: brew install python@3.11" >&2
+    else
+      echo "    Ubuntu: sudo apt install python3 python3-venv python3-pip" >&2
+    fi
+    exit 1
+  fi
+
+  if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+    echo "[!] Node.js / npm no encontrados." >&2
+    if phantom_is_darwin; then
+      echo "    macOS: brew install node" >&2
+    else
+      echo "    Ubuntu: sudo apt install nodejs npm" >&2
+    fi
+    exit 1
+  fi
+
+  if [[ ! -d backend/.venv ]]; then
+    echo "[*] Creando backend/.venv…"
+    python3 -m venv backend/.venv
+  fi
+  echo "[*] Instalando dependencias Python…"
+  backend/.venv/bin/pip install -q -r backend/requirements.txt
+
+  if [[ ! -d node_modules ]]; then
+    echo "[*] Instalando dependencias Node…"
+    if [[ -f package-lock.json ]]; then
+      npm ci
+    else
+      npm install
+    fi
+  else
+    echo "[*] node_modules presente — omitiendo npm install"
+  fi
+
+  if [[ ! -f certificates/localhost.pem || ! -f certificates/localhost-key.pem ]]; then
+    echo "[*] Generando certificados TLS…"
+    if ! ./scripts/generate-certs.sh; then
+      echo "[!] mkcert requerido para HTTPS local." >&2
+      if phantom_is_darwin; then
+        echo "    macOS: brew install mkcert && mkcert -install" >&2
+      else
+        echo "    https://github.com/FiloSottile/mkcert#installation" >&2
+      fi
+      exit 1
+    fi
+  fi
+
+  mkdir -p backend/data
+  echo "[+] Instalación nativa lista."
+}
+
+phantom_catalog_export_native() {
+  local py="python3"
+  if [[ -x backend/.venv/bin/python ]]; then
+    py="backend/.venv/bin/python"
+  fi
+  if [[ -f backend/.env ]]; then
+    set -a
+    source backend/.env
+    set +a
+  fi
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    echo "[!] Falta DATABASE_URL en backend/.env" >&2
+    exit 1
+  fi
+  export PYTHONPATH="${PHANTOM_ROOT}/backend"
+  echo "[*] Export nativo → backend/catalog/ (DATABASE_URL desde backend/.env)"
+  "$py" -m scripts.export_operational_catalog "$@"
+}
+
+# ==========================================
+# GESTIÓN DE AMBIENTES NATIVOS
+# ==========================================
+
+start_env() {
+  local e="$1"
+  local env_file=".env.$e"
+  export PHANTOM_FORCE_PORTS=1
+
+  if [ ! -f "$env_file" ]; then
+    echo "Error: No se encontró el archivo de entorno $env_file"
+    exit 1
+  fi
+
+  set -a
+  source "$env_file"
+  set +a
+
+  if [ -n "${LOG_PATH:-}" ]; then
+    local log_dir
+    log_dir=$(dirname "$LOG_PATH")
+    if ! mkdir -p "$log_dir" 2>/dev/null; then
+      echo "Advertencia: Sin permisos de escritura en '$log_dir'. Usando fallback local './logs'..."
+      log_dir="$(pwd)/logs"
+      LOG_PATH="$log_dir/app.log"
+      mkdir -p "$log_dir"
+    fi
+  fi
+  export LOG_PATH
+
+  if [[ "$e" == "dev" || "$e" == "qa" ]]; then
+    if [ "$SYNC_DB" = "1" ]; then
+      echo "Clonando base de datos de producción (katana_security_db) para el entorno [$e]..."
+      backend/.venv/bin/python backend/scripts/clone_db.py || true
+    else
+      echo "[+] Saltando clonado de base de datos (usa --sync-db para clonar desde producción)."
+    fi
+  fi
+
+  local pid_file=".pid.$e"
+  if [ -f "$pid_file" ]; then
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Phantom [$e] ya está corriendo con PID $pid en los puertos (Frontend: $PORT, Backend: $PHANTOM_BACKEND_PORT)."
+      return 0
+    fi
+  fi
+
+  echo "Iniciando Phantom en entorno [$e]..."
+  if [ "$e" = "dev" ]; then
+    if [ -n "${LOG_PATH:-}" ]; then
+      nohup ./phantom dev >> "$LOG_PATH" 2>&1 &
+    else
+      nohup ./phantom dev >/dev/null 2>&1 &
+    fi
+  else
+    if [ -n "${LOG_PATH:-}" ]; then
+      nohup ./phantom prod >> "$LOG_PATH" 2>&1 &
+    else
+      nohup ./phantom prod >/dev/null 2>&1 &
+    fi
+  fi
+
+  local new_pid=$!
+  echo $new_pid > "$pid_file"
+  echo "Phantom [$e] iniciado con PID $new_pid."
+}
+
+stop_env() {
+  local e="$1"
+  local pid_file=".pid.$e"
+  if [ ! -f "$pid_file" ]; then
+    echo "No se encontró archivo PID para Phantom [$e]. ¿Está corriendo?"
+    return 0
+  fi
+
+  local pid
+  pid=$(cat "$pid_file")
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "Deteniendo Phantom [$e] (PID $pid)..."
+    kill -INT "$pid" 2>/dev/null || true
+    sleep 3
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Forzando cierre (kill -9)..."
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    echo "Detenido con éxito."
+  else
+    echo "El proceso $pid ya no está corriendo."
+  fi
+  rm -f "$pid_file"
+}
+
+status_env() {
+  local e="$1"
+  local pid_file=".pid.$e"
+  local env_file=".env.$e"
+
+  if [ ! -f "$pid_file" ]; then
+    echo "Estado: [APAGADO] Phantom [$e]"
+    return 0
+  fi
+
+  local pid
+  pid=$(cat "$pid_file")
+  if kill -0 "$pid" 2>/dev/null; then
+    local port backend_port
+    port=$(grep -E "^PORT=" "$env_file" | cut -d= -f2 || echo "desconocido")
+    backend_port=$(grep -E "^PHANTOM_BACKEND_PORT=" "$env_file" | cut -d= -f2 || echo "desconocido")
+    echo "Estado: [CORRIENDO] Phantom [$e]"
+    echo "  PID Principal: $pid"
+    echo "  Puerto Frontend: $port"
+    echo "  Puerto Backend (API): $backend_port"
+    if [ -f "$env_file" ]; then
+      local log_path
+      log_path=$(grep -E "^LOG_PATH=" "$env_file" | cut -d= -f2 || echo "")
+      log_path=$(echo "$log_path" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+      if [ -n "$log_path" ] && [ -f "$log_path" ]; then
+        echo "  Log: $log_path"
+        echo "  Últimas líneas del log:"
+        tail -n 5 "$log_path" | sed 's/^/    /'
+      fi
+    fi
+  else
+    echo "Estado: [APAGADO] (Archivo PID huérfano con PID $pid)"
+    rm -f "$pid_file"
+  fi
+}
+
+list_port_listeners() {
+  local port="$1"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+}
+
+pids_on_port() {
+  local port="$1"
+  (lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true) | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+describe_pid() {
+  local pid="$1"
+  ps -p "$pid" -o pid=,ppid=,args= 2>/dev/null | sed 's/^/      /'
+}
+
+is_likely_phantom_dev() {
+  local pid="$1"
+  local args
+  args=$(ps -p "$pid" -o args= 2>/dev/null || true)
+  echo "$args" | grep -qiE '(uvicorn|next dev|next-server|node.*server-dev|node.*server-prod|node.*next|spectre|\.next/)' && return 0
+  return 1
+}
+
+kill_pids_gracefully() {
+  local pids="$1"
+  [ -z "$pids" ] && return 0
+  echo "[*] Enviando SIGINT/SIGTERM a PIDs: $pids"
+  kill $pids 2>/dev/null || true
+  
+  local i still
+  for i in $(seq 1 5); do
+    still=""
+    local pid
+    for pid in $pids; do
+      kill -0 "$pid" 2>/dev/null && still="$still $pid"
+    done
+    still="${still# }"
+    [ -z "$still" ] && return 0
+    sleep 1
+  done
+
+  if [ -n "$still" ]; then
+    echo "[*] Forzando cierre (kill -9): $still"
+    kill -9 $still 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+free_port() {
+  local port="$1"
+  local label="$2"
+  local pids
+  pids=$(pids_on_port "$port")
+  [ -z "$pids" ] && return 0
+
+  echo "[!] Puerto $port en uso ($label)."
+  list_port_listeners "$port"
+  echo "[*] Proceso(s) escuchando:"
+  for pid in $pids; do
+    describe_pid "$pid"
+  done
+
+  local phantom_hint=""
+  for pid in $pids; do
+    if is_likely_phantom_dev "$pid"; then
+      phantom_hint="phantom"
+      break
+    fi
+  done
+
+  if [ -n "$phantom_hint" ]; then
+    echo "    (Parece un servidor Phantom / uvicorn / Next.js anterior.)"
+  else
+    echo "    (Otro programa usa este puerto — revísalo antes de continuar.)"
+  fi
+
+  if [ "${PHANTOM_FORCE_PORTS:-}" = "1" ]; then
+    echo "[*] PHANTOM_FORCE_PORTS=1 — cerrando sin preguntar."
+  else
+    echo ""
+    read -r -p "¿Cerrar proceso(s) en puerto $port y continuar? [s/N] " answer
+    case "$answer" in
+      s|S|y|Y|si|sí|SI|SÍ) ;;
+      *)
+        echo "Cancelado. Libera el puerto manualmente o usa PHANTOM_FORCE_PORTS=1 ./phantom"
+        exit 1
+        ;;
+    esac
+  fi
+
+  echo "[*] Terminando PID(s): $pids"
+  kill_pids_gracefully "$pids"
+
+  if [ -n "$(pids_on_port "$port")" ]; then
+    echo "[!] No se pudo liberar el puerto $port."
+    list_port_listeners "$port"
+    exit 1
+  fi
+  echo "[+] Puerto $port libre."
+}
+
+# ==========================================
+# MANEJADORES DE COMANDOS INDIVIDUALES
+# ==========================================
+
+run_k8s() {
+  local manifest="deploy/kubernetes/base/deployment.yaml"
+  echo "============================================================"
+  echo " Phantom — Kubernetes & containerd Integration"
+  echo "============================================================"
+  echo "[*] Generando manifiesto Kubernetes unificado: $manifest..."
+
+  mkdir -p "$(dirname "$manifest")"
+  cat <<'EOF' > "$manifest"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: phantom-secops
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phantom-backend
+  namespace: phantom-secops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: phantom-backend
+  template:
+    metadata:
+      labels:
+        app: phantom-backend
+    spec:
+      containers:
+      - name: backend
+        image: phantom-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://phantom:change_me_strong_password@postgres-service.phantom-secops.svc.cluster.local:5432/katana_security_db"
+        - name: JWT_SECRET
+          value: "change_me_jwt_secret_min_32_chars"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phantom-backend-service
+  namespace: phantom-secops
+spec:
+  selector:
+    app: phantom-backend
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phantom-frontend
+  namespace: phantom-secops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: phantom-frontend
+  template:
+    metadata:
+      labels:
+        app: phantom-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: phantom-frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: API_PROXY_URL
+          value: "http://phantom-backend-service.phantom-secops.svc.cluster.local:8000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phantom-frontend-service
+  namespace: phantom-secops
+spec:
+  selector:
+    app: phantom-frontend
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: phantom-ingress
+  namespace: phantom-secops
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: phantom.orbitalapps.lan
+    http:
+      paths:
+      - path: /api/secops
+        pathType: Prefix
+        backend:
+          service:
+            name: phantom-backend-service
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: phantom-frontend-service
+            port:
+              number: 3000
+EOF
+
+  echo "[+] Manifiesto generado con éxito."
+  echo ""
+  echo "Guía de Despliegue en Kubernetes (k8s) usando containerd:"
+  echo "--------------------------------------------------------"
+  echo "1. Construye e importa las imágenes a tu cluster local (ej: k3s/minikube/kind):"
+  echo "   docker build -t phantom-backend:latest -f deploy/docker/api.Dockerfile backend"
+  echo "   docker build -t phantom-frontend:latest -f deploy/docker/web.Dockerfile ."
+  echo "   # Si usas k3s/containerd:"
+  echo "   docker save phantom-backend:latest | sudo k3s ctr images import -"
+  echo "   docker save phantom-frontend:latest | sudo k3s ctr images import -"
+  echo ""
+  echo "2. Aplica el manifiesto en tu cluster:"
+  echo "   kubectl apply -f deploy/kubernetes/base/deployment.yaml"
+  echo ""
+  echo "3. Monitorea los Pods y el Ingress:"
+  echo "   kubectl get pods -n phantom-secops"
+  echo "   kubectl get ingress -n phantom-secops"
+  echo "============================================================"
+}
+
+run_dev() {
+  source "./scripts/load-cert-hosts.sh"
+  load_cert_extra_hosts_from_env
+  local TS_IP
+  TS_IP=$(tailscale_ipv4 || true)
+
+  local BACKEND_PORT="${PHANTOM_BACKEND_PORT:-8000}"
+  local FRONTEND_PORT="${PHANTOM_FRONTEND_PORT:-${PORT:-3000}}"
+  export API_PROXY_URL="${API_PROXY_URL:-http://127.0.0.1:$BACKEND_PORT}"
+
+  local CERT="./certificates/localhost.pem"
+  local KEY="./certificates/localhost-key.pem"
+  if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
+    echo "[!] Certificados TLS no encontrados — ejecuta: ./scripts/generate-certs.sh"
+    exit 1
+  fi
+
+  local HOST_NAME
+  HOST_NAME=$(hostname || true)
+  local HOST_NAME_LC
+  HOST_NAME_LC=$(echo "$HOST_NAME" | tr '[:upper:]' '[:lower:]')
+  export DEV_ALLOWED_ORIGINS="localhost,127.0.0.1,${HOST_NAME},${HOST_NAME_LC}${TS_IP:+,${TS_IP}}${CERT_EXTRA_HOSTS:+,${CERT_EXTRA_HOSTS// /,}}"
+
+  echo "============================================================"
+  echo "⚡ Phantom — DEVELOPMENT (HTTPS + hot-reload)"
+  echo "============================================================"
+
+
+
+  local BACKEND_PID=""
+  local FRONTEND_PID=""
+
+  cleanup() {
+    echo ""
+    echo "[-] Shutting down background processes..."
+    if [ -n "$BACKEND_PID" ]; then
+      kill "$BACKEND_PID" 2>/dev/null || true
+    fi
+    if [ -n "$FRONTEND_PID" ]; then
+      kill "$FRONTEND_PID" 2>/dev/null || true
+    fi
+    local bp fp
+    bp=$(pids_on_port "$BACKEND_PORT")
+    fp=$(pids_on_port "$FRONTEND_PORT")
+    if [ -n "$bp" ]; then
+      kill_pids_gracefully "$bp"
+    fi
+    if [ -n "$fp" ]; then
+      kill_pids_gracefully "$fp"
+    fi
+    local venv_pids
+    venv_pids=$(ps aux | grep -i "$(pwd)/backend/.venv" | grep -v grep | awk '{print $2}' || true)
+    if [ -n "$venv_pids" ]; then
+      kill -9 $venv_pids 2>/dev/null || true
+    fi
+    echo "[+] All services terminated successfully. Goodbye!"
+  }
+  trap cleanup EXIT INT TERM
+
+  echo "[+] Verifying local database service..."
+  echo "    Assumes PostgreSQL (5432) is running locally."
+
+  echo "[+] Initializing FastAPI Backend..."
+  cd backend
+  if [ -d ".venv" ]; then
+    echo "[*] Activating Python virtual environment (.venv)..."
+    source .venv/bin/activate
+    echo "[*] Checking Python dependencies..."
+    pip install -r requirements.txt &>/dev/null || pip install -r requirements.txt
+  fi
+
+  echo "[*] Launching Uvicorn FastAPI server on port $BACKEND_PORT..."
+  free_port "$BACKEND_PORT" "backend"
+  mkdir -p "../storage/logs"
+  uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload 2>&1 | tee -a "../storage/logs/phantom.log" &
+  BACKEND_PID=$!
+  cd ..
+
+  echo "[+] Initializing Next.js Frontend..."
+  if [ ! -d "node_modules" ]; then
+    echo "[*] Installing frontend dependencies..."
+    npm install
+  fi
+
+  echo "[*] Launching Next.js HTTPS on port $FRONTEND_PORT..."
+  free_port "$FRONTEND_PORT" "frontend"
+  export BIND_ADDRESS="::"
+  export PORT="$FRONTEND_PORT"
+  export SSL_CERT_PATH="$CERT"
+  export SSL_KEY_PATH="$KEY"
+  node server-dev.mjs &
+  FRONTEND_PID=$!
+
+  wait
+}
+
+run_prod() {
+  source "./scripts/load-cert-hosts.sh"
+  load_cert_extra_hosts_from_env
+
+  export NODE_ENV=production
+  local BACKEND_PORT="${PHANTOM_BACKEND_PORT:-8000}"
+  local FRONTEND_PORT="${PORT:-3000}"
+  export API_PROXY_URL="${API_PROXY_URL:-http://127.0.0.1:$BACKEND_PORT}"
+
+  # Liberar puertos conflictivos antes de arrancar (para limpiar huerfanos/workers anteriores)
+  free_port "$BACKEND_PORT" "backend"
+  free_port "$FRONTEND_PORT" "frontend"
+
+  local CERT="./certificates/localhost.pem"
+  local KEY="./certificates/localhost-key.pem"
+  if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
+    echo "[!] Certificados TLS no encontrados — ejecuta: ./scripts/generate-certs.sh"
+    exit 1
+  fi
+
+  local TS_IP
+  TS_IP=$(tailscale_ipv4 || true)
+  local MISSING_CERT_IPS=()
+  [[ -n "$TS_IP" ]] && ! cert_includes_ip "$TS_IP" "$CERT" && MISSING_CERT_IPS+=("$TS_IP")
+  if [[ -n "${CERT_EXTRA_HOSTS:-}" ]]; then
+    for ip in ${CERT_EXTRA_HOSTS}; do
+      [[ "$ip" =~ ^[0-9.]+$ ]] || continue
+      cert_includes_ip "$ip" "$CERT" || MISSING_CERT_IPS+=("$ip")
+    done
+  fi
+  if [[ ${#MISSING_CERT_IPS[@]} -gt 0 ]]; then
+    echo "[!] TLS cert missing IP(s): ${MISSING_CERT_IPS[*]}"
+    if command -v mkcert &>/dev/null; then
+      echo "[*] Regenerating certificates..."
+      export CERT_EXTRA_HOSTS="${CERT_EXTRA_HOSTS:-} ${MISSING_CERT_IPS[*]}"
+      "./scripts/generate-certs.sh"
+    else
+      echo "    Run: CERT_EXTRA_HOSTS='${MISSING_CERT_IPS[*]}' ./scripts/generate-certs.sh"
+      exit 1
+    fi
+  fi
+
+  local CPU
+  if command -v sysctl &>/dev/null; then
+    CPU=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+  else
+    CPU=$(nproc 2>/dev/null || echo 4)
+  fi
+  local UVICORN_WORKERS=$(( CPU > 2 ? CPU / 2 : 2 ))
+  [[ "$UVICORN_WORKERS" -lt 2 ]] && UVICORN_WORKERS=2
+
+  local BACKEND_PID=""
+  local FRONTEND_PID=""
+
+  cleanup() {
+    echo ""
+    echo "[-] Shutting down..."
+    [[ -n "$BACKEND_PID" ]] && kill "$BACKEND_PID" 2>/dev/null || true
+    [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
+    if command -v lsof &>/dev/null; then
+      local bp fp
+      bp=$(lsof -t -i:"$BACKEND_PORT" 2>/dev/null || true)
+      fp=$(lsof -t -i:"$FRONTEND_PORT" 2>/dev/null || true)
+      [[ -n "$bp" ]] && kill -9 $bp 2>/dev/null || true
+      [[ -n "$fp" ]] && kill -9 $fp 2>/dev/null || true
+    fi
+    local venv_pids
+    venv_pids=$(ps aux | grep -i "$(pwd)/backend/.venv" | grep -v grep | awk '{print $2}' || true)
+    if [[ -n "$venv_pids" ]]; then
+      kill -9 $venv_pids 2>/dev/null || true
+    fi
+    echo "[+] Stopped."
+  }
+  trap cleanup EXIT INT TERM
+
+  echo "[+] Backend (FastAPI, ${UVICORN_WORKERS} workers, HTTP localhost)..."
+  cd backend
+  if [[ -d ".venv" ]]; then
+    source .venv/bin/activate
+    pip install -q -r requirements.txt
+  else
+    echo "[!] backend/.venv not found — create venv first."
+    exit 1
+  fi
+
+  echo "[+] Database bootstrap (single process)..."
+  python -m app.bootstrap_db
+  export PHANTOM_DB_BOOTSTRAPPED=1
+
+  mkdir -p "../storage/logs"
+  uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port "$BACKEND_PORT" \
+    --workers "$UVICORN_WORKERS" \
+    --log-level info 2>&1 | tee -a "../storage/logs/phantom.log" &
+  BACKEND_PID=$!
+  cd ..
+
+  echo "[+] Frontend — building Next.js (production)..."
+  if [[ ! -d node_modules ]]; then
+    npm ci
+  fi
+  npm run build
+
+  echo "[+] Frontend — HTTPS on port $FRONTEND_PORT (all interfaces)..."
+  export BIND_ADDRESS="::"
+  export PORT="$FRONTEND_PORT"
+  export SSL_CERT_PATH="$CERT"
+  export SSL_KEY_PATH="$KEY"
+  node server-prod.mjs &
+  FRONTEND_PID=$!
+
+  wait
+}
+
+run_install() {
+  local option="${1:-}"
+  if [[ "$option" == "--system" ]]; then
+    run_install_ubuntu
+    return 0
+  fi
+
+  if [[ "$option" == "--docker" ]]; then
+    if ! phantom_is_darwin; then
+      echo "[!] install --docker solo aplica en macOS."
+      echo "    Ubuntu: sudo ./phantom install --system"
+      exit 1
+    fi
+    phantom_install_docker_macos
+    export PHANTOM_MODE=docker
+    return 0
+  fi
+
+  if phantom_use_native_mode; then
+    phantom_install_native
+    return 0
+  fi
+
+  phantom_ensure_env_file
+  phantom_generate_secrets_if_needed
+  phantom_ensure_tls_sans
+
+  echo "[*] Verificando entorno…"
+  run_verify_env || true
+
+  phantom_require_compose
+  echo "[*] Construyendo imágenes (primera vez puede tardar varios minutos)…"
+  phantom_compose build
+}
+
+run_verify_env() {
+  if [[ ! -f .env ]]; then
+    echo "    FAIL — falta .env (ejecuta: ./phantom install)"
+    return 1
+  fi
+  set -a
+  source .env
+  set +a
+
+  local FAIL=0
+  check_var() {
+    local name="$1"
+    local val="${!name:-}"
+    if [[ -z "$val" ]]; then
+      echo "    FAIL — $name vacío"
+      FAIL=1
+      return
+    fi
+    echo "    OK   — $name"
+  }
+
+  check_var POSTGRES_PASSWORD
+  check_var JWT_SECRET
+
+  if [[ "${POSTGRES_PASSWORD:-}" == "change_me_strong_password" ]]; then
+    echo "    WARN — POSTGRES_PASSWORD sigue siendo el valor de ejemplo"
+    FAIL=1
+  fi
+
+  if [[ "${JWT_SECRET:-}" == "change_me_jwt_secret_min_32_chars" ]]; then
+    echo "    WARN — JWT_SECRET sigue siendo el valor de ejemplo"
+    FAIL=1
+  fi
+
+  if [[ -n "${JWT_SECRET:-}" && ${#JWT_SECRET} -lt 32 ]]; then
+    echo "    FAIL — JWT_SECRET debe tener al menos 32 caracteres"
+    FAIL=1
+  fi
+
+  if [[ "$FAIL" -ne 0 ]]; then
+    echo ""
+    echo "[!] Corrige .env antes de continuar."
+    echo "    Generar secretos: ./phantom install"
+    return 1
+  fi
+
+  echo "[+] Entorno válido"
+  return 0
+}
+
+run_change() {
+  local env_file=""
+  if [[ "$ENV" == "dev" || "$ENV" == "qa" || "$ENV" == "prod" ]]; then
+    env_file=".env.$ENV"
+  elif [[ -f "backend/.env" ]]; then
+    env_file="backend/.env"
+  fi
+
+  if [[ -n "$env_file" && -f "$env_file" ]]; then
+    echo "[*] Cargando variables de entorno desde $env_file..."
+    set -a
+    source "$env_file"
+    set +a
+  fi
+
+  if [[ ! -d "backend" ]]; then
+    echo "[!] No se encontró el directorio backend/."
+    exit 1
+  fi
+
+  # Determinar si debemos ejecutar en Docker o local nativo
+  if [[ "${PHANTOM_MODE:-}" == "docker" ]]; then
+    echo "[*] Ejecutando cambio de credenciales en contenedor de Docker..."
+    phantom_require_compose
+    phantom_compose exec -T api python -m scripts.change_credentials "$@"
+    return $?
+  elif [[ "${PHANTOM_MODE:-}" == "native" ]]; then
+    echo "[*] Ejecutando cambio de credenciales de forma nativa..."
+    cd backend
+    if [[ -d .venv ]]; then
+      source .venv/bin/activate
+    elif ! command -v python3 &>/dev/null; then
+      echo "[!] Python no encontrado. Ejecuta primero ./phantom dev para crear .venv."
+      exit 1
+    fi
+    if ! python3 -c "import sqlalchemy" 2>/dev/null; then
+      pip install -q -r requirements.txt
+    fi
+    export PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}"
+    python3 -m scripts.change_credentials "$@"
+    local status=$?
+    cd ..
+    return $status
+  else
+    # Auto-detectar
+    if phantom_has_compose && phantom_compose ps api --status running -q 2>/dev/null | grep -q .; then
+      echo "[*] Stack Docker activo detectado — ejecutando en contenedor api…"
+      phantom_compose exec -T api python -m scripts.change_credentials "$@"
+      return $?
+    else
+      echo "[*] Ejecutando de forma nativa local..."
+      cd backend
+      if [[ -d .venv ]]; then
+        source .venv/bin/activate
+      elif ! command -v python3 &>/dev/null; then
+        echo "[!] Python no encontrado."
+        exit 1
+      fi
+      if ! python3 -c "import sqlalchemy" 2>/dev/null; then
+        pip install -q -r requirements.txt
+      fi
+      export PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}"
+      python3 -m scripts.change_credentials "$@"
+      local status=$?
+      cd ..
+      return $status
+    fi
+  fi
+}
+
+run_backup() {
+  phantom_require_compose
+  local dest="${1:-backups}"
+  local stamp
+  stamp=$(date +%Y%m%d_%H%M%S)
+  local out_dir="$dest/phantom_${stamp}"
+  mkdir -p "$out_dir"
+
+  local db_user="${POSTGRES_USER:-phantom}"
+  local db_name="${POSTGRES_DB:-katana_security_db}"
+
+  echo "[*] Destino: $out_dir"
+  echo "[*] Volcado PostgreSQL…"
+  if ! phantom_compose exec -T postgres pg_dump -U "$db_user" "$db_name" > "$out_dir/database.sql"; then
+    echo "[!] Error en pg_dump"
+    exit 1
+  fi
+
+  echo "[*] Exportando storage del API…"
+  if phantom_compose exec -T api test -d /app/backend/storage 2>/dev/null; then
+    phantom_compose exec -T api tar -czf - -C /app/backend storage > "$out_dir/storage.tar.gz" 2>/dev/null || {
+      echo "[!] No se pudo empaquetar storage (puede estar vacío)"
+      rm -f "$out_dir/storage.tar.gz"
+    }
+  fi
+
+  cp .env "$out_dir/env.snapshot" 2>/dev/null || true
+  (
+    cd "$dest"
+    tar -czf "phantom_${stamp}.tar.gz" "phantom_${stamp}"
+    rm -rf "phantom_${stamp}"
+  )
+  local archive="$dest/phantom_${stamp}.tar.gz"
+  echo ""
+  echo "[+] Backup listo: $archive"
+  ls -lh "$archive"
+}
+
+run_catalog_export() {
+  local use_native=0
+  local py_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --native|-n) use_native=1 ;;
+      *) py_args+=("$arg") ;;
+    esac
+  done
+
+  if [[ "$use_native" -eq 1 ]]; then
+    phantom_catalog_export_native "${py_args[@]+"${py_args[@]}"}"
+    return 0
+  fi
+
+  if ! phantom_has_compose; then
+    echo "[!] Docker Compose no disponible en este equipo." >&2
+    echo "    Postgres local: ./phantom catalog-export --native" >&2
+    exit 1
+  fi
+  phantom_require_compose
+
+  if ! phantom_compose ps --status running api 2>/dev/null | grep -q api; then
+    echo "[!] El contenedor api no está en marcha." >&2
+    echo "    Docker: ./phantom start" >&2
+    echo "    O nativo: ./phantom catalog-export --native" >&2
+    exit 1
+  fi
+
+  echo "[*] Exportando catálogo operativo → backend/catalog/ (contenedor api) …"
+  phantom_compose exec -T api python -m scripts.export_operational_catalog "${py_args[@]+"${py_args[@]}"}"
+}
+
+run_catalog_import() {
+  phantom_require_compose
+  if ! phantom_compose ps --status running api 2>/dev/null | grep -q api; then
+    echo "[!] El contenedor api no está en marcha. Ejecuta: ./phantom start" >&2
+    exit 1
+  fi
+  echo "[*] Importando catálogo empaquetado…"
+  phantom_compose exec -T api python -m scripts.import_operational_catalog "$@"
+}
+
+run_uninstall() {
+  phantom_require_compose
+  phantom_compose down -v --rmi all --remove-orphans
+  echo "[+] Stack Docker desinstalado e imágenes removidas."
+}
+
+run_build() {
+  phantom_require_compose
+  phantom_compose build "$@"
+}
+
+run_logs() {
+  phantom_require_compose
+  phantom_compose logs "$@"
+}
+
+run_clean() {
+  echo "[*] Limpiando archivos temporales locales..."
+  rm -rf node_modules .next out backend/__pycache__ backend/app/__pycache__ backend/app/routers/__pycache__ backend/app/services/__pycache__
+  echo "[+] Limpieza completada."
+}
+
+phantom_install_docker_macos() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "[!] Este script solo aplica en macOS." >&2
+    exit 1
+  fi
+
+  if ! command -v brew &>/dev/null; then
+    echo "[!] Homebrew no encontrado." >&2
+    echo "    Instálalo: https://brew.sh" >&2
+    exit 1
+  fi
+
+  echo "============================================================"
+  echo " Phantom — Docker Desktop (macOS)"
+  echo "============================================================"
+
+  if [[ ! -d /Applications/Docker.app ]]; then
+    echo "[*] Instalando Docker Desktop (brew cask)…"
+    echo "    Puede pedir tu contraseña de macOS (sudo) para enlazar el CLI."
+    brew install --cask docker || {
+      echo "[!] brew no pudo terminar la instalación." >&2
+      exit 1
+    }
+  else
+    echo "[*] Docker Desktop ya está instalado."
+  fi
+
+  local docker_bin
+  docker_bin=$(phantom_docker_bin 2>/dev/null || true)
+  if [[ -z "$docker_bin" ]]; then
+    echo "[!] docker CLI no encontrado tras instalar Docker Desktop." >&2
+    exit 1
+  fi
+
+  if ! "$docker_bin" info &>/dev/null 2>&1; then
+    echo "[*] Abriendo Docker Desktop (primera vez puede pedir permisos)…"
+    open -a Docker
+  fi
+
+  echo "[*] Esperando daemon Docker (hasta ~2 min)…"
+  local ready=0
+  local _
+  for _ in $(seq 1 60); do
+    if "$docker_bin" info &>/dev/null 2>&1 && "$docker_bin" compose version &>/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    echo "[!] Docker no respondió a tiempo." >&2
+    exit 1
+  fi
+
+  "$docker_bin" compose version
+  echo ""
+  echo "[+] Docker Desktop listo."
+  echo "============================================================"
+}
+
+run_install_ubuntu() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    echo "[!] Ejecuta con sudo: sudo ./phantom install --system"
+    exit 1
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+
+  echo "============================================================"
+  echo " Phantom SecOps — instalación Ubuntu"
+  echo "============================================================"
+
+  apt-get update -qq
+  apt-get install -y -qq ca-certificates curl git openssl make
+
+  # Docker Engine (oficial)
+  if ! command -v docker &>/dev/null; then
+    echo "[*] Instalando Docker Engine…"
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    . /etc/os-release
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update -qq
+    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    systemctl enable --now docker
+  fi
+
+  # Usuario que invocó sudo
+  local sudo_user="${SUDO_USER:-$USER}"
+  if id "$sudo_user" &>/dev/null; then
+    usermod -aG docker "$sudo_user" 2>/dev/null || true
+  fi
+
+  if [[ ! -f .env ]]; then
+    cp .env.example .env
+    if command -v openssl &>/dev/null; then
+      local pw jwt
+      pw=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
+      jwt=$(openssl rand -base64 48 | tr -d '/+=' | head -c 48)
+      sed -i "s/change_me_strong_password/${pw}/" .env
+      sed -i "s/change_me_jwt_secret_min_32_chars/${jwt}/" .env
+      echo "[+] Secretos generados en .env"
+    else
+      echo "[!] Edita .env: POSTGRES_PASSWORD y JWT_SECRET"
+    fi
+  fi
+
+  local ip
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  if ! grep -qE '^PHANTOM_TLS_SANS=' .env 2>/dev/null; then
+    echo "PHANTOM_TLS_SANS=localhost,127.0.0.1,${ip}" >> .env
+    echo "[+] PHANTOM_TLS_SANS=localhost,127.0.0.1,${ip}"
+  fi
+
+  echo "[*] Construyendo y arrancando contenedores (primera vez puede tardar varios minutos)…"
+  phantom_require_compose
+  phantom_compose up -d --build
+
+  local port
+  port=$(grep -E '^PHANTOM_HTTP_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 3000)
+  port=${port:-3000}
+
+  # Firewall: abrir puerto si ufw está activo
+  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -qi 'Status: active'; then
+    ufw allow "${port}/tcp" comment 'Phantom SecOps web' >/dev/null 2>&1 || true
+    echo "[+] Regla ufw: allow ${port}/tcp"
+  fi
+
+  echo "[*] Comprobando HTTPS local…"
+  local verify_ok=0
+  local i
+  for i in $(seq 1 10); do
+    if curl -kfsS "https://127.0.0.1:${port}/" -o /dev/null 2>/dev/null; then
+      verify_ok=1
+      break
+    fi
+    sleep 3
+  done
+
+  echo ""
+  echo "============================================================"
+  echo " Phantom listo"
+  if [[ "$verify_ok" -eq 1 ]]; then
+    echo "   https://${ip}:${port}"
+    echo "   https://localhost:${port}"
+    echo ""
+    echo "   El certificado es autofirmado: acepta la excepción de seguridad."
+  else
+    echo "   [!] El servicio web aún no responde en el puerto ${port}."
+    echo "   Revisa: docker compose logs web"
+  fi
+  echo "   Usuario: phantom  |  Contraseña: phantom (cambio obligatorio)"
+  echo ""
+  echo "   Cambiar credenciales: ./phantom change"
+  echo "   Parar: ./phantom stop"
+  echo "============================================================"
+}
+
+run_db_migrate() {
+  echo "================================================================="
+  echo "🔋 Phantom SecOps — PostgreSQL Docker Migration & Restore"
+  echo "================================================================="
+
+  # 1. Stop local macOS PostgreSQL service
+  echo "STEP 1: Stopping local macOS EnterpriseDB PostgreSQL 18 service..."
+  echo "Please enter your macOS password if prompted to stop the launch daemon:"
+  sudo launchctl unload /Library/LaunchDaemons/postgresql-18.plist || true
+
+  # Double check if port 5432 is free
+  if lsof -i :5432 >/dev/null 2>&1; then
+    local pids
+    pids=$(sudo lsof -t -i :5432)
+    for pid in $pids; do
+      local cmd
+      cmd=$(ps -p $pid -o command= 2>/dev/null || true)
+      if [[ "$cmd" == *"/Library/PostgreSQL/"* || "$cmd" == *"postgres"* ]]; then
+        echo "⚠️  Port 5432 is occupied by native Postgres ($pid). Attempting to force-kill..."
+        sudo kill -9 $pid || true
+      else
+        echo "ℹ️  Port 5432 is active but not used by native Postgres (appears to be Docker/Lima forwarder: $cmd). Leaving as-is."
+      fi
+    done
+    sleep 1
+  fi
+  echo "✓ Port 5432 is free."
+
+  # 2. Start PostgreSQL docker container
+  echo "STEP 2: Starting PostgreSQL container via Docker Compose..."
+  phantom_require_compose
+  phantom_compose up -d postgres
+
+  # Wait for database container to be healthy
+  echo "Waiting for PostgreSQL container to start and become healthy..."
+  until [ "$(docker inspect -f '{{.State.Health.Status}}' $(phantom_compose ps -q postgres))" == "healthy" ]; do
+    echo -n "."
+    sleep 1
+  done
+  echo ""
+  echo "✓ PostgreSQL container is healthy and ready."
+
+  # 3. Restore the database dump
+  echo "STEP 3: Restoring database dump (with all 11 schemas)..."
+  local pg_restore_bin="/Library/PostgreSQL/18/bin/pg_restore"
+  if [ ! -x "$pg_restore_bin" ]; then
+    pg_restore_bin=$(command -v pg_restore || echo "pg_restore")
+  fi
+  PGPASSWORD="299792458.Light" "$pg_restore_bin" -U postgres -h localhost -p 5432 -d katana_security_db --clean --if-exists --no-owner --no-privileges -v "$(pwd)/katana_security_db.dump" || {
+    echo "⚠️  Restoration completed with some warnings/notices (this is normal for system catalogs/extensions)."
+  }
+
+  echo "STEP 4: Verifying database schemas restored..."
+  phantom_compose exec -T postgres psql -U postgres -d katana_security_db -c "\dn"
+  echo "================================================================="
+  echo "✅ Database migration to Docker PostgreSQL completed successfully!"
+  echo "================================================================="
+}
+
+run_debug() {
+  echo "============================================================"
+  echo "Starting Phantom in ULTRA VERBOSE DEBUG mode..."
+  echo "Logs will stream directly to this terminal to catch all events."
+  echo "============================================================"
+  export NODE_ENV=development
+  export DEBUG="phantom:*,spectre:*,app:*,express:*,next:*,vis-network:*"
+  export LOG_LEVEL=debug
+  export NEXT_DEBUG=true
+  run_dev "$@"
+}
+
+run_sbom() {
+  if ! command -v syft &>/dev/null; then
+    echo "[!] syft no está instalado. Instálalo desde: https://github.com/anchore/syft"
+    exit 1
+  fi
+  mkdir -p storage/sbom
+  echo "[*] Generando SBOM..."
+  syft dir:. -o json > storage/sbom/sbom.json
+  echo "[+] SBOM generado en storage/sbom/sbom.json"
+}
+
+run_fix_docker() {
+  if [[ ! -f "docker-compose.yml" ]]; then
+    echo "[!] Ejecuta desde la raíz del repo Phantom."
+    exit 1
+  fi
+
+  local ip port sans
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+  port=$(grep -E '^PHANTOM_HTTP_PORT=' .env 2>/dev/null | cut -d= -f2 || echo 3000)
+  port=${port:-3000}
+  sans="localhost,127.0.0.1,${ip}"
+
+  if [[ -f .env ]]; then
+    if grep -qE '^PHANTOM_TLS_SANS=' .env; then
+      sed -i "s/^PHANTOM_TLS_SANS=.*/PHANTOM_TLS_SANS=${sans}/" .env 2>/dev/null || \
+      sed -i "" "s/^PHANTOM_TLS_SANS=.*/PHANTOM_TLS_SANS=${sans}/" .env
+    else
+      echo "PHANTOM_TLS_SANS=${sans}" >> .env
+    fi
+  else
+    echo "[!] No hay .env — copia .env.example primero."
+    exit 1
+  fi
+
+  echo "[+] PHANTOM_TLS_SANS=${sans}"
+
+  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -qi 'Status: active'; then
+    ufw allow "${port}/tcp" comment 'Phantom SecOps web' || true
+    echo "[+] ufw: allow ${port}/tcp"
+  fi
+
+  if [[ "$(sysctl -n vm.overcommit_memory 2>/dev/null || echo 0)" != "1" ]]; then
+    echo "[*] Redis recomienda vm.overcommit_memory=1 (opcional)"
+    sudo sysctl -w vm.overcommit_memory=1 2>/dev/null || true
+  fi
+
+  echo "[*] Recreando contenedor web…"
+  phantom_require_compose
+  phantom_compose up -d --build web
+
+  echo "[*] Esperando HTTPS…"
+  local ok=0
+  local i
+  for i in $(seq 1 20); do
+    if curl -kfsS "https://127.0.0.1:${port}/" -o /dev/null 2>/dev/null; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  echo ""
+  if [[ "$ok" -eq 1 ]]; then
+    echo "[+] Phantom responde en https://127.0.0.1:${port}"
+    echo "    Desde tu PC (misma red): https://${ip}:${port}"
+  else
+    echo "[!] Sigue sin responder. Revisa: ./phantom docker logs web"
+  fi
+}
+
+# Helper functions for new subcommands
+run_doctor() {
+  echo "============================================================"
+  echo " Phantom Doctor — Diagnósticos de Entorno"
+  echo "============================================================"
+  
+  local error_count=0
+  
+  # 1. Verificar variables de entorno (.env)
+  echo "[*] Verificando variables de entorno (.env)..."
+  if ! run_verify_env; then
+    ((error_count++))
+  fi
+  
+  # 2. Verificar dependencias de host
+  echo ""
+  echo "[*] Verificando dependencias del sistema..."
+  if command -v python3 &>/dev/null; then
+    echo "    OK   — Python3: $(python3 --version)"
+  else
+    echo "    FAIL — Python3 no instalado"
+    ((error_count++))
+  fi
+  
+  if command -v node &>/dev/null; then
+    echo "    OK   — Node.js: $(node --version)"
+  else
+    echo "    FAIL — Node.js no instalado"
+    ((error_count++))
+  fi
+  
+  if command -v npm &>/dev/null; then
+    echo "    OK   — npm: $(npm --version)"
+  else
+    echo "    FAIL — npm no instalado"
+    ((error_count++))
+  fi
+
+  if command -v docker &>/dev/null; then
+    echo "    OK   — Docker: $(docker --version)"
+    if docker info &>/dev/null; then
+      echo "    OK   — Docker Daemon está corriendo"
+    else
+      echo "    WARN — Docker Daemon no está corriendo"
+    fi
+  else
+    echo "    WARN — Docker no instalado"
+  fi
+
+  if command -v mkcert &>/dev/null; then
+    echo "    OK   — mkcert instalado"
+  else
+    echo "    WARN — mkcert no instalado (HTTPS local requerirá certificados manuales)"
+  fi
+  
+  # 3. Verificar puertos ocupados (3000, 8000)
+  echo ""
+  echo "[*] Verificando ocupación de puertos..."
+  for port in 3000 8000; do
+    local pids
+    pids=$(pids_on_port "$port")
+    if [[ -n "$pids" ]]; then
+      echo "    WARN — Puerto $port ocupado por PIDs: $pids"
+      for pid in $pids; do
+        echo "           -> $(describe_pid "$pid")"
+      done
+    else
+      echo "    OK   — Puerto $port está libre"
+    fi
+  done
+  
+  # 4. Verificar certificados TLS locales
+  echo ""
+  echo "[*] Verificando certificados TLS..."
+  if [[ -f certificates/localhost.pem && -f certificates/localhost-key.pem ]]; then
+    echo "    OK   — Certificados locales HTTPS presentes en certificates/"
+  else
+    echo "    WARN — Falta certificados HTTPS en certificates/"
+  fi
+
+  echo ""
+  if [[ $error_count -eq 0 ]]; then
+    echo "[+] Doctor: Todo se ve en orden. ¡Listo para operar!"
+    return 0
+  else
+    echo "[!] Doctor: Se detectaron $error_count problema(s). Revisa las advertencias anteriores."
+    return 1
+  fi
+}
+
+run_docs_generate() {
+  echo "============================================================"
+  echo " Phantom Docs — Generando índice de documentación"
+  echo "============================================================"
+  
+  local index_file="docs/README.md"
+  mkdir -p docs
+  
+  cat <<'EOF' > "$index_file"
+# Documentación Operativa y de Arquitectura de Phantom
+
+Bienvenido al portal de documentación de la plataforma Phantom SecOps. Esta documentación está organizada por categorías y sirve como fuente de verdad para el desarrollo y la operación.
+
+## Índice de Documentos
+
+EOF
+
+  # Recorrer subdirectorios de docs y añadir archivos md
+  # Evitamos index.html, README.md, _sidebar.md
+  local dir category files
+  for dir in docs/*; do
+    if [[ -d "$dir" ]]; then
+      category=$(basename "$dir")
+      # Capitalize category name
+      category="$(echo "${category:0:1}" | tr '[:lower:]' '[:upper:]')${category:1}"
+      
+      # Check if there are markdown files in the folder
+      files=$(find "$dir" -maxdepth 1 -name "*.md" | sort 2>/dev/null)
+      if [[ -n "$files" ]]; then
+        echo "### $category" >> "$index_file"
+        echo "" >> "$index_file"
+        while IFS= read -r f; do
+          [[ -n "$f" ]] || continue
+          local title filename rel_path cat_lower
+          filename=$(basename "$f")
+          cat_lower=$(echo "$category" | tr '[:upper:]' '[:lower:]')
+          rel_path="${cat_lower}/${filename}"
+          # Extract first header as title, otherwise use filename
+          title=$(grep -m 1 "^# " "$f" | sed 's/^# //' || echo "")
+          if [[ -z "$title" ]]; then
+            title="${filename%.md}"
+          fi
+          echo "- [$title]($rel_path)" >> "$index_file"
+        done <<< "$files"
+        echo "" >> "$index_file"
+      fi
+    fi
+  done
+  
+  echo "[+] Índice de documentación generado en: $index_file"
+}
+
+run_docs_serve() {
+  echo "============================================================"
+  echo " Phantom Docs — Servidor de Documentación"
+  echo "============================================================"
+  
+  local port=8080
+  echo "[*] Iniciando servidor de documentación interactivo en puerto $port..."
+  echo "    Visualiza el portal en: http://localhost:$port"
+  echo "    (Presiona Ctrl+C para detener)"
+  echo ""
+  
+  if command -v python3 &>/dev/null; then
+    python3 -m http.server "$port" --directory docs
+  elif command -v node &>/dev/null && npx http-server --help &>/dev/null; then
+    npx http-server docs -p "$port"
+  else
+    echo "[!] Error: Requiere python3 o node/npx para servir la documentación." >&2
+    exit 1
+  fi
+}
+
+run_plugin_list() {
+  echo "============================================================"
+  echo " Phantom Plugins — Listado de Plugins Activos"
+  echo "============================================================"
+  echo "Plugins core:"
+  echo "  - ai       (Integración de LLMs y Asistente IA)"
+  echo "  - scanner  (Escaneo de vulnerabilidades y SAST)"
+  echo "  - export   (Exportación de catálogos y reportes)"
+  echo ""
+  echo "Plugins externos detectados:"
+  if [[ -d plugins ]]; then
+    find plugins -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sed 's/^/  - /'
+  else
+    echo "  (Ninguno — Crea la carpeta plugins/ para añadir extensiones)"
+  fi
+}
+
+run_plugin_install() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "Error: Especifica el nombre o ruta del plugin a instalar." >&2
+    echo "Uso: ./phantom plugin install <nombre/url>" >&2
+    exit 1
+  fi
+  echo "[*] Instalando plugin: $name..."
+  echo "[+] Plugin $name instalado (simulado)."
+}
+
+run_restore() {
+  local archive="${1:-}"
+  if [[ -z "$archive" ]]; then
+    echo "Error: Especifica la ruta del archivo de backup (.tar.gz) a restaurar." >&2
+    echo "Uso: ./phantom restore <ruta_al_backup.tar.gz>" >&2
+    exit 1
+  fi
+  if [[ ! -f "$archive" ]]; then
+    echo "Error: El archivo de backup no existe: $archive" >&2
+    exit 1
+  fi
+  
+  phantom_require_compose
+  
+  local temp_dir
+  temp_dir=$(mktemp -d -t phantom_restore_XXXXXX)
+  echo "[*] Extrayendo backup en directorio temporal..."
+  tar -xzf "$archive" -C "$temp_dir"
+  
+  local src_dir
+  src_dir=$(find "$temp_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  if [[ -z "$src_dir" ]]; then
+    echo "[!] Backup corrupto o vacío." >&2
+    rm -rf "$temp_dir"
+    exit 1
+  fi
+  
+  local db_user="${POSTGRES_USER:-phantom}"
+  local db_name="${POSTGRES_DB:-katana_security_db}"
+  
+  if [[ -f "$src_dir/database.sql" ]]; then
+    echo "[*] Restaurando base de datos PostgreSQL..."
+    phantom_compose exec -T postgres psql -U "$db_user" -d postgres -c "DROP DATABASE IF EXISTS $db_name;" >/dev/null
+    phantom_compose exec -T postgres psql -U "$db_user" -d postgres -c "CREATE DATABASE $db_name;" >/dev/null
+    if ! phantom_compose exec -T postgres psql -U "$db_user" -d "$db_name" < "$src_dir/database.sql" >/dev/null; then
+      echo "[!] Error al restaurar la base de datos." >&2
+      rm -rf "$temp_dir"
+      exit 1
+    fi
+    echo "[+] Base de datos restaurada."
+  fi
+  
+  if [[ -f "$src_dir/storage.tar.gz" ]]; then
+    echo "[*] Restaurando almacenamiento del API..."
+    phantom_compose exec -T api tar -xzf - -C /app/backend < "$src_dir/storage.tar.gz" || {
+      echo "[!] Advertencia: Fallo al restaurar almacenamiento." >&2
+    }
+    echo "[+] Almacenamiento restaurado."
+  fi
+  
+  rm -rf "$temp_dir"
+  echo "[+] Restauración completa con éxito."
+}
+
+run_release() {
+  local sub="${1:-}"
+  case "$sub" in
+    tag)
+      local tag="${2:-}"
+      if [[ -z "$tag" ]]; then
+        echo "Error: Especifica la etiqueta de la versión (ej. v0.4.0)." >&2
+        exit 1
+      fi
+      echo "[*] Creando tag Git local y remoto: $tag..."
+      git tag -a "$tag" -m "Release $tag"
+      git push origin "$tag"
+      echo "[+] Tag $tag empujado a origin."
+      ;;
+    *)
+      echo "=== Phantom Release Manager ==="
+      echo "Versión actual de Git: $(git describe --tags --always 2>/dev/null || echo "sin tags")"
+      echo ""
+      echo "Uso:"
+      echo "  ./phantom release tag <versión>   Crea un tag git de versión y lo publica."
+      echo ""
+      echo "Procedimiento de Release recomendado:"
+      echo "  1. Ejecuta tests y doctor: ./phantom doctor"
+      echo "  2. Actualiza CHANGELOG.md"
+      echo "  3. Crea el tag git de release: ./phantom release tag vX.Y.Z"
+      ;;
+  esac
+}
+
+run_update() {
+  echo "============================================================"
+  echo " Phantom Update — Actualizando dependencias"
+  echo "============================================================"
+  
+  if [[ -x backend/.venv/bin/pip ]]; then
+    echo "[*] Actualizando dependencias de Python (.venv)..."
+    backend/.venv/bin/pip install --upgrade -q -r backend/requirements.txt
+  fi
+  
+  if [[ -d node_modules ]]; then
+    echo "[*] Actualizando dependencias de Node..."
+    npm update
+  fi
+  
+  echo "[+] Actualización completada."
+}
+
+run_version() {
+  echo "Phantom CLI v0.4.0"
+}
+
+run_help() {
+  cat <<EOF
+Phantom CLI Operativo — Portal de Control Unificado
+
+Uso:
+  ./phantom <namespace> <subcomando> [ambiente] [opciones]
+
+Namespaces Disponibles:
+  local     Operaciones nativas locales en el host.
+  docker    Operaciones del stack basado en contenedores Docker/Podman.
+  cluster   Operaciones sobre entornos Kubernetes.
+  docs      Visualización y generación de documentación técnica interactiva.
+  plugin    Gestión del ciclo de vida de los plugins de la plataforma.
+  doctor    Diagnósticos y verificaciones del entorno y dependencias.
+  backup    Crear snapshots de la base de datos y almacenamiento.
+  restore   Restaurar snapshots de base de datos y almacenamiento.
+  migrate   Ejecutar migraciones de base de datos locales al contenedor.
+  release   Herramientas para gestión de tags y versiones de Git.
+  update    Actualizar paquetes de desarrollo y dependencias.
+  version   Mostrar la versión actual de la CLI.
+
+Comandos por Namespace:
+
+  [local]
+    start [dev|qa|prod]   Iniciar entorno nativo local en background.
+    stop                  Detener procesos locales activos.
+    restart               Reiniciar procesos locales activos.
+    status                Ver estado de los procesos locales y puertos.
+    dev                   Ejecutar servidor en primer plano con HTTPS + hot-reload.
+    prod                  Ejecutar servidor en primer plano con configuraciones de producción.
+    install               Instalar dependencias de Python y Node.js en el host.
+    uninstall             Remover directorios de dependencias locales.
+    clean                 Limpiar archivos temporales y builds.
+    debug                 Arrancar servidor local en depuración ultra-verbose.
+    sbom                  Generar reporte SBOM de la cadena de suministro.
+    passwd                Cambiar credenciales administrativas de Phantom.
+
+  [docker]
+    build                 Construir imágenes Docker para todos los servicios.
+    start                 Iniciar stack de Docker Compose en background.
+    stop                  Detener y remover contenedores del stack.
+    restart               Reiniciar contenedores del stack.
+    status                Listar estado actual de contenedores de Docker.
+    logs [servicio]       Ver logs de contenedores de Docker (ej: web, api).
+    fix                   Validar y corregir configuraciones de red y host.
+
+  [cluster]
+    deploy                Generar manifiestos y desplegar en Kubernetes.
+    destroy               Remover namespaces y servicios del cluster.
+
+  [docs]
+    generate              Compilar y actualizar el índice README de la documentación.
+    serve                 Levantar portal Docsify local (http://localhost:8080).
+
+  [plugin]
+    list                  Listar plugins instalados y del core.
+    install <plugin>      Instalar un plugin externo.
+
+Ejemplos:
+  ./phantom local start dev
+  ./phantom docker start
+  ./phantom doctor
+  ./phantom docs serve
+EOF
+}
+
+# Main Command Dispatcher
+case "$NAMESPACE" in
+  local)
+    case "${SUB_CMD:-}" in
+      start)
+        if [[ "$ENV" == "dev" || "$ENV" == "qa" || "$ENV" == "prod" ]]; then
+          start_env "$ENV"
+        else
+          echo "Error: local start requiere especificar el ambiente: dev, qa o prod." >&2
+          exit 1
+        fi
+        ;;
+      stop)
+        if [[ "$ENV" == "dev" || "$ENV" == "qa" || "$ENV" == "prod" ]]; then
+          stop_env "$ENV"
+        else
+          stopped=0
+          for e in dev qa prod; do
+            if [ -f ".pid.$e" ]; then
+              stop_env "$e"
+              stopped=1
+            fi
+          done
+          if [ $stopped -eq 1 ]; then
+            echo "Ambientes locales de Phantom detenidos con éxito."
+          fi
+        fi
+        ;;
+      restart)
+        if [[ "$ENV" == "dev" || "$ENV" == "qa" || "$ENV" == "prod" ]]; then
+          echo "Reiniciando Phantom en entorno [$ENV]..."
+          stop_env "$ENV" 2>/dev/null || true
+          start_env "$ENV"
+        else
+          restarted=0
+          for e in dev qa prod; do
+            if [ -f ".pid.$e" ]; then
+              echo "Reiniciando Phantom en entorno [$e]..."
+              stop_env "$e" 2>/dev/null || true
+              start_env "$e"
+              restarted=1
+            fi
+          done
+          if [ $restarted -eq 0 ]; then
+            echo "No hay ambientes locales corriendo para reiniciar."
+          fi
+        fi
+        ;;
+      status)
+        for e in dev qa prod; do
+          status_env "$e"
+          echo ""
+        done
+        ;;
+      dev)
+        run_dev "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      prod)
+        run_prod "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      install)
+        run_install "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      uninstall)
+        run_uninstall "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      clean)
+        run_clean "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      debug)
+        run_debug "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      sbom)
+        run_sbom "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      passwd)
+        run_change "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      catalog-export)
+        run_catalog_export "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      catalog-import)
+        run_catalog_import "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      *)
+        echo "Subcomando local desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom local help" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  docker)
+    case "${SUB_CMD:-}" in
+      build)
+        run_build "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      start|up)
+        phantom_require_compose
+        phantom_compose up -d
+        phantom_print_urls
+        ;;
+      stop|down)
+        phantom_require_compose
+        phantom_compose down
+        echo "[+] Servicios de Docker detenidos."
+        ;;
+      restart)
+        phantom_require_compose
+        phantom_compose restart "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      status|ps)
+        phantom_require_compose
+        phantom_compose ps
+        ;;
+      logs)
+        run_logs "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      fix)
+        run_fix_docker "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      *)
+        echo "Subcomando docker desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom docker help" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  cluster)
+    case "${SUB_CMD:-}" in
+      deploy)
+        run_k8s "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      destroy)
+        echo "[*] Destruyendo despliegue de Kubernetes..."
+        if command -v kubectl &>/dev/null; then
+          kubectl delete -f deploy/kubernetes/base/deployment.yaml || true
+        else
+          echo "[!] kubectl no está disponible." >&2
+          exit 1
+        fi
+        ;;
+      *)
+        echo "Subcomando cluster desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom cluster help" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  doctor)
+    run_doctor
+    ;;
+
+  docs)
+    case "${SUB_CMD:-}" in
+      generate)
+        run_docs_generate
+        ;;
+      serve)
+        run_docs_serve
+        ;;
+      *)
+        echo "Subcomando docs desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom docs help" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  plugin)
+    case "${SUB_CMD:-}" in
+      list)
+        run_plugin_list
+        ;;
+      install)
+        run_plugin_install "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      *)
+        echo "Subcomando plugin desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom plugin help" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  backup)
+    run_backup "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  restore)
+    run_restore "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  migrate)
+    run_db_migrate "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  release)
+    run_release "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  update)
+    run_update "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  version)
+    run_version
+    ;;
+
+  help)
+    run_help
+    ;;
+
+  *)
+    echo "Namespace o comando desconocido: $NAMESPACE" >&2
+    echo "Usa: ./phantom help" >&2
+    exit 1
+    ;;
+esac

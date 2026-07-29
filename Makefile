@@ -1,68 +1,71 @@
 # Phantom — entrypoints operativos (delegan en ./phantom).
 # Uso: make help | make start | make update
 
-.PHONY: help install start stop restart update build logs health backup clean \
+.PHONY: help install start stop restart update deploy build logs health backup clean \
         dev prod debug verify-env uninstall change catalog-export catalog-import fix-docker sbom
 
 help:
 	@./phantom help
 
 install:
-	@./phantom install
+	@./phantom local install
 
 start:
-	@./phantom start
+	@./phantom local start dev
 
 stop:
-	@./phantom stop
+	@./phantom local stop
 
 restart:
-	@./phantom restart
+	@./phantom local restart
 
-update deploy:
+update:
 	@./phantom update
 
+deploy:
+	@./phantom cluster deploy
+
 build:
-	@./phantom build
+	@./phantom docker build
 
 logs:
-	@./phantom logs
+	@./phantom docker logs
 
 health:
-	@./phantom health
+	@./phantom doctor
 
 backup:
 	@./phantom backup $(ARGS)
 
 clean:
-	@./phantom clean
+	@./phantom local clean
 
 dev:
-	@./phantom dev
+	@./phantom local dev
 
 prod:
-	@./phantom prod
+	@./phantom local prod
 
 debug:
-	@./phantom debug
+	@./phantom local debug
 
 verify-env:
-	@./phantom verify-env
+	@./phantom doctor
 
 uninstall:
-	@./phantom uninstall
+	@./phantom local uninstall
 
 change:
-	@./phantom change
+	@./phantom local passwd
 
 catalog-export:
-	@./phantom catalog-export $(ARGS)
+	@./phantom local catalog-export $(ARGS)
 
 catalog-import:
-	@./phantom catalog-import
+	@./phantom local catalog-import
 
 fix-docker:
-	@./phantom fix-docker
+	@./phantom docker fix
 
 sbom:
-	@./phantom sbom $(ARGS)
+	@./phantom local sbom $(ARGS)
