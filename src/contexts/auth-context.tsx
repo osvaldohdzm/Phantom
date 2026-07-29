@@ -132,11 +132,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.ready || state.loading) return;
     if (state.user?.must_change_password || needsInitialSetup) return;
-    if (!state.user && pathname !== '/login' && pathname !== '/login-client') {
+
+    const isPublicPath = pathname?.startsWith('/vulnerability');
+
+    if (!state.user && pathname !== '/login' && pathname !== '/login-client' && !isPublicPath) {
       router.replace(`/login?next=${encodeURIComponent(pathname || '/')}`);
       return;
     }
-    if (state.role && isClientViewer(state.role) && pathname && !pathname.startsWith('/portal') && pathname !== '/login' && pathname !== '/login-client') {
+    if (state.role && isClientViewer(state.role) && pathname && !pathname.startsWith('/portal') && pathname !== '/login' && pathname !== '/login-client' && !isPublicPath) {
       router.replace('/portal');
     }
   }, [state.ready, state.loading, state.user, state.role, pathname, router, needsInitialSetup]);

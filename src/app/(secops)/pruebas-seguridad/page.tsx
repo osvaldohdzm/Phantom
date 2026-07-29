@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { PRUEBAS_INITIAL, type SecurityTestItem } from '@/lib/data-pruebas';
 
 const HackerCanvas = dynamic(
@@ -638,9 +639,17 @@ const MatrixRow = React.memo(({
   );
 }, areRowPropsEqual);
 
-MatrixRow.displayName = 'MatrixRow';
+interface SecurityTestsActivePageProps {
+  embedded?: boolean;
+  serviceType?: string;
+  serviceName?: string;
+}
 
-export default function SecurityTestsActivePage() {
+export function SecurityTestsActivePage({
+  embedded = false,
+  serviceType,
+  serviceName,
+}: SecurityTestsActivePageProps) {
   const [instances, setInstances] = useState<ActiveTestSuiteInstance[]>([]);
   const [selectedSuiteId, setSelectedSuiteId] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1024,7 +1033,12 @@ export default function SecurityTestsActivePage() {
   }, []);
 
   const selectedSuite = useMemo(() => {
-    return instances.find((inst) => inst.id === selectedSuiteId) || instances[0];
+    const raw = instances.find((inst) => inst.id === selectedSuiteId) || instances[0];
+    if (!raw) return undefined;
+    return {
+      ...raw,
+      tests: Array.isArray(raw.tests) ? raw.tests : [],
+    };
   }, [instances, selectedSuiteId]);
 
   const activeSuiteId = selectedSuite?.id || selectedSuiteId;
@@ -1305,16 +1319,16 @@ export default function SecurityTestsActivePage() {
     handleMatrixCellUpdate(testId, key, val);
   };
 
-  // Create active suite from catalog templates
+  // Create new methodology suite in catalog
   const handleCreateSuite = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSuiteName.trim() || !newSuiteProject.trim()) return;
+    if (!newSuiteName.trim()) return;
 
     const newSuite: ActiveTestSuiteInstance = {
       id: `suite-${Date.now()}`,
-      name: newSuiteName,
-      projectName: newSuiteProject,
-      framework: 'CROS Web Application Security Testing (WSTG) v2.0.0',
+      name: newSuiteName.trim(),
+      projectName: 'Catálogo Maestro',
+      framework: newSuiteName.trim(),
       createdAt: new Date().toISOString().split('T')[0],
       tests: PRUEBAS_INITIAL.map((t) => ({
         ...t,
@@ -1431,7 +1445,7 @@ export default function SecurityTestsActivePage() {
 
   // Filter test cases
   const filteredTests = useMemo(() => {
-    if (!selectedSuite) return [];
+    if (!selectedSuite || !Array.isArray(selectedSuite.tests)) return [];
     return selectedSuite.tests.filter((t) => {
       const matchesSearch =
         t.idPruebaSeguridad.toLowerCase().includes(searchTests.toLowerCase()) ||
@@ -2687,13 +2701,16 @@ export default function SecurityTestsActivePage() {
   }, [selectedSuite]);
 
   return (
-    <div className="p-2 md:p-3 max-w-[100%] mx-auto space-y-1.5 flex flex-col h-screen overflow-hidden">
+    <div className={cn(
+      "p-2 md:p-3 max-w-[100%] mx-auto space-y-1.5 flex flex-col",
+      embedded ? "min-h-[650px]" : "h-screen overflow-hidden"
+    )}>
       {/* High-Density Header & Stats Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-card/80 border border-border/40 px-3 py-2 rounded-xl shrink-0 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-base font-bold text-foreground flex items-center gap-2 font-mono">
             <Shield className="size-5 text-cyan-500" />
-            Spectre Tech Grid
+            {embedded ? 'Service Test Execution Grid' : 'Security Test Catalog (Master Repository)'}
           </h1>
 
           <div className="h-4 w-px bg-border/40" />
@@ -2704,13 +2721,16 @@ export default function SecurityTestsActivePage() {
             <select
               value={selectedSuiteId}
               onChange={(e) => setSelectedSuiteId(e.target.value)}
-              className="h-7 rounded border border-border/50 bg-background/60 px-2 text-xs text-foreground font-semibold focus:ring-1 focus:ring-cyan-500 focus:outline-none max-w-[260px] truncate"
+              className="h-7 rounded border border-border/50 bg-background/60 px-2 text-xs text-foreground font-semibold focus:ring-1 focus:ring-cyan-500 focus:outline-none max-w-[320px] truncate"
             >
-              {instances.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.name} ({inst.projectName})
-                </option>
-              ))}
+              {instances.map((inst) => {
+                const displayName = inst.name === 'SCT' ? 'OWASP Web Security Suite' : inst.name;
+                return (
+                  <option key={inst.id} value={inst.id}>
+                    {displayName} ({inst.framework || inst.projectName})
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -3711,38 +3731,24 @@ export default function SecurityTestsActivePage() {
             <CardHeader className="border-b border-border/40 pb-4">
               <CardTitle className="text-base font-bold flex items-center gap-2">
                 <Shield className="size-5 text-cyan-500" />
-                Nueva Suite de Pruebas de Seguridad
+                Nueva Metodología de Pruebas
               </CardTitle>
               <CardDescription className="text-xs">
-                Crea una instancia para documentar casos de prueba ofensivos de un proyecto.
+                Registra una nueva metodología o suite maestra de pruebas de seguridad en el catálogo.
               </CardDescription>
             </CardHeader>
             <form onSubmit={handleCreateSuite}>
               <CardContent className="space-y-4 p-5">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Nombre de la Suite:
+                    Nombre de la Metodología / Suite:
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="Ej. Pentest WSTG Portal Web"
+                    placeholder="Ej. OWASP Web Application Security Testing (WSTG v2.0)"
                     value={newSuiteName}
                     onChange={(e) => setNewSuiteName(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg border border-input bg-background/50 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Proyecto / Servicio de Seguridad:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej. Digital Banking Platform (EIM 9847)"
-                    value={newSuiteProject}
-                    onChange={(e) => setNewSuiteProject(e.target.value)}
                     className="w-full h-9 px-3 rounded-lg border border-input bg-background/50 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none"
                   />
                 </div>
@@ -3759,7 +3765,7 @@ export default function SecurityTestsActivePage() {
                   type="submit"
                   className="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold px-4 py-2 rounded-lg h-9"
                 >
-                  Crear Suite
+                  Crear Metodología
                 </Button>
               </div>
             </form>
@@ -4764,3 +4770,5 @@ export default function SecurityTestsActivePage() {
     </div>
   );
 }
+
+export default SecurityTestsActivePage;

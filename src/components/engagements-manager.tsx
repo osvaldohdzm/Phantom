@@ -11,7 +11,20 @@ import {
   AlertCircle,
   Search,
   FolderOpen,
+  Sparkles,
+  Zap,
+  Sliders,
+  ShieldCheck,
+  ShieldAlert,
+  Terminal,
+  Layers,
+  X,
+  Check,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
+import { classifyTargetScope } from '@/lib/classify-target-scope';
+import { ProjectDetailsFullView } from '@/components/phantom/services/ProjectDetailsFullView';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,9 +35,11 @@ import {
   deleteEngagement,
   getEngagement,
   listEngagements,
+  listFindings,
   updateEngagement,
   type Engagement,
   type EngagementCreateBody,
+  type Finding,
 } from '@/lib/secops-api';
 import {
   HERRAMIENTAS,
@@ -200,6 +215,14 @@ export function EngagementsManager({
   const [showValidation, setShowValidation] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [rawScopeInput, setRawScopeInput] = useState('');
+
+  // Full Results View State
+  const [activeFullResultsEngagement, setActiveFullResultsEngagement] = useState<Engagement | null>(null);
+
+  const openResultsModal = (eg: Engagement) => {
+    setActiveFullResultsEngagement(eg);
+  };
 
   const userItems = useMemo(() => filterUserEngagements(items), [items]);
   const filteredItems = useMemo(() => {
@@ -356,6 +379,15 @@ export function EngagementsManager({
   const p = form.profile;
   const canSave = validation.valid;
 
+  if (activeFullResultsEngagement) {
+    return (
+      <ProjectDetailsFullView
+        engagement={activeFullResultsEngagement}
+        onBack={() => setActiveFullResultsEngagement(null)}
+      />
+    );
+  }
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -484,22 +516,38 @@ export function EngagementsManager({
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex items-center justify-end gap-1.5">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 text-xs"
+                              className="h-8 text-xs font-semibold flex items-center gap-1 border-border/80 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all cursor-pointer"
                               onClick={() => void loadIntoForm(eg.id)}
                               disabled={busy}
+                              title="Ver y editar alcance, targets y fechas del servicio"
                             >
-                              {t('engOpen')}
+                              <Sliders className="size-3.5 text-violet-400" />
+                              <span>Open Details</span>
                             </Button>
+
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              className="h-8 text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+                              onClick={() => void openResultsModal(eg)}
+                              disabled={busy}
+                              title="Ver vulnerabilidades cargadas, metodología y set de pruebas realizadas"
+                            >
+                              <ShieldCheck className="size-3.5 text-amber-300 fill-current" />
+                              <span>Open Results</span>
+                            </Button>
+
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 rounded-lg"
                               onClick={() => void handleDelete(eg.id)}
                               disabled={busy}
                               title={t('engDeleteProject')}
@@ -529,6 +577,25 @@ export function EngagementsManager({
                 {t('engCloseForm')}
               </Button>
             </div>
+
+            {editingId && (
+              <div className="p-3.5 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="size-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-foreground">
+                      Servicio Cargado: {form.nombre_proyecto || form.cliente}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                    {form.estado || 'Activo'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Servicio listo. Puedes modificar su alcance o hacer clic en &quot;Siguiente&quot; para ingresar a la gestión de hallazgos y set de pruebas.
+                </p>
+              </div>
+            )}
 
             {showValidation && !validation.valid && (
               <ul className="text-xs text-destructive space-y-0.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 list-disc pl-5">
@@ -629,31 +696,108 @@ export function EngagementsManager({
 
           {showSection('alcance') && form.tipo_servicio ? (
             <FormSection title={t('engSectionScope')}>
-              <div className="grid sm:grid-cols-2 gap-2">
-                {(
-                  [
-                    'ips',
-                    'dominios',
-                    'urls',
-                    'ambientes',
-                    'activos_incluidos',
-                    'activos_excluidos',
-                  ] as const
-                ).map((key) => (
-                  <div key={key} className="space-y-1">
-                    <FieldLabel>{labelScopeField(key, uiLanguage)}</FieldLabel>
-                    <Input
-                      value={p.alcance[key]}
-                      onChange={(e) =>
+              <div className="space-y-4">
+                {/* Target Scope Raw Textarea (Bulk Paste & Regex Auto-Classification) */}
+                <div className="space-y-2 bg-muted/20 border border-border/70 rounded-xl p-3.5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-violet-400 font-bold flex items-center gap-1.5 text-xs">
+                      <Sparkles className="size-3.5 text-amber-400" />
+                      Target Scope Raw (Pegado Masivo de Targets)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const classified = classifyTargetScope(rawScopeInput);
                         setProfile((pr) => ({
                           ...pr,
-                          alcance: { ...pr.alcance, [key]: e.target.value },
-                        }))
-                      }
-                      className="text-sm bg-background"
-                    />
+                          alcance: {
+                            ...pr.alcance,
+                            ips: classified.ips.join(', '),
+                            dominios: classified.domains.join(', '),
+                            urls: classified.urls.join(', '),
+                            ambientes: classified.environments.join(', '),
+                            activos_incluidos: classified.includedAssets.join(', '),
+                          },
+                        }));
+                      }}
+                      className="px-3 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    >
+                      <Zap className="size-3.5 text-amber-300 fill-current" />
+                      <span>Auto-clasificar Scope con Regex</span>
+                    </button>
                   </div>
-                ))}
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Pega cualquier listado de targets separados por comas, espacios o saltos de línea. Se clasificarán automáticamente mediante expresiones regulares en IPs, Dominios, URLs y Entornos.
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={rawScopeInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRawScopeInput(val);
+                      const classified = classifyTargetScope(val);
+                      setProfile((pr) => ({
+                        ...pr,
+                        alcance: {
+                          ...pr.alcance,
+                          ips: classified.ips.join(', '),
+                          dominios: classified.domains.join(', '),
+                          urls: classified.urls.join(', '),
+                          ambientes: classified.environments.join(', '),
+                          activos_incluidos: classified.includedAssets.join(', '),
+                        },
+                      }));
+                    }}
+                    placeholder={"Ejemplo de pegado masivo:\n192.168.100.193\n10.0.0.0/24\nhttps://192.168.100.193:3000/api/secops\nportal.empresa.com, ambiente_prod"}
+                    className="w-full bg-background border border-border/70 rounded-xl px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:border-violet-500 resize-none custom-scrollbar shadow-inner"
+                  />
+
+                  {/* Live Breakdown Badges */}
+                  {rawScopeInput.trim() && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px] font-mono">
+                      <span className="px-2.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/30 font-bold">
+                        IPs/CIDRs: {classifyTargetScope(rawScopeInput).ips.length}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-bold">
+                        Dominios: {classifyTargetScope(rawScopeInput).domains.length}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">
+                        URLs: {classifyTargetScope(rawScopeInput).urls.length}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 font-bold">
+                        Entornos: {classifyTargetScope(rawScopeInput).environments.length}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Classified Scope Inputs Grid */}
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {(
+                    [
+                      'ips',
+                      'dominios',
+                      'urls',
+                      'ambientes',
+                      'activos_incluidos',
+                      'activos_excluidos',
+                    ] as const
+                  ).map((key) => (
+                    <div key={key} className="space-y-1">
+                      <FieldLabel>{labelScopeField(key, uiLanguage)}</FieldLabel>
+                      <Input
+                        value={p.alcance[key]}
+                        onChange={(e) =>
+                          setProfile((pr) => ({
+                            ...pr,
+                            alcance: { ...pr.alcance, [key]: e.target.value },
+                          }))
+                        }
+                        className="text-sm bg-background font-mono text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </FormSection>
           ) : null}
