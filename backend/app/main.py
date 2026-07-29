@@ -30,13 +30,78 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https?://.*",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from app.config import settings
+
+cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+if "*" in cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+from app.core.logger import logger
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import traceback
+import time
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_id = f"ERR-2026-{int(time.time())}-{os.urandom(3).hex().upper()}"
+    
+    # Log the complete error message, stack trace, and request metadata
+    logger.error(
+        f"Excepción no controlada: {exc}",
+        exc_info=True,
+        extra={"extra_data": {
+            "error_id": error_id, 
+            "path": request.url.path, 
+            "method": request.method
+        }}
+    )
+    
+    env = os.getenv("NODE_ENV", "development")
+    log_level = os.getenv("LOG_LEVEL", "info").lower()
+    
+    if env == "development":
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": 500,
+                "message": str(exc),
+                "error_id": error_id,
+                "stack": traceback.format_exc()
+            }
+        )
+    elif log_level == "info" or env == "test":
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": 500,
+                "message": f"Error en el servidor: {str(exc)}. Revise los registros del sistema.",
+                "error_id": error_id
+            }
+        )
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": 500,
+                "message": "Error interno del servidor. Contacte a soporte.",
+                "error_id": error_id
+            }
+        )
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")

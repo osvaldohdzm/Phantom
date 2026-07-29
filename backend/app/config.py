@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "Phantom-dev-jwt-change-in-production"
     jwt_expire_minutes: int = 480
     auth_required: bool = True
+    cors_allowed_origins: str = "http://localhost:3000,https://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
 
     # Hybrid parser stack (Go platform ingest + Rust fast paths)
     ingest_go_url: Optional[str] = None
