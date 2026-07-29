@@ -34,7 +34,7 @@ interface ActiveEvaluationInstance {
   targetsFile?: string;
 }
 
-export default function EvaluationsActivePage() {
+export function EvaluationsActivePage() {
   const [instances, setInstances] = useState<ActiveEvaluationInstance[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -620,3 +620,5 @@ export default function EvaluationsActivePage() {
     </div>
   );
 }
+
+export default EvaluationsActivePage;

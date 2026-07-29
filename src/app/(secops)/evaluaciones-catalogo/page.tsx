@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { ClipboardList, Search, Filter, Check, X } from 'lucide-react';
+import { ClipboardList, ClipboardCheck, Search, Filter, Check, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EVALUACIONES_INITIAL, type EvaluacionItem } from '@/lib/data-evaluaciones';
+import { EvaluationsActivePage } from '@/app/(secops)/evaluaciones/page';
+import { cn } from '@/lib/utils';
 
 export default function EvaluationsCatalogPage() {
+  const [activeTab, setActiveTab] = useState<'catalog' | 'active'>('catalog');
   const [items] = useState<EvaluacionItem[]>(EVALUACIONES_INITIAL);
   const [search, setSearch] = useState('');
   const [selectedService, setSelectedService] = useState('all');
@@ -48,13 +51,53 @@ export default function EvaluationsCatalogPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
             <ClipboardList className="size-8 text-cyan-500" />
-            Catálogo de Evaluaciones (Plantilla)
+            Catálogo Unificado de Evaluaciones
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-xs">
-            Listado completo de actividades predefinidas disponibles para instanciar en las evaluaciones activas del sistema.
+            Listado completo de plantillas de actividades predefinidas y listas de verificación activas en el sistema.
           </p>
         </div>
+
+        {/* View Mode Toggle Tabs */}
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-card border border-border/60 shadow-sm shrink-0 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('catalog')}
+            className={cn(
+              'px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer',
+              activeTab === 'catalog'
+                ? 'bg-cyan-600 text-white shadow-md'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+            )}
+          >
+            <ClipboardList className="size-3.5" />
+            <span>Plantillas & Catálogo Maestro</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('active')}
+            className={cn(
+              'px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer',
+              activeTab === 'active'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+            )}
+          >
+            <ClipboardCheck className="size-3.5" />
+            <span>Ejecución de Listas Activas</span>
+          </button>
+        </div>
       </div>
+
+      {activeTab === 'active' && (
+        <div className="animate-in fade-in duration-150">
+          <EvaluationsActivePage />
+        </div>
+      )}
+
+      {activeTab === 'catalog' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
 
       {/* Filters Box */}
       <Card className="border-border/40 bg-card/60 shadow-sm rounded-xl">
@@ -194,5 +237,7 @@ export default function EvaluationsCatalogPage() {
         </div>
       </Card>
     </div>
+  )}
+</div>
   );
 }

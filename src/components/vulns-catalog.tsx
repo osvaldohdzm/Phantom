@@ -12,6 +12,9 @@ import {
   Columns3,
   Wrench,
   Settings2,
+  Database,
+  Server,
+  ExternalLink,
 } from "lucide-react";
 import { CatalogBulkReplacePanel } from "@/components/catalog-bulk-replace-panel";
 import { CatalogRecordEditor, type CatalogRow } from "@/components/catalog-record-editor";
@@ -118,6 +121,17 @@ export function VulnsCatalog() {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [fieldConfig, setFieldConfig] = useState<CatalogFieldConfig>(DEFAULT_CATALOG_FIELD_CONFIG);
+  const [dbInfo, setDbInfo] = useState<{
+    host: string;
+    port: string;
+    database: string;
+    user: string;
+    schema: string;
+    table: string;
+    isLocal: boolean;
+    deploymentType: string;
+    connectionString: string;
+  } | null>(null);
 
   useEffect(() => {
     void loadCatalogFieldConfig(tenantLanguage, { branding }).then((cfg) => {
@@ -309,6 +323,9 @@ export function VulnsCatalog() {
       setTotal(payload.total);
       setSeverityOptions(payload.filters.severity);
       setAvailableColumns(payload.filters.availableColumns || []);
+      if ((payload as any).dbInfo) {
+        setDbInfo((payload as any).dbInfo);
+      }
     } catch (fetchError) {
       const message = fetchError instanceof Error ? fetchError.message : "Error desconocido";
       setError(message);
@@ -428,6 +445,44 @@ export function VulnsCatalog() {
             Base unificada ({catalogRowCount.toLocaleString()} registros). Importa/exporta CSV CFR; la ingesta Nessus
             enriquece hallazgos por Plugin ID.
           </CardDescription>
+
+          {/* Database Connection Metadata Status Badge */}
+          {dbInfo && (
+            <div className="mt-3 p-3 rounded-xl bg-slate-900/90 dark:bg-slate-950/90 border border-emerald-500/30 text-xs flex flex-wrap items-center justify-between gap-3 shadow-inner font-mono">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex items-center justify-center">
+                  <span className="size-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="absolute size-4 rounded-full bg-emerald-500/30 animate-ping" />
+                </div>
+                <Database className="size-4 text-emerald-400 shrink-0" />
+                <span className="font-bold text-slate-200">Base de Datos:</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                  {dbInfo.database}
+                </span>
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-300">Esquema:</span>
+                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+                  {dbInfo.schema}
+                </span>
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-300">Tabla:</span>
+                <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 font-bold">
+                  {dbInfo.table}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Server className="size-3.5 text-amber-400 shrink-0" />
+                <span className="text-slate-400">Host/IP:</span>
+                <span className="font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                  {dbInfo.host}:{dbInfo.port}
+                </span>
+                <span className="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-200 border border-slate-700">
+                  {dbInfo.isLocal ? '🖥️ macOS Local' : dbInfo.deploymentType}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-2 pt-2">
             <label className="space-y-1">
               <span className="text-[10px] uppercase text-muted-foreground">Codificación CSV</span>
@@ -672,6 +727,7 @@ export function VulnsCatalog() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10 text-center font-bold text-xs text-muted-foreground">Ficha</TableHead>
                   {displayColumns.map((column) => (
                     <TableHead key={column} className="whitespace-nowrap">
                       {catalogColumnLabel(column, tenantLanguage)}
@@ -683,13 +739,13 @@ export function VulnsCatalog() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell className="text-muted-foreground" colSpan={displayColumns.length + 1}>
+                    <TableCell className="text-muted-foreground" colSpan={displayColumns.length + 2}>
                       Cargando catálogo...
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell className="text-muted-foreground" colSpan={displayColumns.length + 1}>
+                    <TableCell className="text-muted-foreground" colSpan={displayColumns.length + 2}>
                       No se encontraron registros.
                     </TableCell>
                   </TableRow>
@@ -698,6 +754,17 @@ export function VulnsCatalog() {
                     const rk = catalogRowKey(row, rowIndex);
                     return (
                     <TableRow key={rk}>
+                      <TableCell className="w-10 text-center p-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer transition-all"
+                          onClick={() => window.open(`/vulnerability/${row.Id}`, "_blank")}
+                          title="Ver Ficha Pública de la Vulnerabilidad"
+                        >
+                          <ExternalLink className="size-4" />
+                        </Button>
+                      </TableCell>
                       {displayColumns.map((column) => (
                         <TableCell key={`${rk}-${column}`} className="max-w-[300px] truncate">
                            {column === "EspSeveridadUnificada" || column === "Severity" ? (

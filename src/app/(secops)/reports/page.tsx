@@ -9,7 +9,7 @@ import {
   saveReportsSession,
 } from '@/lib/reports-session';
 import { isReportsReentry } from '@/lib/reports-reentry';
-import { Upload } from 'lucide-react';
+import { Upload, Sparkles, ArrowRight, FileCode, Zap } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FindingsManager } from '@/components/findings-manager';
 import { DocxReportsPanel } from '@/components/docx-reports-panel';
@@ -221,7 +221,30 @@ export default function ReportsPage() {
       )}
 
       {activeStep === 2 && (
-        <ReportsStepShell {...shellProps} step={2}>
+        <ReportsStepShell
+          {...shellProps}
+          step={2}
+          footerExtra={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => goToStep(3)}
+                className="px-3 py-1.5 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <FileCode className="size-3.5" />
+                <span>Agregar Hallazgos Manuales (Paso 3)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => goToStep(4)}
+                className="px-3 py-1.5 rounded-xl border border-border/60 bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Zap className="size-3.5 text-amber-400" />
+                <span>Ir Directo a Revisión por Tipo (Paso 4)</span>
+              </button>
+            </div>
+          }
+        >
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
