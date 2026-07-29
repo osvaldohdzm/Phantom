@@ -13,6 +13,7 @@ import os from 'os';
 import next from 'next';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const bindAddress = process.env.BIND_ADDRESS || '::';
 const port = parseInt(process.env.PORT || '3000', 10);

@@ -23,8 +23,9 @@ export function proxy(request: NextRequest) {
     if (isRscNavigation(request)) {
       return NextResponse.next();
     }
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || request.nextUrl.host;
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    const url = new URL(`${proto}://${host}/login`);
     url.searchParams.set('next', pathname);
     return NextResponse.redirect(url);
   }
