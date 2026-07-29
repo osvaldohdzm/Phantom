@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Map, Server, Table2, ShieldCheck, Database, KeyRound, Radio, Cpu } from 'lucide-react';
+import { Loader2, Map, Server, Table2, ShieldCheck, Database, KeyRound, Radio, Cpu, Globe } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AssetsScanTargetsPanel } from '@/components/assets-scan-targets-panel';
 import { AssetsSourceGrid } from '@/components/assets-source-grid';
@@ -15,6 +15,7 @@ import { useUiT } from '@/lib/use-ui-locale';
 
 type ViewMode =
   | 'host_inventory'
+  | 'domain_inventory'
   | 'app_inventory'
   | 'enterprise_devices'
   | 'access_inventory'
@@ -80,6 +81,7 @@ export function AssetsPanel() {
               <div className="flex flex-wrap gap-2">
                 {[
                   { id: 'host_inventory', label: 'Host Inventory', icon: Server },
+                  { id: 'domain_inventory', label: 'Domain Inventory', icon: Globe },
                   { id: 'app_inventory', label: 'Apps Inventory', icon: Database },
                   { id: 'enterprise_devices', label: 'Enterprise Devices (Dispositivos Médicos / IoT / OT)', icon: Cpu },
                   { id: 'access_inventory', label: 'Access Inventory (Vault)', icon: KeyRound },
@@ -174,13 +176,15 @@ export function AssetsPanel() {
                   ? t('assetsScanTargetsCardTitle')
                   : view === 'host_inventory'
                     ? 'Host Inventory'
-                    : view === 'app_inventory'
-                      ? 'Apps Inventory'
-                      : view === 'enterprise_devices'
-                        ? 'Enterprise Devices Inventory (Dispositivos Médicos / IoT / OT / Baxter)'
-                        : view === 'access_inventory'
-                          ? 'Access Inventory (Vault Cifrado)'
-                          : assetSourceLabel(view as AssetSourceType, uiLanguage)}
+                    : view === 'domain_inventory'
+                      ? 'Domain Inventory'
+                      : view === 'app_inventory'
+                        ? 'Apps Inventory'
+                        : view === 'enterprise_devices'
+                          ? 'Enterprise Devices Inventory (Dispositivos Médicos / IoT / OT / Baxter)'
+                          : view === 'access_inventory'
+                            ? 'Access Inventory (Vault Cifrado)'
+                            : assetSourceLabel(view as AssetSourceType, uiLanguage)}
               </CardTitle>
               <CardDescription>
                 {view === 'scan-targets'
@@ -189,13 +193,15 @@ export function AssetsPanel() {
                     ? 'Bitácora cifrada (AES-256) de contraseñas y llaves de acceso del engagement.'
                     : view === 'host_inventory'
                       ? 'Edición y control del inventario de hosts, servidores e infraestructura.'
-                      : view === 'app_inventory'
-                        ? 'Edición y control de aplicaciones web, portales, APIs y servicios lógicos.'
-                        : view === 'enterprise_devices'
-                          ? 'Edición y control del inventario especializado de dispositivos médicos (Baxter, infusion pumps), sensores IoT, sistemas OT y hardware industrial.'
-                          : showTargetMap && displayMode === 'map'
-                            ? t('assetsTargetMapCardDesc')
-                            : t('assetsGridCardDesc')}
+                      : view === 'domain_inventory'
+                        ? 'Edición y control del inventario de dominios de Internet, FQDNs y configuraciones DNS.'
+                        : view === 'app_inventory'
+                          ? 'Edición y control de aplicaciones web, portales, APIs y servicios lógicos.'
+                          : view === 'enterprise_devices'
+                            ? 'Edición y control del inventario especializado de dispositivos médicos (Baxter, infusion pumps), sensores IoT, sistemas OT y hardware industrial.'
+                            : showTargetMap && displayMode === 'map'
+                              ? t('assetsTargetMapCardDesc')
+                              : t('assetsGridCardDesc')}
               </CardDescription>
             </div>
             {showTargetMap ? (
@@ -243,6 +249,13 @@ export function AssetsPanel() {
               key={`host-${engagementId || 'global'}-${gridReload}`}
               sourceType="inventory"
               subType="host"
+              engagementId={engagementId || null}
+            />
+          ) : view === 'domain_inventory' ? (
+            <AssetsSourceGrid
+              key={`domain-${engagementId || 'global'}-${gridReload}`}
+              sourceType="inventory"
+              subType="domain"
               engagementId={engagementId || null}
             />
           ) : view === 'app_inventory' ? (

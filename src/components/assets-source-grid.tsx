@@ -27,7 +27,7 @@ import { useUiT } from '@/lib/use-ui-locale';
 type Props = {
   sourceType: AssetSourceType;
   engagementId?: string | null;
-  subType?: 'host' | 'app' | 'enterprise_device';
+  subType?: 'host' | 'app' | 'enterprise_device' | 'domain';
 };
 
 function remapRows(rows: AssetGridRow[], columns: AssetGridColumn[]): AssetGridRow[] {
@@ -56,7 +56,9 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
       ? 'App'
       : subType === 'enterprise_device'
         ? 'Enterprise Device / Dispositivo Médico'
-        : 'Host';
+        : subType === 'domain'
+          ? 'Domain'
+          : 'Host';
 
   useEffect(() => {
     const loaded = loadColumnLayout(sourceType, baseColumns);
@@ -101,6 +103,7 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
               t !== 'web_app' &&
               t !== 'web app' &&
               t !== 'api' &&
+              t !== 'domain' &&
               !t.includes('device') &&
               !t.includes('médico') &&
               !t.includes('medico') &&
@@ -127,6 +130,11 @@ export function AssetsSourceGrid({ sourceType, engagementId, subType }: Props) {
               t.includes('enterprise') ||
               t.includes('equipo')
             );
+          });
+        } else if (subType === 'domain') {
+          filteredAssets = assets.filter((a) => {
+            const t = (a.asset_type || '').toLowerCase();
+            return t === 'domain';
           });
         }
       }
