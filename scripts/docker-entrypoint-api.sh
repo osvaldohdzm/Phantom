@@ -20,7 +20,7 @@ for attempt in range(90):
             port=parsed.port or 5432,
             user=parsed.username,
             password=parsed.password,
-            dbname=(parsed.path or "/katana_security_db").lstrip("/"),
+            dbname=(parsed.path or "/phantom_security_db_dev").lstrip("/"),
         ).close()
         break
     except Exception as exc:

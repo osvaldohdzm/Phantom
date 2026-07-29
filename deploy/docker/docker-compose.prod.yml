@@ -11,11 +11,11 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-phantom}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-katana_security_db}
+      POSTGRES_DB: ${POSTGRES_DB:-phantom_security_db_dev}
     volumes:
       - ../../postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phantom} -d ${POSTGRES_DB:-katana_security_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phantom} -d ${POSTGRES_DB:-phantom_security_db_dev}"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -38,7 +38,7 @@ services:
       dockerfile: deploy/docker/api.Dockerfile
     restart: always
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-katana_security_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-phantom_security_db_dev}
       REDIS_URL: redis://redis:6379/0
       INGEST_GO_URL: http://ingest-go:8080
       PARSE_RUST_URL: http://parse-rust:8081
