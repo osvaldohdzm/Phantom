@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: phantom-secops
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phantom-backend
+  namespace: phantom-secops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: phantom-backend
+  template:
+    metadata:
+      labels:
+        app: phantom-backend
+    spec:
+      containers:
+      - name: backend
+        image: phantom-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://phantom:change_me_strong_password@postgres-service.phantom-secops.svc.cluster.local:5432/katana_security_db"
+        - name: JWT_SECRET
+          value: "change_me_jwt_secret_min_32_chars"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phantom-backend-service
+  namespace: phantom-secops
+spec:
+  selector:
+    app: phantom-backend
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phantom-frontend
+  namespace: phantom-secops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: phantom-frontend
+  template:
+    metadata:
+      labels:
+        app: phantom-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: phantom-frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: API_PROXY_URL
+          value: "http://phantom-backend-service.phantom-secops.svc.cluster.local:8000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phantom-frontend-service
+  namespace: phantom-secops
+spec:
+  selector:
+    app: phantom-frontend
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: phantom-ingress
+  namespace: phantom-secops
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: phantom.orbitalapps.lan
+    http:
+      paths:
+      - path: /api/secops
+        pathType: Prefix
+        backend:
+          service:
+            name: phantom-backend-service
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: phantom-frontend-service
+            port:
+              number: 3000

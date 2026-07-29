@@ -1,0 +1,124 @@
+# Phantom SecOps — Stack de Producción (Docker)
+version: '3.8'
+name: phantom-prod
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-phantom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-katana_security_db}
+    volumes:
+      - ../../postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phantom} -d ${POSTGRES_DB:-katana_security_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/api.Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-katana_security_db}
+      REDIS_URL: redis://redis:6379/0
+      INGEST_GO_URL: http://ingest-go:8080
+      PARSE_RUST_URL: http://parse-rust:8081
+      INGEST_ASYNC_ENABLED: ${INGEST_ASYNC_ENABLED:-true}
+      INGEST_WORKER_ENABLED: ${INGEST_WORKER_ENABLED:-true}
+      PHANTOM_STORAGE_ROOT: /app/backend/storage
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:-}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+    volumes:
+      - phantom_storage:/app/backend/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ingest-go:
+        condition: service_healthy
+      parse-rust:
+        condition: service_healthy
+
+  ingest-go:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/ingest-go.Dockerfile
+    restart: always
+    environment:
+      INGEST_GO_ADDR: :8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  parse-rust:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/parse-rust.Dockerfile
+    restart: always
+    environment:
+      PARSE_RUST_ADDR: 0.0.0.0:8081
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web.Dockerfile
+    restart: always
+    ports:
+      - "${PHANTOM_HTTP_PORT:-3000}:3000"
+    environment:
+      API_PROXY_URL: http://api:8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      BIND_ADDRESS: 0.0.0.0
+      PORT: "3000"
+      PHANTOM_TLS_SANS: ${PHANTOM_TLS_SANS:-localhost,127.0.0.1}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('https').get({hostname:'127.0.0.1',port:3000,rejectUnauthorized:false,path:'/'},(r)=>{r.resume();process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 45s
+    depends_on:
+      - api
+
+volumes:
+  phantom_storage:
