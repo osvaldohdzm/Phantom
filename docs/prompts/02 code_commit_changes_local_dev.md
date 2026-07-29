@@ -65,6 +65,488 @@ Antes de crear cualquier commit:
 
 ---
 
+
+Lo que describes es un **flujo profesional de preparación de cambios Git antes de hacer commits**, pensado para que exista **rollback seguro**, auditoría y trazabilidad.
+
+La práctica recomendada en equipos maduros (Linux/Kubernetes/Open Source/Enterprise) es dividir el ciclo en **antes, durante y después del desarrollo**.
+
+---
+
+# 1. ANTES DE DESARROLLAR (Preparación)
+
+Objetivo: crear un punto seguro al cual volver.
+
+## 1.1 Confirmar estado limpio
+
+Antes de tocar código:
+
+```bash
+git status
+```
+
+Debe estar limpio:
+
+```
+nothing to commit, working tree clean
+```
+
+---
+
+## 1.2 Crear punto de recuperación
+
+Normalmente:
+
+### Opción A — Rama de trabajo (recomendada)
+
+```bash
+git checkout -b feature/nombre-cambio
+```
+
+Ejemplo:
+
+```
+main
+ |
+ └── feature/payment-validation
+```
+
+Ventaja:
+
+* Puedes eliminar toda la rama.
+* No contaminas producción.
+* Puedes hacer PR.
+* El rollback es sencillo.
+
+---
+
+### Opción B — Tag de seguridad
+
+Antes de cambios grandes:
+
+```bash
+git tag backup-before-refactor-2026-07-29
+```
+
+Ejemplo:
+
+```
+v1.5.0
+ |
+ └── backup-before-refactor
+ |
+ └── nuevos cambios
+```
+
+Si algo falla:
+
+```bash
+git checkout backup-before-refactor-2026-07-29
+```
+
+---
+
+### Opción C — Worktree (equipos avanzados)
+
+Muy usado para desarrollo paralelo:
+
+```bash
+git worktree add ../project-feature feature/payment
+```
+
+Tienes:
+
+```
+project/
+ ├── producción
+
+project-feature/
+ ├── cambios nuevos
+```
+
+Sin mezclar estados.
+
+---
+
+# 2. DURANTE EL DESARROLLO
+
+Aquí está la parte más importante.
+
+No se recomienda trabajar días enteros y luego hacer:
+
+```
+git add .
+git commit -m "changes"
+```
+
+Eso destruye la trazabilidad.
+
+---
+
+La práctica correcta:
+
+## Cada cambio lógico = commit independiente
+
+Ejemplo:
+
+Hiciste un módulo nuevo:
+
+Cambios:
+
+```
+src/auth/
+src/database/
+docker-compose.yml
+README.md
+.github/workflows/
+```
+
+No haces:
+
+```
+feat: add authentication system
+```
+
+Porque mezcla demasiadas cosas.
+
+---
+
+Separación profesional:
+
+```
+commit 1
+feat(auth): add authentication service
+
+commit 2
+test(auth): add authentication tests
+
+commit 3
+docs(auth): document authentication flow
+
+commit 4
+build(docker): update authentication container
+
+commit 5
+ci(github): add authentication pipeline
+```
+
+---
+
+# 3. ANTES DE CADA COMMIT
+
+Siempre:
+
+## Revisar cambios
+
+```bash
+git diff
+```
+
+---
+
+## Revisar archivos
+
+```bash
+git status
+```
+
+Ejemplo:
+
+```
+modified:
+ src/auth/login.ts
+
+untracked:
+ .env
+```
+
+Aquí detectas errores.
+
+---
+
+## Añadir solamente lo necesario
+
+NO:
+
+```bash
+git add .
+```
+
+Mejor:
+
+```bash
+git add src/auth/login.ts
+```
+
+o:
+
+```bash
+git add -p
+```
+
+(interactivo)
+
+---
+
+## Crear commit
+
+Ejemplo:
+
+```bash
+git commit -m "feat(auth): add login validation"
+```
+
+---
+
+# 4. VALIDACIÓN DESPUÉS DEL COMMIT
+
+Después de cada bloque importante:
+
+Ejecutar pruebas:
+
+Ejemplo Node:
+
+```bash
+npm test
+npm run build
+```
+
+Python:
+
+```bash
+pytest
+```
+
+Java:
+
+```bash
+./mvnw test
+```
+
+Docker:
+
+```bash
+docker compose up
+```
+
+---
+
+Confirmar:
+
+```bash
+git status
+```
+
+Resultado esperado:
+
+```
+nothing to commit, working tree clean
+```
+
+---
+
+# 5. SI ALGO FALLA (Rollback)
+
+Depende del punto donde estés.
+
+---
+
+## Caso 1: Cambio local sin commit
+
+Eliminar cambios:
+
+```bash
+git restore .
+```
+
+Vuelve al último commit.
+
+---
+
+## Caso 2: Commit incorrecto pero no enviado
+
+Deshacer conservando archivos:
+
+```bash
+git reset --soft HEAD~1
+```
+
+Ejemplo:
+
+Antes:
+
+```
+A
+B
+C
+```
+
+Después:
+
+```
+A
+B
+```
+
+pero los cambios siguen preparados.
+
+---
+
+## Caso 3: Commit incorrecto enviado al repositorio
+
+NO borrar historia.
+
+Usar:
+
+```bash
+git revert <commit>
+```
+
+Ejemplo:
+
+Historia:
+
+```
+A
+B
+C  <- error
+D
+```
+
+Genera:
+
+```
+A
+B
+C
+D
+E(revert C)
+```
+
+Es seguro para equipos.
+
+---
+
+## Caso 4: Cambio experimental grande
+
+Usar rama:
+
+```
+main
+ |
+ └── experiment/new-engine
+```
+
+Si falla:
+
+```bash
+git branch -D experiment/new-engine
+```
+
+La rama desaparece.
+
+---
+
+# 6. ANTES DE MERGE A MAIN
+
+Proceso profesional:
+
+```
+feature branch
+
+      |
+      v
+
+tests
+
+      |
+      v
+
+code review
+
+      |
+      v
+
+merge
+
+      |
+      v
+
+deploy
+```
+
+---
+
+Nunca:
+
+```
+developer laptop
+       |
+       v
+production
+```
+
+---
+
+# 7. DESPLIEGUE PROFESIONAL
+
+Separación:
+
+```
+LOCAL
+ |
+ v
+DEV
+ |
+ v
+QA
+ |
+ v
+STAGING
+ |
+ v
+PRODUCTION
+```
+
+Cada ambiente tiene su commit identificado.
+
+Ejemplo:
+
+```
+commit a1b2c3
+
+LOCAL ✓
+DEV ✓
+QA ✓
+STAGING ✓
+PROD ✓
+```
+
+---
+
+# 8. Estructura recomendada de historial
+
+Ejemplo:
+
+```
+main
+
+|
+|-- feat(api): add user endpoint
+|
+|-- test(api): add endpoint tests
+|
+|-- docs(api): document endpoint
+|
+|-- build(docker): update image
+|
+|-- ci(github): add pipeline
+|
+v
+
+release/v1.2.0
+```
+
+
 ## 4. Creación de commits
 
 Crear únicamente commits pequeños y coherentes.
