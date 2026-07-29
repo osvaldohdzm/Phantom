@@ -51,17 +51,12 @@ const nav: NavItem[] = [
   { href: '/assets', labelKey: 'navAssets', icon: Server },
   { href: '/reports', labelKey: 'navServices', icon: FileText },
   { href: '/vul-mgmt', labelKey: 'navVulnerabilities', icon: ShieldAlert },
-  { href: '/pruebas-seguridad', labelKey: 'navSecurityTestsActive', icon: ShieldAlert },
-  { href: '/evaluaciones', labelKey: 'navEvaluationsActive', icon: ClipboardCheck },
   { href: '/compliance', labelKey: 'navCompliance', icon: Scale },
-  // Catalog sub-menu items
+  { href: '/tools', labelKey: 'navTools', icon: Wrench },
+  // Catalog sub-menu items (1. Vulnerabilities Catalog, 2. Evaluations Catalog, 3. Security Tests Catalog)
   { href: '/vulns-catalog', labelKey: 'navOperationalCatalog', icon: BookOpen, isCatalog: true },
-  { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield, isCatalog: true },
   { href: '/evaluaciones-catalogo', labelKey: 'navEvaluationsCatalog', icon: ClipboardList, isCatalog: true },
-  { href: '/vul-catalog', labelKey: 'navBaseCatalog', icon: Database, isCatalog: true },
-  // Tools sub-menu items
-  { href: '/tools/methodologies-phantom', labelKey: 'navMethodologiesPhantom', icon: FolderTree, isTool: true },
-  { href: '/tools', labelKey: 'navTools', icon: Wrench, isTool: true },
+  { href: '/pruebas-seguridad-catalogo', labelKey: 'navSecurityTestsCatalog', icon: Shield, isCatalog: true },
   // Admin & Portal items
   { href: '/agents', labelKey: 'navAgents', icon: Bot, adminOnly: true },
   { href: '/portal?editor=true', labelKey: 'navClientPortalEditor', icon: Sliders, adminOnly: true },

@@ -103,6 +103,18 @@ const TOOLS: Tool[] = [
     textColor: 'text-rose-400',
   },
   {
+    id: 'cyber-notes',
+    href: '/tools/cyber-notes',
+    name: 'Cyber Notes',
+    description: 'CTF notes, writeups, and cheat sheets. Bidirectional syncing with Amatista with concurrency control and collaborative editing.',
+    icon: FileSpreadsheet,
+    category: 'analysis',
+    color: 'bg-emerald-500/10',
+    textColor: 'text-emerald-400',
+    badge: 'New',
+    isNew: true,
+  },
+  {
     id: 'exposure-live',
     href: '/tools/exposure',
     name: 'Live Exposure Dashboard',

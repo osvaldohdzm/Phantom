@@ -303,6 +303,7 @@ const MESSAGES = {
     navToolsNmap: 'Herramientas · Nmap',
     navExposureReport: 'Network Exposure Live Report',
     navMethodologiesPhantom: 'Methodologies Phantom',
+    navCyberNotes: 'Cyber Notes',
     navTools: 'Herramientas',
     navClientPortal: 'Portal cliente',
     navClientPortalEditor: 'Editor portal de clientes',
@@ -1070,6 +1071,7 @@ const MESSAGES = {
     navToolsNmap: 'Tools · Nmap',
     navExposureReport: 'Network Exposure Live Report',
     navMethodologiesPhantom: 'Methodologies Phantom',
+    navCyberNotes: 'Cyber Notes',
     navTools: 'Tools',
     navClientPortal: 'Client portal',
     navClientPortalEditor: 'Client portal editor',
@@ -1690,6 +1692,7 @@ export type SecOpsNavLabelKey = Extract<
   | 'navToolsNmap'
   | 'navExposureReport'
   | 'navMethodologiesPhantom'
+  | 'navCyberNotes'
   | 'navTools'
   | 'navClientPortal'
   | 'navClientPortalEditor'
