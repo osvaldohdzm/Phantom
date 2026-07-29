@@ -8,7 +8,7 @@ import { BrandingLogo } from '@/components/branding-logo';
 import { useAuth } from '@/contexts/auth-context';
 import { useBranding } from '@/contexts/branding-context';
 import { resolveBrandingAssetUrl } from '@/lib/tenant-branding';
-import { ShieldCheck, Activity, Globe, Terminal } from 'lucide-react';
+import { ShieldCheck, Activity, Globe, Terminal, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginClientPage() {
   const { login, loading, user } = useAuth();
@@ -17,6 +17,7 @@ export default function LoginClientPage() {
   const orgSlug = searchParams.get('org') || searchParams.get('tenant') || '';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -148,15 +149,28 @@ export default function LoginClientPage() {
               <label htmlFor="password" className="text-xs text-zinc-400 font-semibold">
                 Contraseña
               </label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="bg-zinc-950 border-zinc-800 focus:border-emerald-500 text-white text-sm"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="bg-zinc-950 border-zinc-800 focus:border-emerald-500 text-white text-sm pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             {error ? (
               <p className="text-xs text-rose-500 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 leading-relaxed">
