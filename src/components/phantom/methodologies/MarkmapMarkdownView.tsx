@@ -33,8 +33,57 @@ export function parseMarkdownToPOLNodes(md: string): POLNode[] {
   const depthStack: { depth: number; id: string }[] = [];
   let lastNode: POLNode | null = null;
 
+  let inCodeBlock = false;
+  let codeBlockBuffer: string[] = [];
+
   for (let rawLine of lines) {
     const line = rawLine.trim();
+
+    // Fenced Code Block Handler ``` ... ```
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        inCodeBlock = false;
+        const codeContent = codeBlockBuffer.join('\n').trim();
+        codeBlockBuffer = [];
+
+        if (codeContent) {
+          const depth = depthStack.length > 0 ? depthStack[depthStack.length - 1].depth + 1 : 1;
+          const parentId = depthStack.length > 0 ? depthStack[depthStack.length - 1].id : null;
+          const id = `node-md-${Date.now()}-${nodes.length}`;
+          const isMultiLine = codeContent.includes('\n');
+          const isScript =
+            isMultiLine ||
+            codeContent.includes('#!/bin') ||
+            codeContent.includes('cat >') ||
+            codeContent.includes('import ');
+
+          const newNode: POLNode = {
+            id,
+            parentId,
+            title: codeContent,
+            kind: isScript ? (isMultiLine ? 'script' : 'snippet') : 'command',
+            status: 'todo',
+            expanded: true,
+            depth: Math.min(depth, 6),
+            variables: {},
+          };
+
+          nodes.push(newNode);
+          lastNode = newNode;
+        }
+        continue;
+      } else {
+        inCodeBlock = true;
+        codeBlockBuffer = [];
+        continue;
+      }
+    }
+
+    if (inCodeBlock) {
+      codeBlockBuffer.push(rawLine);
+      continue;
+    }
+
     if (
       !line ||
       line.startsWith('---') ||
@@ -58,12 +107,18 @@ export function parseMarkdownToPOLNodes(md: string): POLNode[] {
     const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
       const hashCount = headingMatch[1].length;
-      const depth = hashCount - 1;
       let rawTitle = headingMatch[2].trim();
 
-      // Skip root document title if it matches methodology title
-      if (depth === 0 && rawTitle.toLowerCase().includes('assessment') && nodes.length === 0) {
+      // Level 1 heading (# Title) is the main diagram root title
+      if (hashCount === 1) {
+        depthStack.length = 0;
         continue;
+      }
+
+      // Level 2 heading (##) is depth 0 (child of root), Level 3 (###) is depth 1, etc.
+      let depth = Math.max(0, hashCount - 2);
+      if (depthStack.length === 0) {
+        depth = 0;
       }
 
       // Detect status if present
@@ -155,7 +210,7 @@ export function parseMarkdownToPOLNodes(md: string): POLNode[] {
       if (content.startsWith('`') && content.endsWith('`')) {
         content = content.slice(1, -1);
       }
-      content = content.replace(/^\[COMMAND\]\s*/i, '').trim();
+      content = content.replace(/^\[COMMAND\]\s*/i, '').replace(/^\[SCRIPT\]\s*/i, '').replace(/^\[SNIPPET\]\s*/i, '').trim();
 
       const depth = depthStack.length > 0 ? depthStack[depthStack.length - 1].depth + 1 : 1;
       const parentId = depthStack.length > 0 ? depthStack[depthStack.length - 1].id : null;

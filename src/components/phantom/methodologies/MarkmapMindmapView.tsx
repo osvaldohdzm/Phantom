@@ -53,7 +53,7 @@ export function MarkmapMindmapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Build hierarchical layout tree coordinates
+  // Build hierarchical layout tree coordinates with Main Methodology Root Node at Level 0
   const layoutTree = useMemo(() => {
     const childrenMap = new Map<string | null, POLNode[]>();
     for (const node of nodes) {
@@ -88,9 +88,38 @@ export function MarkmapMindmapView({
       };
     };
 
-    const roots = childrenMap.get(null) || (nodes.length > 0 ? [nodes[0]] : []);
-    return roots.map((root) => buildTree(root, 0));
-  }, [nodes]);
+    // Main Root Diagram Title Node
+    const rootNode: POLNode = {
+      id: 'root-methodology-diagram-title',
+      parentId: null,
+      title: methodology.title || 'Metodología Pentest',
+      kind: 'methodology',
+      status: 'in-progress',
+      expanded: true,
+      depth: 0,
+      variables: {},
+      description: methodology.description,
+    };
+
+    const topLevelNodes = childrenMap.get(null) || (nodes.length > 0 ? [nodes[0]] : []);
+    const rootChildren = topLevelNodes.map((childNode) => buildTree(childNode, 1));
+
+    let rootY = 0;
+    if (rootChildren.length > 0) {
+      rootY = (rootChildren[0].y + rootChildren[rootChildren.length - 1].y) / 2;
+    }
+
+    const rootRenderNode: RenderNode = {
+      node: rootNode,
+      x: 0,
+      y: rootY,
+      children: rootChildren,
+      width: 270,
+      height: 48,
+    };
+
+    return [rootRenderNode];
+  }, [nodes, methodology]);
 
   // Flatten layout tree into nodes and SVG curve connections
   const { flatNodes, connections } = useMemo(() => {
