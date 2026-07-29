@@ -14,12 +14,84 @@ function ensureDataFile() {
   if (!fs.existsSync(DATA_FILE)) {
     const defaultSuites = [
       {
-        id: 'suite-1',
-        name: 'Prueba de Pentest WSTG - Banco Digital',
-        projectName: 'Digital Banking Portal (EIM ID – 9847446)',
+        id: 'suite-wstg-v2',
+        name: 'CROS Web Application Security Testing (WSTG) v2.0.0',
+        projectName: 'Catálogo Oficial',
+        type: 'Web Application',
+        description: 'Guía oficial OWASP para pruebas de penetración y evaluación de seguridad en aplicaciones web.',
         framework: 'CROS Web Application Security Testing (WSTG) v2.0.0',
         createdAt: '2026-07-02',
         tests: PRUEBAS_INITIAL,
+      },
+      {
+        id: 'suite-api-2023',
+        name: 'OWASP API Security Top 10 Assessment v2023',
+        projectName: 'Catálogo Oficial',
+        type: 'API Testing',
+        description: 'Marco de evaluación enfocado en APIs REST/GraphQL (BOLA, Auth Flaws, BFLA, SSRF, Rate Limit).',
+        framework: 'OWASP API Security Top 10 Assessment v2023',
+        createdAt: '2026-07-05',
+        tests: PRUEBAS_INITIAL.map((t, idx) => ({
+          ...t,
+          idPruebaSeguridad: `API-${idx + 1}`,
+          evaluacionAsociada: 'OWASP API Security Top 10 Assessment v2023',
+        })),
+      },
+      {
+        id: 'suite-istg-v1',
+        name: 'CROS Infrastructure Security Testing (ISTG) v1.0.0',
+        projectName: 'Catálogo Oficial',
+        type: 'Infrastructure',
+        description: 'Evaluación de seguridad en infraestructura de red, servidores, puertos y servicios expuestos.',
+        framework: 'CROS Infrastructure Security Testing (ISTG) v1.0.0',
+        createdAt: '2026-07-08',
+        tests: PRUEBAS_INITIAL.map((t, idx) => ({
+          ...t,
+          idPruebaSeguridad: `ISTG-INFRA-${idx + 1}`,
+          evaluacionAsociada: 'CROS Infrastructure Security Testing (ISTG) v1.0.0',
+        })),
+      },
+      {
+        id: 'suite-mastg-v2',
+        name: 'OWASP Mobile Application Security Testing (MASTG) v2.0',
+        projectName: 'Catálogo Oficial',
+        type: 'Mobile Pentest',
+        description: 'Guía de seguridad para aplicaciones móviles Android e iOS (Insecure Storage, Reverse Engineering).',
+        framework: 'OWASP Mobile Application Security Testing (MASTG) v2.0',
+        createdAt: '2026-07-10',
+        tests: PRUEBAS_INITIAL.slice(0, 5).map((t, idx) => ({
+          ...t,
+          idPruebaSeguridad: `MASTG-MOB-${idx + 1}`,
+          evaluacionAsociada: 'OWASP Mobile Application Security Testing (MASTG) v2.0',
+        })),
+      },
+      {
+        id: 'suite-pci-v4',
+        name: 'PCI-DSS v4.0 Technical Security Assessment',
+        projectName: 'Catálogo Oficial',
+        type: 'Compliance & Security',
+        description: 'Evaluación técnica de cumplimiento de estándares de seguridad para procesamiento de pagos.',
+        framework: 'PCI-DSS v4.0 Technical Security Assessment',
+        createdAt: '2026-07-12',
+        tests: PRUEBAS_INITIAL.slice(0, 5).map((t, idx) => ({
+          ...t,
+          idPruebaSeguridad: `PCI-REQ-${idx + 1}`,
+          evaluacionAsociada: 'PCI-DSS v4.0 Technical Security Assessment',
+        })),
+      },
+      {
+        id: 'suite-cis-cloud',
+        name: 'Cloud Infrastructure Security Assessment (CIS)',
+        projectName: 'Catálogo Oficial',
+        type: 'Cloud Security',
+        description: 'Auditoría de postura de seguridad y configuración en entornos AWS, Azure y Google Cloud.',
+        framework: 'Cloud Infrastructure Security Assessment (CIS)',
+        createdAt: '2026-07-14',
+        tests: PRUEBAS_INITIAL.slice(0, 5).map((t, idx) => ({
+          ...t,
+          idPruebaSeguridad: `CIS-CLOUD-${idx + 1}`,
+          evaluacionAsociada: 'Cloud Infrastructure Security Assessment (CIS)',
+        })),
       },
     ];
     fs.writeFileSync(DATA_FILE, JSON.stringify(defaultSuites, null, 2), 'utf-8');
@@ -40,7 +112,16 @@ export async function GET(req: Request) {
     }
 
     const fileContent = fs.readFileSync(DATA_FILE, 'utf-8');
-    const instances = JSON.parse(fileContent);
+    let rawInstances = JSON.parse(fileContent);
+    if (!Array.isArray(rawInstances) || rawInstances.length === 0 || !rawInstances[0].tests) {
+      rawInstances = ensureDataFile() || rawInstances;
+    }
+
+    const instances = rawInstances.map((inst: any) => ({
+      ...inst,
+      tests: Array.isArray(inst.tests) ? inst.tests : PRUEBAS_INITIAL,
+    }));
+
     return NextResponse.json({ success: true, instances, version });
   } catch (error) {
     console.error('Error reading matrix-suites.json:', error);
@@ -67,7 +148,11 @@ export async function POST(req: Request) {
         const config = JSON.parse(configRaw);
         if (config.isConnected) {
           const tests = body.instances[0]?.tests || [];
-          fetch(`${config.amatistaUrl}/api/integration/phantom`, {
+          let url = config.amatistaUrl;
+          if (url.includes('localhost')) {
+            url = url.replace('localhost', '127.0.0.1');
+          }
+          fetch(`${url}/api/integration/phantom`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

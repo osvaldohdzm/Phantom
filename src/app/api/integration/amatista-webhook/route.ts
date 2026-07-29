@@ -4,6 +4,7 @@ import path from 'path';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const SUITES_FILE = path.join(DATA_DIR, 'matrix-suites.json');
+const NOTES_FILE = path.join(DATA_DIR, 'cyber-notes.json');
 
 function parseMarkdownTestCase(md: string) {
   let title = "";
@@ -47,11 +48,78 @@ function parseMarkdownTestCase(md: string) {
   return { title, idPrueba, resultado, descripcion, comentarios, referencias };
 }
 
+function parseMarkdownCyberNote(md: string) {
+  const fmMatch = md.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  let title = "";
+  let category = "Other";
+  let version = 1;
+  let lastModifiedBy = "operator";
+
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    const tMatch = fm.match(/title:\s*"([^"]+)"/) || fm.match(/title:\s*([^\r\n]+)/);
+    if (tMatch) title = tMatch[1].trim();
+
+    const cMatch = fm.match(/category:\s*"([^"]+)"/) || fm.match(/category:\s*([^\r\n]+)/);
+    if (cMatch) category = cMatch[1].trim();
+
+    const vMatch = fm.match(/version:\s*(\d+)/);
+    if (vMatch) version = parseInt(vMatch[1], 10);
+
+    const lMatch = fm.match(/lastModifiedBy:\s*"([^"]+)"/) || fm.match(/lastModifiedBy:\s*([^\r\n]+)/);
+    if (lMatch) lastModifiedBy = lMatch[1].trim();
+  }
+
+  const bodyContent = md.replace(/^---\r?\n[\s\S]*?\r?\n---/, "").trim();
+  return { title, category, version, lastModifiedBy, content: bodyContent };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action, gemResourceId, content } = body;
+    const { action, docId, gemResourceId, path: relPath, content } = body;
 
+    // 1. Enrutar si es Cyber Notes
+    if (relPath && relPath.startsWith('Cyber Notes/')) {
+      if (!fs.existsSync(NOTES_FILE)) {
+        return NextResponse.json({ success: true }); // nada que actualizar aún
+      }
+      const rawNotes = fs.readFileSync(NOTES_FILE, 'utf-8');
+      let notes = JSON.parse(rawNotes);
+
+      let note = notes.find((n: any) => n.amatistaDocId === docId || n.id === gemResourceId);
+
+      if (action === 'delete') {
+        notes = notes.filter((n: any) => n.id !== note?.id);
+      } else if (action === 'update' && content) {
+        const parsed = parseMarkdownCyberNote(content);
+        if (note) {
+          note.title = parsed.title || note.title;
+          note.category = parsed.category || note.category;
+          note.content = parsed.content;
+          note.version = parsed.version;
+          note.lastModifiedBy = parsed.lastModifiedBy;
+          note.lastModifiedAt = new Date().toISOString();
+        } else {
+          // Si no existe, lo creamos
+          notes.push({
+            id: gemResourceId || `cyber-note-${Date.now()}`,
+            title: parsed.title || "Nota Importada",
+            category: parsed.category,
+            content: parsed.content,
+            version: parsed.version,
+            lastModifiedBy: parsed.lastModifiedBy,
+            lastModifiedAt: new Date().toISOString(),
+            amatistaDocId: docId
+          });
+        }
+      }
+
+      fs.writeFileSync(NOTES_FILE, JSON.stringify(notes, null, 2), 'utf-8');
+      return NextResponse.json({ success: true });
+    }
+
+    // 2. Por defecto: Casos de Prueba (matrix-suites.json)
     if (!fs.existsSync(SUITES_FILE)) {
       return NextResponse.json({ success: false, error: 'matrix-suites.json not found' }, { status: 404 });
     }
@@ -93,7 +161,6 @@ export async function POST(req: Request) {
     }
 
     fs.writeFileSync(SUITES_FILE, JSON.stringify(suites, null, 2), 'utf-8');
-
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

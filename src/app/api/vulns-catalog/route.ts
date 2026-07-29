@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
 import { dbQuery } from "@/lib/db";
 import { VULNS_CATALOG_SELECT_COLUMNS } from "@/lib/vulns-catalog-columns";
 
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
       `SELECT ${selectColumnsSql}
        FROM core.vulns_catalog
        ${whereSql}
-       ORDER BY "Id"::int DESC NULLS LAST
+       ORDER BY 1 DESC NULLS LAST
        LIMIT $${values.length + 1}
        OFFSET $${values.length + 2}`,
       [...values, pageSize, offset],
@@ -104,11 +105,38 @@ export async function GET(request: NextRequest) {
 
     const total = Number.parseInt(countResult.rows[0]?.total ?? "0", 10);
 
+    const host = process.env.POSTGRES_HOST || process.env.PGHOST || "localhost";
+    const port = process.env.POSTGRES_PORT || process.env.PGPORT || "5432";
+    const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "katana_security_db";
+    const user = process.env.POSTGRES_USER || process.env.PGUSER || "postgres";
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    let deploymentType = "PostgreSQL Local (macOS)";
+    if (process.env.KUBERNETES_SERVICE_HOST) {
+      deploymentType = `Kubernetes Cluster (K8s) · ${host}`;
+    } else if (fs.existsSync("/.dockerenv")) {
+      deploymentType = `Contenedor Docker · ${host}`;
+    } else if (!isLocal) {
+      deploymentType = `Contenedor / Servidor Remoto (${host})`;
+    }
+
+    const dbInfo = {
+      host,
+      port,
+      database,
+      user,
+      schema: "core",
+      table: "core.vulns_catalog",
+      isLocal,
+      deploymentType,
+      connectionString: `postgresql://${user}@${host}:${port}/${database}`,
+    };
+
     return NextResponse.json({
       rows: rowsResult.rows,
       total,
       page,
       pageSize,
+      dbInfo,
       filters: {
         severity: severityResult.rows.map((row: { value: string | null }) => row.value).filter(Boolean),
         availableColumns: columnsResult.rows.map((r: { column_name: string }) => r.column_name),
@@ -116,12 +144,14 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "No se pudo consultar la tabla core.vulns_catalog",
-        details: message,
-      },
-      { status: 500 },
-    );
+    console.warn("vulns-catalog dbQuery fallback:", message);
+    return NextResponse.json({
+      rows: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+      filters: { severity: [], availableColumns: [] },
+      error: message,
+    });
   }
 }

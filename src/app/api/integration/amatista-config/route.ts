@@ -19,7 +19,29 @@ export async function GET() {
       return NextResponse.json({ isConnected: false });
     }
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
-    return NextResponse.json(JSON.parse(raw));
+    const config = JSON.parse(raw);
+
+    // Live connectivity check to verify if Amatista is currently active and reachable
+    let liveConnected = false;
+    if (config.isConnected && config.amatistaUrl && config.apiKey) {
+      try {
+        let url = config.amatistaUrl;
+        if (url.includes('localhost')) {
+          url = url.replace('localhost', '127.0.0.1');
+        }
+        // Call the integration ping endpoint in Amatista with a short timeout
+        const testRes = await fetch(`${url}/api/integration/phantom?key=${config.apiKey}`, {
+          signal: AbortSignal.timeout(3000)
+        });
+        if (testRes.ok) {
+          liveConnected = true;
+        }
+      } catch (e) {
+        liveConnected = false;
+      }
+    }
+
+    return NextResponse.json({ ...config, isConnected: liveConnected });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -36,8 +58,14 @@ export async function POST(req: Request) {
 
     ensureDataDir();
 
+    // Resolve localhost to 127.0.0.1 preferentially to prevent Node.js fetch DNS errors
+    let resolvedAmatistaUrl = amatistaUrl;
+    if (resolvedAmatistaUrl.includes('localhost')) {
+      resolvedAmatistaUrl = resolvedAmatistaUrl.replace('localhost', '127.0.0.1');
+    }
+
     try {
-      const testRes = await fetch(`${amatistaUrl}/api/integration/phantom?key=${apiKey}`);
+      const testRes = await fetch(`${resolvedAmatistaUrl}/api/integration/phantom?key=${apiKey}`);
       if (!testRes.ok) {
         return NextResponse.json({ error: 'La API Key de Amatista no es válida o Amatista no responde' }, { status: 400 });
       }
@@ -54,7 +82,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const syncRes = await fetch(`${amatistaUrl}/api/integration/phantom`, {
+    const syncRes = await fetch(`${resolvedAmatistaUrl}/api/integration/phantom`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -75,9 +103,50 @@ export async function POST(req: Request) {
 
     const syncData = await syncRes.json();
 
+    // Sincronizar Cyber Notes existentes si hay
+    const NOTES_FILE = path.join(DATA_DIR, 'cyber-notes.json');
+    if (fs.existsSync(NOTES_FILE)) {
+      try {
+        const rawNotes = fs.readFileSync(NOTES_FILE, 'utf-8');
+        const notes = JSON.parse(rawNotes);
+        let notesChanged = false;
+        for (const note of notes) {
+          const syncNoteRes = await fetch(`${resolvedAmatistaUrl}/api/integration/phantom/cyber-notes`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              gemResourceId: note.id,
+              title: note.title,
+              category: note.category,
+              content: note.content,
+              version: note.version,
+              lastModifiedBy: note.lastModifiedBy,
+              lastModifiedAt: note.lastModifiedAt,
+              amatistaDocId: note.amatistaDocId
+            })
+          });
+          if (syncNoteRes.ok) {
+            const syncNoteData = await syncNoteRes.json();
+            if (syncNoteData.docId && note.amatistaDocId !== syncNoteData.docId) {
+              note.amatistaDocId = syncNoteData.docId;
+              notesChanged = true;
+            }
+          }
+        }
+        if (notesChanged) {
+          fs.writeFileSync(NOTES_FILE, JSON.stringify(notes, null, 2), 'utf-8');
+        }
+      } catch (err) {
+        console.error('Error syncing initial Cyber Notes:', err);
+      }
+    }
+
     const newConfig = {
       isConnected: true,
-      amatistaUrl,
+      amatistaUrl: resolvedAmatistaUrl,
       hostIp,
       apiKey,
       username,
