@@ -8,7 +8,7 @@ Base de datos de vulnerabilidades unificada (CFR / Nessus Plugin ID, textos ES+E
 
 ```bash
 cat > backend/.env <<'EOF'
-DATABASE_URL=postgresql+psycopg2://postgres:TU_PASSWORD@127.0.0.1:5432/katana_security_db
+DATABASE_URL=postgresql+psycopg2://postgres:TU_PASSWORD@127.0.0.1:5432/phantom_security_db_dev
 JWT_SECRET=dev-local-only-change-me
 AUTH_REQUIRED=false
 EOF

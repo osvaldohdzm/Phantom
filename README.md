@@ -1,132 +1,163 @@
 # Phantom SecOps
 
-Plataforma de gestión de vulnerabilidades y ciclo de vida de servicios de seguridad (AV/Infra, pentest, DAST, SAST): ingesta masiva (Nessus/CSV), catálogo operativo, matriz CYB001, repositorio global y exportación Word.
-
-## Inicio rápido (Ubuntu Server — Docker)
-
-Requisitos: Ubuntu 22.04/24.04, acceso `sudo`, puerto **3000** libre.
-
-```bash
-git clone https://github.com/osvaldohdzm/Phantom.git
-cd Phantom
-sudo ./scripts/install-ubuntu.sh
-```
-
-Abre **https://&lt;IP-del-servidor&gt;:3000** (certificado autofirmado → **Avanzado → aceptar riesgo y continuar**).
-
-Si el navegador muestra `PR_CONNECT_RESET_ERROR`, en el servidor ejecuta:
-
-```bash
-sudo ./scripts/fix-docker-access.sh
-```
-
-Eso regenera el certificado con la IP del host, abre el puerto en `ufw` si aplica y verifica con `curl`.
-
-| Campo        | Valor por defecto |
-|-------------|-------------------|
-| Usuario     | `phantom`         |
-| Contraseña  | `phantom`         |
-
-**Primer inicio de sesión:** el sistema exige cambiar la contraseña con una política robusta (mín. 12 caracteres, mayúsculas, números y símbolos). No podrás usar la app hasta completar este paso.
-
-Cambiar credenciales desde servidor: `./phantom change`
-
-## Desarrollo local & Flujo Operativo (macOS / Linux)
-
-### 1. Migración de Base de Datos Local a Docker
-Si vienes de tener PostgreSQL instalado de forma nativa en tu Mac/Linux y deseas migrar todos tus datos y esquemas a un contenedor Docker de manera profesional y persistente (con almacenamiento físico local ignorado de git en `./postgres-data`), utiliza el script automatizado:
-```bash
-# Detiene el servicio de macOS, inicia la base en Docker y restaura los datos con pg_restore
-./migrate_db_to_docker.sh
-```
-
-### 2. Flujo de Desarrollo Híbrido (El más rápido ⚡)
-Para evitar la reconstrucción de contenedores de Next.js (`next build`) en cada cambio, te recomendamos correr la base de datos y caché en Docker, y la aplicación de forma nativa en caliente:
-```bash
-# 1. Inicia solo Postgres y Redis en Docker
-docker compose up -d postgres redis
-
-# 2. Levanta la aplicación en caliente (Hot-Reloading activo en frontend y backend)
-./phantom dev
-```
-Cualquier cambio que realices en el código frontend (Next.js) o backend (FastAPI) se reflejará en **milisegundos** en tu navegador sin reconstrucciones.
-
-### 3. Flujo en Docker (Producción / Pruebas completas)
-Si deseas levantar toda la arquitectura empaquetada (Web, API, Ingestor Go, Parser Rust, Postgres, Redis) en contenedores de producción local:
-```bash
-# Iniciar todo el stack en Docker (con validación de entorno)
-./start.sh   # O equivalentemente: ./phantom start
-
-# Detener todos los servicios conservando datos persistentes
-./phantom stop
-
-# Ver logs en tiempo real (puedes filtrar por servicio, ej: web, api)
-./phantom logs       # Todos los logs
-./phantom logs web   # Solo logs de la interfaz
-./phantom logs api   # Solo logs de la API
-
-# Reiniciar un servicio específico sin recompilar el resto
-./phantom restart web
-./phantom restart api
-```
-
-### 4. Diagnóstico y Depuración
-Si tienes conflictos de puertos o problemas de red en tu sistema, usa la suite de diagnóstico:
-```bash
-./phantom debug
-```
-Este comando analizará sockets ocupados, reenvíos de Docker, disponibilidad de Redis y la integridad del archivo de entorno `.env`.
+Plataforma de gestión de vulnerabilidades y ciclo de vida de servicios de seguridad (AV/Infra, Pentest, DAST, SAST): ingesta masiva (Nessus/CSV), catálogo operativo, matriz CYB001, repositorio global y exportación a Word.
 
 ---
 
-## Comandos Completos del CLI (`./phantom`)
-La plataforma expone un CLI unificado para controlar todas las operaciones a través de `./phantom <comando>`:
+## Inicio rápido (Ubuntu Server — Docker)
 
-| Comando | Descripción |
-|---------|-------------|
-| `./phantom install` | Prepara el entorno `.env` y construye todas las imágenes de Docker. |
-| `./phantom start` | Levanta el stack completo de Docker en modo producción/HTTPS (`./start.sh`). |
-| `./phantom stop` | Apaga el stack completo de Docker sin eliminar datos persistentes. |
-| `./phantom restart [svc]` | Reinicia todos los contenedores o uno en específico (ej. `web`, `api`). |
-| `./phantom logs [svc]` | Muestra logs en tiempo real. Soporta filtrar por servicio individual. |
-| `./phantom health` | Realiza un chequeo de salud contra los endpoints de la API y el portal. |
-| `./phantom update` | Realiza un `git pull` automatizado, reconstruye imágenes y reinicia el stack. |
-| `./phantom dev` | Inicia el frontend y backend nativos con TLS y hot-reloading. |
-| `./phantom prod` | Inicia el backend y frontend nativos en modo producción (sin Docker). |
-| `./phantom debug` | Inicia la suite de desarrollo local con diagnóstico de puertos y servicios. |
-| `./phantom change` | Cambia las credenciales del usuario Administrador del portal. |
-| `./phantom backup` | Realiza un respaldo completo de la base de datos y archivos subidos. |
-| `./phantom clean` | Limpia archivos temporales, cachés de compilación y dumps locales. |
-| `./phantom sbom` | Genera análisis de SBOM y escaneo de vulnerabilidades de dependencias. |
-| `./phantom fix-docker` | Regenera certificados TLS para la IP del host y ajusta cortafuegos (UFW). |
+**Requisitos:** Ubuntu 22.04 / 24.04, acceso `sudo`, puerto **3000** libre.
 
-Ver todos los atajos en `Makefile` ejecutando `make help`. Detalle técnico en [`ops/README.md`](./ops/README.md) y [`docs/architecture/repository-layout.md`](./docs/architecture/repository-layout.md).
+```bash
+git clone [https://github.com/osvaldohdzm/Phantom.git](https://github.com/osvaldohdzm/Phantom.git)
+cd Phantom
+sudo ./scripts/install-ubuntu.sh
 
+```
 
-## Estructura
+1. Abre **`https://<IP-del-servidor>:3000`** en tu navegador.
+2. Si aparece una advertencia de certificado autofirmado, selecciona **Avanzado → Aceptar riesgo y continuar**.
+
+> **¿Problemas de conexión?** Si el navegador muestra `PR_CONNECT_RESET_ERROR`, ejecuta en el servidor:
+> ```bash
+> ./phantom docker fix
+> 
+> ```
+> 
+> 
+> *Esto regenerará el certificado con la IP del host y abrirá el puerto en `ufw` si aplica.*
+
+### Credenciales por defecto
+
+| Campo | Valor por defecto |
+| --- | --- |
+| **Usuario** | `phantom` |
+| **Contraseña** | `phantom` |
+
+> **Nota de Seguridad:** Al iniciar sesión por primera vez, el sistema exigirá cambiar la contraseña (mínimo 12 caracteres, mayúsculas, números y símbolos). También puedes actualizarla desde la terminal con:
+> ```bash
+> ./phantom local passwd
+> 
+> ```
+> 
+> 
+
+---
+
+## Desarrollo Local y Flujo Operativo (macOS / Linux)
+
+### 1. Migración de Base de Datos Local a Docker
+
+Si deseas migrar tu instancia PostgreSQL nativa local a un contenedor Docker con almacenamiento persistente local (en `./postgres-data`):
+
+```bash
+./phantom migrate
+
+```
+
+### 2. Flujo de Desarrollo Híbrido (Recomendado ⚡)
+
+Corre la base de datos y la caché en Docker, y ejecuta la app nativamente con **Hot-Reloading**:
+
+```bash
+# 1. Inicia Postgres y Redis en Docker
+./phantom docker start
+
+# 2. Levanta la app nativa en caliente (Frontend + Backend)
+./phantom local dev
+
+```
+
+### 3. Flujo 100% Docker (Producción / Pruebas de Stack Completo)
+
+Levanta toda la arquitectura en contenedores:
+
+```bash
+# Iniciar todo el stack en Docker
+./phantom docker start
+
+# Ver logs en tiempo real (todos o filtrados por servicio)
+./phantom docker logs
+./phantom docker logs web
+./phantom docker logs api
+
+# Reiniciar o detener el stack
+./phantom docker restart
+./phantom docker stop
+
+```
+
+### 4. Diagnóstico y Salud del Sistema
+
+Analiza sockets ocupados, puertos, disponibilidad de Redis y archivo `.env`:
+
+```bash
+./phantom doctor
+
+```
+
+---
+
+## CLI de Phantom (`./phantom`)
+
+La plataforma utiliza un CLI estructurado por **namespaces**: `./phantom <namespace> <subcomando>`
+
+### Comandos Principales por Namespace
+
+| Namespace | Subcomando | Descripción |
+| --- | --- | --- |
+| **`local`** | `dev` | Ejecuta el entorno de desarrollo con HTTPS + Hot-Reloading. |
+|  | `prod` | Ejecuta el servidor local en modo producción. |
+|  | `start` / `stop` | Inicia o detiene los procesos locales en segundo plano. |
+|  | `install` | Instala dependencias de Python y Node.js en el host. |
+|  | `passwd` | Cambia las credenciales del usuario Administrador. |
+|  | `clean` | Limpia archivos temporales, cachés y builds. |
+|  | `sbom` | Genera reporte SBOM de dependencias. |
+| **`docker`** | `start` | Levanta el stack completo de Docker Compose (`postgres`, `redis`, `api`, `web`). |
+|  | `stop` | Detiene los contenedores del stack conservando datos. |
+|  | `restart [svc]` | Reinicia todos los contenedores o uno específico (ej. `web`, `api`). |
+|  | `logs [svc]` | Muestra logs en tiempo real. |
+|  | `build` | Reconstruye las imágenes de Docker. |
+|  | `fix` | Regenera certificados TLS para la IP del host y ajusta cortafuegos (UFW). |
+| **`doctor`** | *(directo)* | Ejecuta diagnóstico completo de salud del sistema, red y dependencias. |
+| **`docs`** | `serve` | Inicia el portal interactivo de documentación en `http://localhost:8080`. |
+|  | `generate` | Recompila el índice de documentación. |
+| **`backup`** | *(directo)* | Crea un snapshot completo de la base de datos y archivos subidos. |
+| **`restore`** | *(directo)* | Restaura un snapshot de base de datos y almacenamiento. |
+| **`migrate`** | *(directo)* | Ejecuta la migración de base de datos local hacia el contenedor Docker. |
+
+> Ver todos los atajos disponibles en el `Makefile` ejecutando `make help`.
+
+---
+
+## Estructura del Proyecto
 
 | Ruta | Descripción |
-|------|-------------|
-| `src/` | Frontend Next.js (App Router) |
-| `backend/app/` | API FastAPI |
-| `docker-compose.yml` | Stack PostgreSQL + Redis + API + Web |
-| `infra/docker/` | Dockerfiles (`api.Dockerfile`, `web.Dockerfile`) |
-| `ops/` | Operaciones — fuente de verdad (`./phantom …`) |
-| `scripts/` | Setup Ubuntu, TLS, entrypoints Docker |
-| `storage/` | Datos runtime locales (uploads, backups, logs) |
-| `docs/` | Manual técnico y arquitectura |
-| `Makefile` | Atajos (`make start`, `make update`, …) |
+| --- | --- |
+| `src/` | Frontend en Next.js (App Router). |
+| `backend/app/` | API backend basada en FastAPI. |
+| `ops/` | Lógica interna y fuente de verdad del CLI (`./phantom`). |
+| `docker-compose.yml` | Orquestación de PostgreSQL + Redis + API + Web. |
+| `scripts/` | Scripts de instalación para Ubuntu, TLS y utilidades. |
+| `storage/` | Almacenamiento local para subidas, respaldos y logs. |
+| `docs/` | Manuales técnicos y documentación de arquitectura. |
 
-## Variables de entorno
+---
 
-Copia `.env.example` → `.env`. Obligatorias en producción:
+## Variables de Entorno
 
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET`
-- `GEMINI_API_KEY` (opcional; IA degradada sin clave)
+Copia `.env.example` a `.env` antes de iniciar el sistema.
 
-Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para reverse proxy, backups y hardening.
+**Obligatorias en producción:**
+
+* `POSTGRES_PASSWORD`
+* `JWT_SECRET`
+* `GEMINI_API_KEY` *(Opcional: la funcionalidad de IA se degradará si no está presente)*
+
+Consulta [`docs/DEPLOYMENT.md`](https://www.google.com/search?q=./docs/DEPLOYMENT.md) para más detalles sobre Proxy Inverso, Hardening y Respaldos.
+
+---
 
 ## Licencia
 
-Ver [LICENSE](./LICENSE).
+Consulte el archivo [LICENSE](https://www.google.com/search?q=./LICENSE) para más información.
