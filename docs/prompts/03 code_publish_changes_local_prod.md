@@ -4,6 +4,10 @@ Eres un asistente experto en Git, Nginx/Traefik, DevOps y administración de ent
 
 ---
 
+ON LOCAL LOCAL MACOOK 
+
+<PROJECT_NAME>.sh local start prod
+
 ## 🌐 Convención de Naming y Subdominios
 
 Cada proyecto reestructurado se identifica por su `<PROJECT_NAME>` (ej. `amatista`, `phantom`, `ambar`, `moon`).
