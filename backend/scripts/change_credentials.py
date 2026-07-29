@@ -88,6 +88,10 @@ def _parse_args() -> argparse.Namespace:
         help="Omitir validación estricta de complejidad de contraseña (útil en dev).",
     )
     parser.add_argument(
+        "-p", "--password",
+        help="Nueva contraseña del usuario (cambio no interactivo).",
+    )
+    parser.add_argument(
         "--rename-user",
         metavar="LOGIN",
         help="Cambia también el usuario de acceso (por defecto solo se cambia la contraseña).",
@@ -125,8 +129,16 @@ def main() -> int:
                 print("[!] El usuario no puede contener espacios.")
                 return 1
 
-        print("La entrada no se mostrará en pantalla al tipear.")
-        new_password = _prompt_password(new_login, force=args.force)
+        if args.password:
+            new_password = args.password
+            if not args.force:
+                errors = validate_password_strength(new_password, login=new_login)
+                if errors:
+                    print("[!] " + "; ".join(errors))
+                    return 1
+        else:
+            print("La entrada no se mostrará en pantalla al tipear.")
+            new_password = _prompt_password(new_login, force=args.force)
 
         if new_login != user.email:
             taken = db.query(User).filter(User.email == new_login, User.id != user.id).first()
@@ -142,7 +154,7 @@ def main() -> int:
 
         print()
         print(f"[+] Contraseña actualizada para el usuario «{user.email}».")
-        print("[*] El cambio es persistente: no se revierte al reiniciar ./start-dev.sh")
+        print("[*] El cambio es persistente: no se revierte al reiniciar los contenedores.")
         return 0
     except KeyboardInterrupt:
         print("\n[!] Cancelado.")

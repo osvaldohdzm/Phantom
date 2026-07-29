@@ -12,8 +12,15 @@ class Base(DeclarativeBase):
 
 from pathlib import Path
 
+import os
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-LOCAL_SQLITE_PATH = BACKEND_DIR / "phantom_local.db"
+
+# Resolve SQLite database file name dynamically
+db_name = os.getenv("DB_NAME", "phantom_local")
+if not db_name.endswith(".db"):
+    db_name = f"{db_name}.db"
+
+LOCAL_SQLITE_PATH = BACKEND_DIR / db_name
 
 
 def _create_engine():

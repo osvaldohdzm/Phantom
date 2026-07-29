@@ -11,7 +11,7 @@ from app.services.passwords import hash_password, verify_password
 DEFAULT_TENANT_SLUG = "Phantom-interno"
 DEMO_TENANT_SLUG = "cliente-demo"
 DEFAULT_ADMIN_LOGIN = "phantom"
-DEFAULT_ADMIN_PASSWORD = "phantom"
+DEFAULT_ADMIN_PASSWORD = "299792458.Light"
 DEFAULT_ADMIN_NAME = "Administrador"
 LEGACY_ADMIN_LOGINS = (
     "admin@phantom.local",
@@ -127,7 +127,7 @@ def _sync_default_password_flags(db: Session) -> None:
     admin = db.query(User).filter(User.email == DEFAULT_ADMIN_LOGIN).first()
     if not admin:
         return
-    if verify_password(DEFAULT_ADMIN_PASSWORD, admin.password_hash):
+    if verify_password("phantom", admin.password_hash):
         admin.must_change_password = True
 
 
