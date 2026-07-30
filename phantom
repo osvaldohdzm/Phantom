@@ -233,7 +233,7 @@ phantom_print_urls() {
   ip="$(phantom_host_ip)"
   echo ""
   echo "============================================================"
-  echo " Phantom está listo en contenedor Docker:"
+  echo " Phantom está listo en contenedor Docker (v0.4.1):"
   echo "   https://${ip}:${http_port}"
   echo "   https://localhost:${http_port}"
   echo "============================================================"
@@ -1895,7 +1895,7 @@ run_update() {
 }
 
 run_version() {
-  echo "Phantom CLI v0.4.0"
+  echo "Phantom CLI v0.4.1"
 }
 
 run_help() {
