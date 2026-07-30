@@ -11,7 +11,7 @@ from app.services.passwords import hash_password, verify_password
 DEFAULT_TENANT_SLUG = "Phantom-interno"
 DEMO_TENANT_SLUG = "cliente-demo"
 DEFAULT_ADMIN_LOGIN = "phantom"
-DEFAULT_ADMIN_PASSWORD = "299792458.Light"
+DEFAULT_ADMIN_PASSWORD = "phantom"
 DEFAULT_ADMIN_NAME = "Administrador"
 LEGACY_ADMIN_LOGINS = (
     "admin@phantom.local",
