@@ -142,6 +142,14 @@ const renderTerminalLine = (line: string, index: number) => {
   );
 };
 
+const safeBtoa = (str: string) => {
+  try {
+    return btoa(unescape(encodeURIComponent(str)));
+  } catch (e) {
+    return Buffer.from(str, 'utf8').toString('base64');
+  }
+};
+
 export default function PortalPage() {
   const { role, user, activeTenant, branding } = useAuth();
   const isAdminOrSOC = role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst';
@@ -748,50 +756,51 @@ export default function PortalPage() {
         const escCaName = (pkiConfig.caName || '').replace(/["\\$`]/g, '\\$&');
         
         runTimeout = 95;
-        nmapCmd = `set +H; \$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
+
+        const psScript = `
           try {
             Write-Host '[+] Inicializando orquestador local en el Jump Host...'
             Write-Host '[+] Construyendo credenciales de dominio para ${pkiConfig.username}...'
-            \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
-            \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
+            \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force
+            \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw)
             
             Write-Host '[+] Realizando diagnóstico preliminar en el Worker Windows...'
             try {
               \\$winWhoami = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
               \\$winHostname = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
-              Write-Host ('  -> Diagnóstico exitoso. Usuario WinRM: ' + \\$winWhoami + ', Hostname: ' + \\$winHostname)
+              Write-Host ("  -> Diagnóstico exitoso. Usuario WinRM: " + \\$winWhoami + ", Hostname: " + \\$winHostname)
             } catch {
-              Write-Warning ('[!] Diagnóstico fallido: ' + \\$_.Exception.Message + '. Intentando continuar...')
+              Write-Warning ("[!] Diagnóstico fallido: " + \\$_.Exception.Message + ". Intentando continuar...")
             }
 
             \\$scriptBlock = {
-            param(\\$fqdn, \\$ip, \\$template, \\$caName, \\$serverName, \\$pass)
-            \\$ErrorActionPreference = \\"Stop\\"
-            
-            # Estándares Baxter PKI Corporativos
-            \\$FQDN       = \\$fqdn
-            \\$IP         = \\$ip
-            \\$Template   = \\$template
-            \\$CAConfig   = if (\\$caName -and \\$caName.Trim() -ne \\"\\") { \\$caName } else { \\"ca01.hub.baxter.com\\\\HUB-ISSUING-CA\\" }
-            \\$CAServer   = \\$CAConfig.Split('\\\\')[0]
-            \\$ServerName = \\$serverName
-            \\$Pass       = \\$pass
-            
-            Write-Host \\"=== PROCESANDO GENERACIÓN Y EMISIÓN PKI EN UN SOLO PASO ===\\"
-            
-            # Configurar directorios de trabajo locales en el worker
-            \\$tempDir = New-Item -ItemType Directory -Path \\"\\$env:TEMP\\\\cert_request_\\$([Guid]::NewGuid().Guid)\\" -Force
-            Push-Location \\$tempDir.FullName
-            
-            \\$OutputDir   = Join-Path \\$tempDir.FullName \\"CERT_WORKING_\\$ServerName\\"
-            \\$DeliveryDir = Join-Path \\$tempDir.FullName \\"DELIVERY_\\$ServerName\\"
-            
-            New-Item -ItemType Directory -Path \\$OutputDir | Out-Null
-            New-Item -ItemType Directory -Path \\$DeliveryDir | Out-Null
-            
-            try {
-              # 1. ARTEFACTOS BASE (INSTRUCTIONS.TXT & REQUEST.INF)
-              \\$instructions = @\\"
+              param(\\$fqdn, \\$ip, \\$template, \\$caName, \\$serverName, \\$pass)
+              \\$ErrorActionPreference = "Stop"
+              
+              # Estándares Baxter PKI Corporativos
+              \\$FQDN       = \\$fqdn
+              \\$IP         = \\$ip
+              \\$Template   = \\$template
+              \\$CAConfig   = if (\\$caName -and \\$caName.Trim() -ne "") { \\$caName } else { "ca01.hub.baxter.com\\\\HUB-ISSUING-CA" }
+              \\$CAServer   = \\$CAConfig.Split('\\\\')[0]
+              \\$ServerName = \\$serverName
+              \\$Pass       = \\$pass
+              
+              Write-Host "=== PROCESANDO GENERACIÓN Y EMISIÓN PKI EN UN SOLO PASO ==="
+              
+              # Configurar directorios de trabajo locales en el worker
+              \\$tempDir = New-Item -ItemType Directory -Path "\\$env:TEMP\\\\cert_request_\\$([Guid]::NewGuid().Guid)" -Force
+              Push-Location \\$tempDir.FullName
+              
+              \\$OutputDir   = Join-Path \\$tempDir.FullName "CERT_WORKING_\\$ServerName"
+              \\$DeliveryDir = Join-Path \\$tempDir.FullName "DELIVERY_\\$ServerName"
+              
+              New-Item -ItemType Directory -Path \\$OutputDir | Out-Null
+              New-Item -ItemType Directory -Path \\$DeliveryDir | Out-Null
+              
+              try {
+                # 1. ARTEFACTOS BASE (INSTRUCTIONS.TXT & REQUEST.INF)
+                \\$instructions = @"
 BAXTER ENTERPRISE PKI SERVICE - CERTIFICATE DELIVERY
 ======================================================================
 Target FQDN : \\$FQDN
@@ -805,24 +814,24 @@ DELIVERABLE ASSETS INCLUDED:
 3. \\$ServerName_private_key.key-> Matching RSA Private Key (PEM format).
 4. \\$ServerName_backup.pfx     -> PKCS#12 Container (Password protected).
 ======================================================================
-\\"@
-              Set-Content -Path (Join-Path \\$DeliveryDir \\"INSTRUCTIONS.txt\\") -Value \\$instructions -Encoding UTF8
-              
-              \\$infPath = Join-Path \\$OutputDir \\"request.inf\\"
-              
-              \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '"'
-              if (\\$ip -and \\$ip.Trim() -ne \\"\\") {
-                \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '&ipaddress=' + \\$ip + '"'
-              }
-              
-              \\$infContent = @\\"
+"@
+                Set-Content -Path (Join-Path \\$DeliveryDir "INSTRUCTIONS.txt") -Value \\$instructions -Encoding UTF8
+                
+                \\$infPath = Join-Path \\$OutputDir "request.inf"
+                
+                \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '"'
+                if (\\$ip -and \\$ip.Trim() -ne "") {
+                  \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '&ipaddress=' + \\$ip + '"'
+                }
+                
+                \\$infContent = @"
 [NewRequest]
-Subject = \\"CN=\\$FQDN\\"
+Subject = "CN=\\$FQDN"
 Exportable = TRUE
 KeyLength = 2048
 KeySpec = 1
 MachineKeySet = TRUE
-ProviderName = \\"Microsoft RSA SChannel Cryptographic Provider\\"
+ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
 ProviderType = 12
 RequestType = PKCS10
 HashAlgorithm = SHA256
@@ -834,126 +843,139 @@ OID=1.3.6.1.5.5.7.3.1
 \\$sanLine
 
 [RequestAttributes]
-CertificateTemplate = \\"\\$Template\\"
-\\"@
-              Set-Content -Path \\$infPath -Value \\$infContent -Encoding ASCII
-              
-              # 2. GENERACIÓN DE CSR Y EMISIÓN CON AUTO-DISCOVERY FALLBACK
-              \\$csrPath = Join-Path \\$OutputDir \\"request.csr\\"
-              \\$cerPath = Join-Path \\$OutputDir \\"certificate.cer\\"
-              
-              \\$certreqNewOut = certreq -new \\"\\$infPath\\" \\"\\$csrPath\\" 2>&1
-              if (\\$LASTEXITCODE -ne 0) { throw \\"Error al generar CSR: \\$certreqNewOut\\" }
-              
-              # Comprobar RPC puerto 135
-              \\$rpcTest = Test-NetConnection -ComputerName \\$CAServer -Port 135 -WarningAction SilentlyContinue
-              if (-not \\$rpcTest.TcpTestSucceeded) {
-                Write-Host \\"  [!] ALERTA: Puerto RPC 135 inaccesible hacia \\$CAServer. Intentando Auto-Discovery...\\"
-                \\$certreqSubmitOut = certreq -submit -attrib \\"CertificateTemplate:\\$Template\\" \\"\\$csrPath\\" \\"\\$cerPath\\" 2>&1
-              } else {
-                Write-Host \\"  -> Enviando CSR a CA Central (\\$CAConfig)...\\"
-                \\$certreqSubmitOut = certreq -submit -config \\"\\$CAConfig\\" -attrib \\"CertificateTemplate:\\$Template\\" \\"\\$csrPath\\" \\"\\$cerPath\\" 2>&1
-              }
-              
-              if (!(Test-Path \\$cerPath) -or (Get-Item \\$cerPath).Length -eq 0) {
-                throw \\"Fallo crítico: La CA no emitió el certificado. Output: \\$certreqSubmitOut\\"
-              }
-              
-              # 3. REPARACIÓN DE ALMACÉN LOCAL Y VINCULACIÓN DE CLAVE PRIVADA
-              certreq -accept \\"\\$cerPath\\" | Out-Null
-              Start-Sleep -Seconds 2
-              \\$tempCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(\\$cerPath)
-              \\$thumbprint = \\$tempCert.Thumbprint
-              
-              certutil -repairstore My \\"\\$thumbprint\\" | Out-Null
-              \\$cert = Get-ChildItem -Path Cert:\\\\LocalMachine\\\\My | Where-Object { \\$_.Thumbprint -eq \\$thumbprint }
-              if (-not \\$cert) { throw \\"No se pudo vincular la clave privada al certificado \\$thumbprint.\\" }
-              
-              # 4. EXPORTACIÓN DE ENTREGABLES (.CER, .PEM, .KEY, .PFX)
-              \\$standaloneCerPath = Join-Path \\$DeliveryDir \\"\\$($ServerName).cer\\"
-              \\$pemFullChainPath  = Join-Path \\$DeliveryDir \\"\\$($ServerName)_fullchain.pem\\"
-              \\$pemPrivateKeyPath = Join-Path \\$DeliveryDir \\"\\$($ServerName)_private_key.key\\"
-              \\$pfxBackupPath     = Join-Path \\$DeliveryDir \\"\\$($ServerName)_backup.pfx\\"
-              
-              [System.IO.File]::WriteAllBytes(\\$standaloneCerPath, \\$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-              
-              # Exportar Full Chain .pem
-              \\$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-              \\$chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
-              \\$chain.Build(\\$cert) | Out-Null
-              \\$pemChainBuilder = New-Object System.Text.StringBuilder
-              foreach (\\$element in \\$chain.ChainElements) {
-                \\$b64 = [System.Convert]::ToBase64String(\\$element.Certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks)
-                [void]\\$pemChainBuilder.AppendLine(\\"-----BEGIN CERTIFICATE-----\\")
-                [void]\\$pemChainBuilder.AppendLine(\\$b64.Trim())
-                [void]\\$pemChainBuilder.AppendLine(\\"-----END CERTIFICATE-----\\")
-              }
-              Set-Content -Path \\$pemFullChainPath -Value \\$pemChainBuilder.ToString() -Encoding ASCII
-              
-              # Helper para exportar Private Key a PKCS#1 PEM
-              function Export-RsaPrivateKeyToPem (\\$rsa) {
-                \\$param = \\$rsa.ExportParameters(\\$true)
-                function Encode-Len ([int]\\$len) {
-                  if (\\$len -lt 0x80) { return [byte[]]@([byte]\\$len) }
-                  \\$tempList = New-Object System.Collections.Generic.List[byte]; \\$temp = \\$len
-                  while (\\$temp -gt 0) { \\$tempList.Add([byte](\\$temp -band 0xFF)); \\$temp = \\$temp -shr 8 }
-                  \\$arr = \\$tempList.ToArray(); [Array]::Reverse(\\$arr)
-                  \\$res = New-Object System.Collections.Generic.List[byte]; \\$res.Add([byte](0x80 -bor \\$arr.Length))
-                  foreach (\\$b in \\$arr) { \\$res.Add(\\$b) }; return \\$res.ToArray()
+CertificateTemplate = "\\$Template"
+"@
+                Set-Content -Path \\$infPath -Value \\$infContent -Encoding ASCII
+                
+                # 2. GENERACIÓN DE CSR Y EMISIÓN CON AUTO-DISCOVERY FALLBACK
+                \\$csrPath = Join-Path \\$OutputDir "request.csr"
+                \\$cerPath = Join-Path \\$OutputDir "certificate.cer"
+                
+                \\$certreqNewOut = certreq -new "\\$infPath" "\\$csrPath" 2>&1
+                if (\\$LASTEXITCODE -ne 0) { throw "Error al generar CSR: \\$certreqNewOut" }
+                
+                # Comprobar RPC puerto 135
+                \\$rpcTest = Test-NetConnection -ComputerName \\$CAServer -Port 135 -WarningAction SilentlyContinue
+                if (-not \\$rpcTest.TcpTestSucceeded) {
+                  Write-Host "  [!] ALERTA: Puerto RPC 135 inaccesible hacia \\$CAServer. Intentando Auto-Discovery..."
+                  \\$certreqSubmitOut = certreq -submit -attrib "CertificateTemplate:\\$Template" "\\$csrPath" "\\$cerPath" 2>&1
+                } else {
+                  Write-Host "  -> Enviando CSR a CA Central (\\$CAConfig)..."
+                  \\$certreqSubmitOut = certreq -submit -config "\\$CAConfig" -attrib "CertificateTemplate:\\$Template" "\\$csrPath" "\\$cerPath" 2>&1
                 }
-                function Encode-Int ([byte[]]\\$rawBytes) {
-                  \\$idx = 0; while (\\$idx -lt \\$rawBytes.Length - 1 -and \\$rawBytes[\\$idx] -eq 0) { \\$idx++ }
-                  \\$raw = \\$rawBytes[\\$idx..(\\$rawBytes.Length - 1)]
-                  \\$msInt = New-Object System.IO.MemoryStream; \\$msInt.WriteByte(0x02)
-                  if (\\$raw[0] -ge 0x80) {
-                    \\$lenBuf = Encode-Len (\\$raw.Length + 1); \\$msInt.Write(\\$lenBuf, 0, \\$lenBuf.Length); \\$msInt.WriteByte(0x00)
-                  } else {
-                    \\$lenBuf = Encode-Len \\$raw.Length; \\$msInt.Write(\\$lenBuf, 0, \\$lenBuf.Length)
+                
+                if (!(Test-Path \\$cerPath) -or (Get-Item \\$cerPath).Length -eq 0) {
+                  throw "Fallo crítico: La CA no emitió el certificado. Output: \\$certreqSubmitOut"
+                }
+                
+                # 3. REPARACIÓN DE ALMACÉN LOCAL Y VINCULACIÓN DE CLAVE PRIVADA
+                certreq -accept "\\$cerPath" | Out-Null
+                Start-Sleep -Seconds 2
+                \\$tempCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(\\$cerPath)
+                \\$thumbprint = \\$tempCert.Thumbprint
+                
+                certutil -repairstore My "\\$thumbprint" | Out-Null
+                \\$cert = Get-ChildItem -Path Cert:\\\\LocalMachine\\\\My | Where-Object { \\$_.Thumbprint -eq \\$thumbprint }
+                if (-not \\$cert) { throw "No se pudo vincular la clave privada al certificado \\$thumbprint." }
+                
+                # 4. EXPORTACIÓN DE ENTREGABLES (.CER, .PEM, .KEY, .PFX)
+                \\$standaloneCerPath = Join-Path \\$DeliveryDir "\\$($ServerName).cer"
+                \\$pemFullChainPath  = Join-Path \\$DeliveryDir "\\$($ServerName)_fullchain.pem"
+                \\$pemPrivateKeyPath = Join-Path \\$DeliveryDir "\\$($ServerName)_private_key.key"
+                \\$pfxBackupPath     = Join-Path \\$DeliveryDir "\\$($ServerName)_backup.pfx"
+                
+                [System.IO.File]::WriteAllBytes(\\$standaloneCerPath, \\$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+                
+                # Exportar Full Chain .pem
+                \\$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+                \\$chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+                \\$chain.Build(\\$cert) | Out-Null
+                \\$pemChainBuilder = New-Object System.Text.StringBuilder
+                foreach (\\$element in \\$chain.ChainElements) {
+                  \\$b64 = [System.Convert]::ToBase64String(\\$element.Certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks)
+                  [void]\\$pemChainBuilder.AppendLine("-----BEGIN CERTIFICATE-----")
+                  [void]\\$pemChainBuilder.AppendLine(\\$b64.Trim())
+                  [void]\\$pemChainBuilder.AppendLine("-----END CERTIFICATE-----")
+                }
+                Set-Content -Path \\$pemFullChainPath -Value \\$pemChainBuilder.ToString() -Encoding ASCII
+                
+                # Helper para exportar Private Key a PKCS#1 PEM
+                function Export-RsaPrivateKeyToPem (\\$rsa) {
+                  \\$param = \\$rsa.ExportParameters(\\$true)
+                  function Encode-Len ([int]\\$len) {
+                    if (\\$len -lt 0x80) { return [byte[]]@([byte]\\$len) }
+                    \\$tempList = New-Object System.Collections.Generic.List[byte]; \\$temp = \\$len
+                    while (\\$temp -gt 0) { \\$tempList.Add([byte](\$temp -band 0xFF)); \\$temp = \\$temp -shr 8 }
+                    \\$arr = \\$tempList.ToArray(); [Array]::Reverse(\$arr)
+                    \\$res = New-Object System.Collections.Generic.List[byte]; \\$res.Add([byte](0x80 -bor \\$arr.Length))
+                    foreach (\\$b in \\$arr) { \\$res.Add(\\$b) }; return \\$res.ToArray()
                   }
-                  \\$msInt.Write(\\$raw, 0, \\$raw.Length); return \\$msInt.ToArray()
+                  function Encode-Int ([byte[]]\\$rawBytes) {
+                    \\$idx = 0; while (\\$idx -lt \\$rawBytes.Length - 1 -and \\$rawBytes[\\$idx] -eq 0) { \\$idx++ }
+                    \\$raw = \\$rawBytes[\\$idx..(\$rawBytes.Length - 1)]
+                    \\$msInt = New-Object System.IO.MemoryStream; \\$msInt.WriteByte(0x02)
+                    if (\\$raw[0] -ge 0x80) {
+                      \\$lenBuf = Encode-Len (\\$raw.Length + 1); \\$msInt.Write(\$lenBuf, 0, \\$lenBuf.Length); \\$msInt.WriteByte(0x00)
+                    } else {
+                      \\$lenBuf = Encode-Len \\$raw.Length; \\$msInt.Write(\$lenBuf, 0, \\$lenBuf.Length)
+                    }
+                    \\$msInt.Write(\$raw, 0, \\$raw.Length); return \\$msInt.ToArray()
+                  }
+                  \\$msBody = New-Object System.IO.MemoryStream
+                  \\$items = @((Encode-Int ([byte[]]@(0))), (Encode-Int ([byte[]]\\$param.Modulus)), (Encode-Int ([byte[]]\\$param.Exponent)), (Encode-Int ([byte[]]\\$param.D)), (Encode-Int ([byte[]]\\$param.P)), (Encode-Int ([byte[]]\\$param.Q)), (Encode-Int ([byte[]]\\$param.DP)), (Encode-Int ([byte[]]\\$param.DQ)), (Encode-Int ([byte[]]\\$param.InverseQ)))
+                  foreach (\\$item in \\$items) { \\$msBody.Write(\$item, 0, \\$item.Length) }
+                  \\$bodyBytes = \\$msBody.ToArray(); \\$msFinal = New-Object System.IO.MemoryStream; \\$msFinal.WriteByte(0x30)
+                  \\$lenSeq = Encode-Len \\$bodyBytes.Length; \\$msFinal.Write(\$lenSeq, 0, \\$lenSeq.Length); \\$msFinal.Write(\$bodyBytes, 0, \\$bodyBytes.Length)
+                  \\$b64 = [Convert]::ToBase64String(\$msFinal.ToArray(), [System.Base64FormattingOptions]::InsertLineBreaks)
+                  return "-----BEGIN RSA PRIVATE KEY-----\\r\\n\\$b64\\r\\n-----END RSA PRIVATE KEY-----\\r\\n"
                 }
-                \\$msBody = New-Object System.IO.MemoryStream
-                \\$items = @((Encode-Int ([byte[]]@(0))), (Encode-Int ([byte[]]\\$param.Modulus)), (Encode-Int ([byte[]]\\$param.Exponent)), (Encode-Int ([byte[]]\\$param.D)), (Encode-Int ([byte[]]\\$param.P)), (Encode-Int ([byte[]]\\$param.Q)), (Encode-Int ([byte[]]\\$param.DP)), (Encode-Int ([byte[]]\\$param.DQ)), (Encode-Int ([byte[]]\\$param.InverseQ)))
-                foreach (\\$item in \\$items) { \\$msBody.Write(\\$item, 0, \\$item.Length) }
-                \\$bodyBytes = \\$msBody.ToArray(); \\$msFinal = New-Object System.IO.MemoryStream; \\$msFinal.WriteByte(0x30)
-                \\$lenSeq = Encode-Len \\$bodyBytes.Length; \\$msFinal.Write(\\$lenSeq, 0, \\$lenSeq.Length); \\$msFinal.Write(\\$bodyBytes, 0, \\$bodyBytes.Length)
-                \\$b64 = [Convert]::ToBase64String(\\$msFinal.ToArray(), [System.Base64FormattingOptions]::InsertLineBreaks)
-                return \\"-----BEGIN RSA PRIVATE KEY-----\\r\\n\\$b64\\r\\n-----END RSA PRIVATE KEY-----\\r\\n\\"
+                
+                \\$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(\$cert)
+                if (\\$rsa) { Set-Content -Path \\$pemPrivateKeyPath -Value (Export-RsaPrivateKeyToPem \\$rsa) -Encoding ASCII }
+                
+                \\$securePass = ConvertTo-SecureString -String \\$Pass -Force -AsPlainText
+                Export-PfxCertificate -Cert \\$cert.PSPath -FilePath \\$pfxBackupPath -Password \\$securePass -Force | Out-Null
+                
+                # 5. EMPAQUETADO ZIP FINAL
+                \\$zipPath = Join-Path \\$tempDir.FullName "Package_\\$ServerName.zip"
+                Compress-Archive -Path "\\$DeliveryDir\\\\*" -DestinationPath \\$zipPath -Force
+                
+                # Limpieza del almacén local del worker para evitar acumulación
+                Remove-Item \\$cert.PSPath -Force -ErrorAction SilentlyContinue
+                
+                # Retornar el archivo comprimido como base64
+                \\$base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes(\$zipPath))
+                Write-Output "ZIP_BASE64_START"
+                Write-Output \\$base64
+                Write-Output "ZIP_BASE64_END"
+              } catch {
+                Write-Error \\$_
+              } finally {
+                Pop-Location
+                Remove-Item -Path \\$tempDir.FullName -Recurse -Force
               }
-              
-              \\$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(\\$cert)
-              if (\\$rsa) { Set-Content -Path \\$pemPrivateKeyPath -Value (Export-RsaPrivateKeyToPem \\$rsa) -Encoding ASCII }
-              
-              \\$securePass = ConvertTo-SecureString -String \\$Pass -Force -AsPlainText
-              Export-PfxCertificate -Cert \\$cert.PSPath -FilePath \\$pfxBackupPath -Password \\$securePass -Force | Out-Null
-              
-              # 5. EMPAQUETADO ZIP FINAL
-              \\$zipPath = Join-Path \\$tempDir.FullName \\"Package_\\$ServerName.zip\\"
-              Compress-Archive -Path \\"\\$DeliveryDir\\\\*\\" -DestinationPath \\$zipPath -Force
-              
-              # Limpieza del almacén local del worker para evitar acumulación
-              Remove-Item \\$cert.PSPath -Force -ErrorAction SilentlyContinue
-              
-              # Retornar el archivo comprimido como base64
-              \\$base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes(\\$zipPath))
-              Write-Output \\"ZIP_BASE64_START\\"
-              Write-Output \\$base64
-              Write-Output \\"ZIP_BASE64_END\\"
-            } catch {
-              Write-Error \\$_
-            } finally {
-              Pop-Location
-              Remove-Item -Path \\$tempDir.FullName -Recurse -Force
-            }
-          };
-          Write-Host '[+] Conectando via WinRM al worker ${pkiConfig.host}...'
-          \\$res = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock \\$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}' -ErrorAction Stop
-          Write-Host '[✓] Ejecución remota completada exitosamente.'
-          Write-Output \\$res
-        } catch {
-          Write-Error ('[!] Error crítico en el Jump Host: ' + \\$_)
-        }
-        "`;
+            };
+            
+            Write-Host '[+] Conectando via WinRM al worker ${pkiConfig.host}...'
+            \\$res = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock \\$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}' -ErrorAction Stop
+            Write-Host '[✓] Ejecución remota completada exitosamente.'
+            Write-Output \\$res
+          } catch {
+            Write-Error ("[!] Error crítico en el Jump Host: " + \\$_)
+          }
+        `;
+
+        const base64Script = safeBtoa(psScript);
+
+        nmapCmd = `
+          PWSH_BIN=\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi);
+          TMP_FILE="/tmp/pki_req_\$$.ps1";
+          echo "${base64Script}" | base64 -d > "\$TMP_FILE";
+          \$PWSH_BIN -File "\$TMP_FILE";
+          STATUS=\$?;
+          rm -f "\$TMP_FILE";
+          exit \$STATUS;
+        `;
       }
 
       try {
@@ -3299,29 +3321,41 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               `[+] Comprobando credenciales y autenticación WinRM...`
                             ]);
 
-                            const testAuthCmd = `set +H; \$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
+                            const psTestScript = `
                               try {
                                 Write-Output '[+] Comprobando credenciales para ${pkiUsername}...'
-                                \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
-                                \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
+                                \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force
+                                \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw)
                                 
                                 Write-Output '[+] Realizando diagnóstico preliminar (whoami & hostname)...'
                                 \\$winWhoami = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
                                 \\$winHostname = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
-                                Write-Output ('  -> Usuario WinRM: ' + \\$winWhoami)
-                                Write-Output ('  -> Hostname WinRM: ' + \\$winHostname)
+                                Write-Output ("  -> Usuario WinRM: " + \\$winWhoami)
+                                Write-Output ("  -> Hostname WinRM: " + \\$winHostname)
                                 
                                 Write-Output '[+] Realizando Invoke-Command de prueba en ${pkiHost}:${pkiPort}...'
                                 \\$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
                                 if (\\$res -eq 'WINRM_AUTH_SUCCESS') {
                                   Write-Output 'CONEXION_WINRM_EXITOSA'
                                 } else {
-                                  Write-Output ('ERROR: Respuesta inesperada del worker: ' + \\$res)
+                                  Write-Output ("ERROR: Respuesta inesperada del worker: " + \\$res)
                                 }
                               } catch {
-                                Write-Output ('ERROR_WINRM: ' + \\$_.Exception.Message)
+                                Write-Output ("ERROR_WINRM: " + \\$_.Exception.Message)
                               }
-                            "`;
+                            `;
+                            
+                            const base64TestScript = safeBtoa(psTestScript);
+                            
+                            const testAuthCmd = `
+                              PWSH_BIN=\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi);
+                              TMP_FILE="/tmp/pki_test_\$$.ps1";
+                              echo "${base64TestScript}" | base64 -d > "\$TMP_FILE";
+                              \$PWSH_BIN -File "\$TMP_FILE";
+                              STATUS=\$?;
+                              rm -f "\$TMP_FILE";
+                              exit \$STATUS;
+                            `;
 
                             const resAuth = await fetch('/api/automation/ssh-run', {
                               method: 'POST',
