@@ -666,9 +666,17 @@ export default function PortalPage() {
       return;
     }
 
-    if (isPkiRequest && !targetIpOrHost) {
-      setTargetError('Please enter a valid Common Name (FQDN) for the certificate.');
-      return;
+    if (isPkiRequest) {
+      if (!targetIpOrHost) {
+        setTargetError('Please enter a valid Common Name (FQDN) for the certificate.');
+        return;
+      }
+      const storedPki = localStorage.getItem('phantom_pki_config');
+      const pkiConfig = storedPki ? JSON.parse(storedPki) : null;
+      if (!pkiConfig || !pkiConfig.password || !pkiConfig.password.trim()) {
+        setTargetError('Por favor, configure y guarde la contraseña del PKI Worker en la sección de Configuración del Certificado PKI antes de enviar la solicitud.');
+        return;
+      }
     }
 
     setTargetError(null);
