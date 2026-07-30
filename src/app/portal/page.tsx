@@ -1753,7 +1753,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               value={pkiIp}
                               onChange={(e) => setPkiIp(e.target.value)}
                               placeholder="Ej. 10.11.254.245"
-                              className="text-xs font-mono bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
+                              className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
                             />
                           </div>
 
@@ -1765,7 +1765,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               onChange={(e) => setPkiTemplate(e.target.value)}
                               placeholder="WebServer"
                               required
-                              className="text-xs font-mono bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
+                              className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
                             />
                           </div>
                         </div>
@@ -3059,7 +3059,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           value={pkiHost}
                           onChange={(e) => setPkiHost(e.target.value)}
                           placeholder="Ej. 10.11.240.88"
-                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                          className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -3069,7 +3069,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           value={pkiPort}
                           onChange={(e) => setPkiPort(e.target.value)}
                           placeholder="5985"
-                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                          className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                         />
                       </div>
                     </div>
@@ -3082,7 +3082,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           value={pkiUsername}
                           onChange={(e) => setPkiUsername(e.target.value)}
                           placeholder="Ej. hub\hernano30"
-                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                          className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -3092,7 +3092,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           value={pkiPassword}
                           onChange={(e) => setPkiPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                          className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                         />
                       </div>
                     </div>
@@ -3106,7 +3106,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         value={pkiCaName}
                         onChange={(e) => setPkiCaName(e.target.value)}
                         placeholder="Ej. CA-SERVER\Baxter-CA"
-                        className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                        className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">
                         Si se deja vacío, certreq auto-detectará la CA configurada en el dominio.
