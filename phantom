@@ -234,8 +234,15 @@ phantom_print_urls() {
   echo ""
   echo "============================================================"
   echo " Phantom está listo en contenedor Docker (v0.4.1):"
-  echo "   https://${ip}:${http_port}"
-  echo "   https://localhost:${http_port}"
+  echo "   Portal Web:  https://${ip}:${http_port}"
+  echo "                https://localhost:${http_port}"
+  echo "   Certificado: https://${ip}:${http_port}/cert"
+  echo "                https://localhost:${http_port}/cert"
+  echo "------------------------------------------------------------"
+  echo " Credenciales por defecto (primer inicio de sesión):"
+  echo "   Usuario:     phantom"
+  echo "   Contraseña:  phantom"
+  echo "   Nota: Se requerirá cambiar la contraseña al ingresar."
   echo "============================================================"
 }
 
