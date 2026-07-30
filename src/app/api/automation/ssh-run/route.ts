@@ -11,6 +11,7 @@ const execAsync = promisify(exec);
 
 export async function POST(request: Request) {
   let tempKeyPath: string | null = null;
+  let tempExpectPath: string | null = null;
   try {
     const body = await request.json();
     const { host, port = 22, username, password = '', authType = 'password', privateKey = '', command, timeout = 30 } = body;
@@ -165,8 +166,16 @@ export async function POST(request: Request) {
     `;
 
     try {
+      // Create a secure temporary file within the workspace for the expect script
+      const tempDir = path.join(process.cwd(), 'src/app/api/automation/ssh-run');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      tempExpectPath = path.join(tempDir, `temp_expect_${Date.now()}.exp`);
+      fs.writeFileSync(tempExpectPath, expectScript, { encoding: 'utf8' });
+
       // Set child process timeout as well to kill any hanging child shells
-      const { stdout, stderr } = await execAsync(`expect -c '${expectScript}'`, { timeout: (timeout + 2) * 1000 });
+      const { stdout, stderr } = await execAsync(`expect "${tempExpectPath}"`, { timeout: (timeout + 2) * 1000 });
       
       // Parse output
       const outputLines = (stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -249,6 +258,14 @@ export async function POST(request: Request) {
         fs.unlinkSync(tempKeyPath);
       } catch (e) {
         console.error('Failed to delete temp key file:', e);
+      }
+    }
+    // Guaranteed deletion of the temporary expect file from disk
+    if (tempExpectPath && fs.existsSync(tempExpectPath)) {
+      try {
+        fs.unlinkSync(tempExpectPath);
+      } catch (e) {
+        console.error('Failed to delete temp expect file:', e);
       }
     }
   }
