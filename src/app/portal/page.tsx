@@ -754,6 +754,16 @@ export default function PortalPage() {
             Write-Host '[+] Construyendo credenciales de dominio para ${pkiConfig.username}...'
             \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
             \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
+            
+            Write-Host '[+] Realizando diagnóstico preliminar en el Worker Windows...'
+            try {
+              \\$winWhoami = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
+              \\$winHostname = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
+              Write-Host \\"  -> Diagnóstico exitoso. Usuario WinRM: \\$winWhoami, Hostname: \\$winHostname\\"
+            } catch {
+              Write-Warning \\"[!] Diagnóstico fallido: \\$(\\_.Exception.Message). Intentando continuar...\\"
+            }
+
             \\$scriptBlock = {
             param(\\$fqdn, \\$ip, \\$template, \\$caName, \\$serverName, \\$pass)
             \\$ErrorActionPreference = \\"Stop\\"
@@ -3294,6 +3304,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 Write-Output '[+] Comprobando credenciales para ${pkiUsername}...'
                                 \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
                                 \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
+                                
+                                Write-Output '[+] Realizando diagnóstico preliminar (whoami & hostname)...'
+                                \\$winWhoami = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
+                                \\$winHostname = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
+                                Write-Output \\"  -> Usuario WinRM: \\$winWhoami\\"
+                                Write-Output \\"  -> Hostname WinRM: \\$winHostname\\"
                                 
                                 Write-Output '[+] Realizando Invoke-Command de prueba en ${pkiHost}:${pkiPort}...'
                                 \\$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
