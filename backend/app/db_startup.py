@@ -549,6 +549,20 @@ def _is_engine_sqlite() -> bool:
     return settings.is_sqlite or str(engine.url).startswith("sqlite")
 
 
+def wait_for_db_online(timeout_seconds: float = 30.0) -> None:
+    if _is_engine_sqlite():
+        return
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                return
+        except Exception:
+            time.sleep(1.0)
+    raise RuntimeError("Database connection timed out")
+
+
 def bootstrap_database() -> None:
     """Single-process schema + seeds (call before multi-worker Uvicorn)."""
     if _is_engine_sqlite():
@@ -556,6 +570,7 @@ def bootstrap_database() -> None:
         run_startup_seeds()
         return
     try:
+        wait_for_db_online()
         lock_conn = engine.connect()
         lock_conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": _DB_INIT_LOCK_ID})
         try:
@@ -574,6 +589,13 @@ def worker_startup(*, schema_prebootstrapped: bool) -> None:
         if not schema_prebootstrapped:
             bootstrap_database()
         return
+
+    try:
+        wait_for_db_online()
+    except Exception as err:
+        logger.warning(f"[!] PostgreSQL offline or connection failed on port 5432: {err}")
+        return
+
     if schema_prebootstrapped:
         try:
             wait_for_schema_ready()
