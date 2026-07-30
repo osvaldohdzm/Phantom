@@ -133,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!state.ready || state.loading) return;
     if (state.user?.must_change_password || needsInitialSetup) return;
 
-    const isPublicPath = pathname?.startsWith('/vulnerability');
+    const isPublicPath = pathname?.startsWith('/vulnerability') || pathname === '/cert' || pathname?.startsWith('/cert');
 
     if (!state.user && pathname !== '/login' && pathname !== '/login-client' && !isPublicPath) {
       router.replace(`/login?next=${encodeURIComponent(pathname || '/')}`);
