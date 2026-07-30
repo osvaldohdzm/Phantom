@@ -73,6 +73,75 @@ interface AutomationFlowNode {
   status: 'ready' | 'active';
 }
 
+const renderTerminalLine = (line: string, index: number) => {
+  const trimmed = line.trim();
+  if (
+    trimmed.startsWith('[!]') ||
+    trimmed.toLowerCase().includes('error') ||
+    trimmed.toLowerCase().includes('fail') ||
+    trimmed.includes('command not found')
+  ) {
+    return (
+      <div key={index} className="text-rose-400 font-semibold bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10 my-0.5 flex items-start gap-1.5 whitespace-pre-wrap">
+        <span>{line}</span>
+      </div>
+    );
+  }
+  if (
+    trimmed.startsWith('[✓]') ||
+    trimmed.includes('SUCCESS') ||
+    trimmed.includes('EXITOSA') ||
+    trimmed.includes('complete')
+  ) {
+    return (
+      <div key={index} className="text-emerald-400 font-bold flex items-start gap-1.5 whitespace-pre-wrap">
+        <span>{line}</span>
+      </div>
+    );
+  }
+  if (
+    trimmed.startsWith('[+]') ||
+    trimmed.includes('Bootstrapping') ||
+    trimmed.includes('Starting')
+  ) {
+    return (
+      <div key={index} className="text-cyan-400 font-medium flex items-start gap-1.5 whitespace-pre-wrap">
+        <span>{line}</span>
+      </div>
+    );
+  }
+  if (
+    trimmed.startsWith('$') ||
+    trimmed.startsWith('\\$') ||
+    trimmed.startsWith('#') ||
+    trimmed.startsWith('param(') ||
+    trimmed.startsWith('try {') ||
+    trimmed.startsWith('} catch') ||
+    trimmed.startsWith('};') ||
+    trimmed.includes('New-Object') ||
+    trimmed.includes('Set-Content') ||
+    trimmed.includes('Compress-Archive')
+  ) {
+    return (
+      <div key={index} className="text-zinc-500 italic font-mono text-[9px] whitespace-pre-wrap opacity-75">
+        {line}
+      </div>
+    );
+  }
+  if (trimmed.startsWith('api-1  |')) {
+    return (
+      <div key={index} className="text-violet-400 flex items-start gap-1.5 whitespace-pre-wrap">
+        <span>{line}</span>
+      </div>
+    );
+  }
+  return (
+    <div key={index} className="text-zinc-300 whitespace-pre-wrap">
+      {line}
+    </div>
+  );
+};
+
 export default function PortalPage() {
   const { role, user, activeTenant, branding } = useAuth();
   const isAdminOrSOC = role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst';
@@ -2380,8 +2449,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 </div>
                               )}
                               {/* Terminal output */}
-                              <div className="font-mono text-[10px] leading-relaxed bg-black/40 px-4 py-3 text-emerald-300 max-h-64 overflow-y-auto whitespace-pre">
-                                {result.output || (result.logs && result.logs.length > 0 ? result.logs.join('\n') : 'No output captured.')}
+                              <div className="font-mono text-[10px] leading-relaxed bg-zinc-950 px-4 py-3 rounded-b-xl border-t border-zinc-800/80 max-h-80 overflow-y-auto space-y-0.5 text-left">
+                                {(() => {
+                                  const text = result.output || (result.logs && result.logs.length > 0 ? result.logs.join('\n') : 'No output captured.');
+                                  return text.split('\n').map((line, i) => renderTerminalLine(line, i));
+                                })()}
                               </div>
                             </div>
                           )}
