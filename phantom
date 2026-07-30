@@ -14,7 +14,7 @@ ARGS=()
 # Parse parameters
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    local|docker|cluster|doctor|docs|plugin|backup|restore|migrate|release|update|version)
+    local|docker|containers|cluster|doctor|docs|plugin|backup|restore|migrate|release|update|version)
       NAMESPACE="$1"
       shift
       ;;
@@ -130,7 +130,7 @@ elif [[ -z "$NAMESPACE" && -z "$SUB_CMD" ]]; then
 fi
 
 # Set appropriate PHANTOM_MODE for script internals compatibility
-if [[ "$NAMESPACE" == "docker" ]]; then
+if [[ "$NAMESPACE" == "docker" || "$NAMESPACE" == "containers" ]]; then
   export PHANTOM_MODE="docker"
 elif [[ "$NAMESPACE" == "local" ]]; then
   export PHANTOM_MODE="native"
@@ -172,6 +172,22 @@ phantom_compose() {
   local docker_bin
   local compose_file="$PHANTOM_ROOT/deploy/docker/docker-compose.yml"
   local env_args=()
+
+  if [[ ! -f "$PHANTOM_ROOT/.env" ]]; then
+    if [[ -f "$PHANTOM_ROOT/.env.example" ]]; then
+      cp "$PHANTOM_ROOT/.env.example" "$PHANTOM_ROOT/.env"
+      echo "[+] Creado .env a partir de .env.example"
+      if command -v openssl &>/dev/null; then
+        local pw jwt
+        pw=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
+        jwt=$(openssl rand -base64 48 | tr -d '/+=' | head -c 48)
+        phantom_sed_inplace "s/change_me_strong_password/${pw}/" "$PHANTOM_ROOT/.env"
+        phantom_sed_inplace "s/change_me_jwt_secret_min_32_chars/${jwt}/" "$PHANTOM_ROOT/.env"
+        echo "[+] Secretos generados automáticamente en .env"
+      fi
+    fi
+  fi
+
   if [[ -f "$PHANTOM_ROOT/.env" ]]; then
     env_args=(--env-file "$PHANTOM_ROOT/.env")
   fi
@@ -186,7 +202,7 @@ phantom_compose() {
       echo "    macOS: ./phantom local install --docker   (instala Docker Desktop)" >&2
       echo "    Sin Docker: ./phantom local install   o   ./phantom local dev" >&2
     else
-      echo "    Ubuntu: sudo ./phantom local install --system" >&2
+      echo "    Ubuntu: sudo ./phantom containers install --system" >&2
     fi
     exit 1
   fi
@@ -1033,7 +1049,7 @@ run_install() {
   if [[ "$option" == "--docker" ]]; then
     if ! phantom_is_darwin; then
       echo "[!] install --docker solo aplica en macOS."
-      echo "    Ubuntu: sudo ./phantom install --system"
+      echo "    Ubuntu: sudo ./phantom containers install --system"
       exit 1
     fi
     phantom_install_docker_macos
@@ -1345,7 +1361,7 @@ phantom_install_docker_macos() {
 
 run_install_ubuntu() {
   if [[ "$(id -u)" -ne 0 ]]; then
-    echo "[!] Ejecuta con sudo: sudo ./phantom install --system"
+    echo "[!] Ejecuta con sudo: sudo ./phantom containers install --system"
     exit 1
   fi
 
@@ -1890,18 +1906,18 @@ Uso:
   ./phantom <namespace> <subcomando> [ambiente] [opciones]
 
 Namespaces Disponibles:
-  local     Operaciones nativas locales en el host.
-  docker    Operaciones del stack basado en contenedores Docker/Podman.
-  cluster   Operaciones sobre entornos Kubernetes.
-  docs      Visualización y generación de documentación técnica interactiva.
-  plugin    Gestión del ciclo de vida de los plugins de la plataforma.
-  doctor    Diagnósticos y verificaciones del entorno y dependencias.
-  backup    Crear snapshots de la base de datos y almacenamiento.
-  restore   Restaurar snapshots de base de datos y almacenamiento.
-  migrate   Ejecutar migraciones de base de datos locales al contenedor.
-  release   Herramientas para gestión de tags y versiones de Git.
-  update    Actualizar paquetes de desarrollo y dependencias.
-  version   Mostrar la versión actual de la CLI.
+  local       Operaciones nativas locales en el host.
+  containers  Operaciones del stack basado en contenedores Docker/Podman (alias: docker).
+  cluster     Operaciones sobre entornos Kubernetes.
+  docs        Visualización y generación de documentación técnica interactiva.
+  plugin      Gestión del ciclo de vida de los plugins de la plataforma.
+  doctor      Diagnósticos y verificaciones del entorno y dependencias.
+  backup      Crear snapshots de la base de datos y almacenamiento.
+  restore     Restaurar snapshots de base de datos y almacenamiento.
+  migrate     Ejecutar migraciones de base de datos locales al contenedor.
+  release     Herramientas para gestión de tags y versiones de Git.
+  update      Actualizar paquetes de desarrollo y dependencias.
+  version     Mostrar la versión actual de la CLI.
 
 Comandos por Namespace:
 
@@ -1919,7 +1935,8 @@ Comandos por Namespace:
     sbom                  Generar reporte SBOM de la cadena de suministro.
     passwd                Cambiar credenciales administrativas de Phantom.
 
-  [docker]
+  [containers] (alias: docker)
+    install               Instalar dependencias y configurar contenedores Docker/Podman.
     build                 Construir imágenes Docker para todos los servicios.
     start                 Iniciar stack de Docker Compose en background.
     stop                  Detener y remover contenedores del stack.
@@ -2040,10 +2057,13 @@ case "$NAMESPACE" in
     esac
     ;;
 
-  docker)
+  docker|containers)
     case "${SUB_CMD:-}" in
       build)
         run_build "${ARGS[@]+"${ARGS[@]}"}"
+        ;;
+      install)
+        run_install "${ARGS[@]+"${ARGS[@]}"}"
         ;;
       start|up)
         phantom_require_compose
@@ -2070,8 +2090,8 @@ case "$NAMESPACE" in
         run_fix_docker "${ARGS[@]+"${ARGS[@]}"}"
         ;;
       *)
-        echo "Subcomando docker desconocido: ${SUB_CMD:-}" >&2
-        echo "Usa: ./phantom docker help" >&2
+        echo "Subcomando $NAMESPACE desconocido: ${SUB_CMD:-}" >&2
+        echo "Usa: ./phantom $NAMESPACE help" >&2
         exit 1
         ;;
     esac

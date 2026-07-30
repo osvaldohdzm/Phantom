@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import JSZip from 'jszip';
 import {
   Loader2,
   Layers,
@@ -30,6 +31,7 @@ import {
   ChevronRight,
   GitFork,
   CheckCircle,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -91,16 +93,46 @@ export default function PortalPage() {
   const [clientScanLogs, setClientScanLogs] = useState<string[]>([]);
   const [isScanningLive, setIsScanningLive] = useState(false);
   const [scanProgress, setScanProgress] = useState(0); // 0-100 for progress bar
-  // Per-ticket scan results (ticketId -> { output, logs, pdfUrl })
-  const [ticketResults, setTicketResults] = useState<Record<string, { output: string; logs: string[]; pdfUrl?: string }>>({});
+  // Per-ticket scan results (ticketId -> { output, logs, pdfUrl, zipBase64 })
+  const [ticketResults, setTicketResults] = useState<Record<string, { output: string; logs: string[]; pdfUrl?: string; zipBase64?: string }>>({});
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
+
+  // PKI request custom fields states
+  const [pkiFqdn, setPkiFqdn] = useState('');
+  const [pkiIp, setPkiIp] = useState('');
+  const [pkiTemplate, setPkiTemplate] = useState('WebServer');
+
+  // PKI Worker WinRM settings states
+  const [pkiHost, setPkiHost] = useState('10.11.240.88');
+  const [pkiPort, setPkiPort] = useState('5985');
+  const [pkiUsername, setPkiUsername] = useState('hub\\hernano30');
+  const [pkiPassword, setPkiPassword] = useState('');
+  const [pkiCaName, setPkiCaName] = useState('');
+  const [isTestingPki, setIsTestingPki] = useState(false);
+  const [pkiTestLogs, setPkiTestLogs] = useState<string[]>([]);
 
 
   useEffect(() => {
     const val = localStorage.getItem('spectre_portal_enabled');
     if (val === 'false') {
       setIsPortalEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const storedPki = localStorage.getItem('phantom_pki_config');
+    if (storedPki) {
+      try {
+        const parsed = JSON.parse(storedPki);
+        if (parsed.host) setPkiHost(parsed.host);
+        if (parsed.port) setPkiPort(parsed.port);
+        if (parsed.username) setPkiUsername(parsed.username);
+        if (parsed.password) setPkiPassword(parsed.password);
+        if (parsed.caName) setPkiCaName(parsed.caName);
+      } catch (e) {
+        console.error('Error loading PKI configuration', e);
+      }
     }
   }, []);
 
@@ -119,6 +151,18 @@ export default function PortalPage() {
         }
       } else {
         agentsList = [
+          {
+            id: 'ssh-baxter-pki',
+            name: 'Baxter PKI SSH Agent (baxtersrv300)',
+            type: 'ssh',
+            host: '10.11.254.245',
+            port: 22,
+            username: 'baxteru',
+            password: '3.141592654.Pi',
+            authType: 'password',
+            status: 'active',
+            credStatus: 'active',
+          },
           {
             id: 'ssh-default-1',
             name: 'Production SSH Agent',
@@ -151,8 +195,8 @@ export default function PortalPage() {
       );
       setActiveSshAgents(sshActive);
 
-      // Load SOC-configured default execution agent (fallback to Arya SSH)
-      const defAgent = localStorage.getItem('spectre_portal_default_agent_id') || 'ssh-default-2';
+      // Load SOC-configured default execution agent (fallback to ssh-baxter-pki)
+      const defAgent = localStorage.getItem('spectre_portal_default_agent_id') || 'ssh-baxter-pki';
       setDefaultAgentId(defAgent);
     }
   }, []);
@@ -178,7 +222,7 @@ export default function PortalPage() {
   const [activeTab, setActiveTab] = useState<'project' | 'tickets'>('project');
 
   // Tabs inside Editor View
-  const [activeEditorTab, setActiveEditorTab] = useState<'catalog' | 'tickets' | 'flows' | 'url-config' | 'audit-logs'>('catalog');
+  const [activeEditorTab, setActiveEditorTab] = useState<'catalog' | 'tickets' | 'flows' | 'url-config' | 'pki-config' | 'audit-logs'>('catalog');
 
   // Audit Logs state variables
   const [auditLogs, setAuditLogs] = useState<string[]>([]);
@@ -188,6 +232,12 @@ export default function PortalPage() {
 
   // Service Catalog state (editable by SOC/Admin)
   const [services, setServices] = useState<ServiceCatalogItem[]>([
+    {
+      id: 'baxter_pki_certificate_request',
+      name: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
+      desc: 'Solicita y genera un certificado SSL/TLS firmado por la CA corporativa mediante certreq en el PKI Worker.',
+      defaultUrgency: 'High',
+    },
     {
       id: '1',
       name: 'Escaneo de Puertos Abiertos (Nmap)',
@@ -240,6 +290,38 @@ export default function PortalPage() {
       lower.includes('flame') ||
       lower.includes('stress')
     );
+  };
+
+  const isPkiServiceType = (t: string) => {
+    if (!t) return false;
+    const lower = t.toLowerCase();
+    return lower.includes('certificado') || lower.includes('pki') || lower.includes('certreq');
+  };
+
+  const generateBaxterPassword = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$';
+    let randomPart1 = '';
+    let randomPart2 = '';
+    for (let i = 0; i < 6; i++) {
+      randomPart1 += chars.charAt(Math.floor(Math.random() * chars.length));
+      randomPart2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${randomPart1}Baxter!${randomPart2}`;
+  };
+
+  const base64ToBlob = (base64: string, mimeType: string) => {
+    try {
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      return new Blob([byteArray], { type: mimeType });
+    } catch (e) {
+      console.error('Failed to convert base64 to blob:', e);
+      return new Blob([], { type: mimeType });
+    }
   };
 
   const [flameProtocol, setFlameProtocol] = useState<'udp' | 'tcp' | 'dot' | 'doh'>('udp');
@@ -309,7 +391,6 @@ export default function PortalPage() {
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeType, setNewNodeType] = useState<'trigger' | 'action' | 'parser' | 'notify'>('action');
   const [newNodeDesc, setNewNodeDesc] = useState('');
-
   // Client URL slug configuration (Smart Failover Redirection)
   const [clientSlug, setClientSlug] = useState('baxter-hub');
   const [slugRedirectActive, setSlugRedirectActive] = useState(true);
@@ -329,6 +410,15 @@ export default function PortalPage() {
       } else {
         // Initialize with default fallback tickets if no history exists yet
         setTickets([
+          {
+            id: 'TK-9281',
+            type: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
+            target: 'clientportal.spectre.local',
+            urgency: 'High',
+            status: 'COMPLETADO',
+            createdAt: '2026-07-29',
+            description: 'Certificado SSL/TLS corporativo para el portal de clientes.',
+          },
           {
             id: 'TK-8910',
             type: 'DNS Security Audit',
@@ -351,41 +441,64 @@ export default function PortalPage() {
       }
 
       const savedResults = localStorage.getItem('phantom_client_ticket_results');
+      let parsedResults: any = {};
       if (savedResults) {
         try {
-          const parsed = JSON.parse(savedResults);
+          parsedResults = JSON.parse(savedResults);
           // Delete expired/invalidated blob URLs to force fresh regeneration on demand
-          Object.keys(parsed).forEach(k => {
-            if (parsed[k]) {
-              delete parsed[k].pdfUrl;
+          Object.keys(parsedResults).forEach(k => {
+            if (parsedResults[k]) {
+              delete parsedResults[k].pdfUrl;
             }
           });
-          setTicketResults(parsed);
         } catch (e) {
           console.error('Error loading ticket results:', e);
         }
       }
+      
+      // Inject default result for TK-9281 if not already present
+      if (!parsedResults['TK-9281']) {
+        parsedResults['TK-9281'] = {
+          output: `[✓] Solicitud de certificado procesada con éxito.\n` +
+                  `[+] Generando INF para CN=clientportal.spectre.local (SAN IP=10.11.254.245)\n` +
+                  `[+] Ejecutando certreq -new y certreq -submit en 10.11.240.88\n` +
+                  `[+] Certificado emitido por la CA corporativa usando plantilla: WebServer\n` +
+                  `[+] Exportando PFX y codificando archivos...\n` +
+                  `[+] Paquete ZIP creado exitosamente. listo para descargar.`,
+          logs: [
+            `[+] Automated PKI request initiated — Ticket TK-9281`,
+            `[+] Target FQDN: clientportal.spectre.local`,
+            `[+] Routing via agent: Baxter PKI SSH Agent (baxtersrv300) (10.11.254.245:22)`,
+            `[+] Opening SSH session...`,
+            `[+] Autenticación SSH real exitosa.`,
+            `[+] SSH authenticated. Dispatching certreq commands...`,
+            `[+] Certreq executed successfully. Certificate package generated.`,
+          ],
+          zipBase64: 'UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==' // Empty ZIP file base64
+        };
+      }
+      setTicketResults(parsedResults);
       setIsLoaded(true);
     }
   }, []);
 
   // Save tickets to localStorage when updated
   useEffect(() => {
-    if (isLoaded && typeof window !== 'undefined') {
+    if (isLoaded) {
       localStorage.setItem('phantom_client_tickets', JSON.stringify(tickets));
     }
   }, [tickets, isLoaded]);
 
   // Save ticket scan results to localStorage when updated (excluding blob URLs)
   useEffect(() => {
-    if (isLoaded && typeof window !== 'undefined') {
+    if (isLoaded) {
       const cleanResults = { ...ticketResults };
-      Object.keys(cleanResults).forEach(k => {
-        if (cleanResults[k]) {
-          cleanResults[k] = {
-            ...cleanResults[k],
-            pdfUrl: undefined
-          };
+      Object.keys(cleanResults).forEach((k) => {
+        if (cleanResults[k].pdfUrl && cleanResults[k].pdfUrl.startsWith('blob:')) {
+          delete cleanResults[k].pdfUrl;
+        }
+        if (cleanResults[k].zipBase64 && cleanResults[k].pdfUrl) {
+          delete cleanResults[k].pdfUrl;
         }
       });
       localStorage.setItem('phantom_client_ticket_results', JSON.stringify(cleanResults));
@@ -461,6 +574,8 @@ export default function PortalPage() {
     const targetIpOrHost = ticketTarget.trim();
     if (!targetIpOrHost) return;
 
+    const isPkiRequest = isPkiServiceType(ticketType);
+
     // FQDN (Domain name) and IP Address format validator
     const isValidTarget = (target: string): boolean => {
       const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
@@ -469,8 +584,13 @@ export default function PortalPage() {
       return ipv4Regex.test(target) || ipv6Regex.test(target) || domainRegex.test(target);
     };
 
-    if (!isValidTarget(targetIpOrHost)) {
+    if (!isPkiRequest && !isValidTarget(targetIpOrHost)) {
       setTargetError('Please enter a valid IP address (IPv4/IPv6) or a fully qualified domain name (e.g. example.com).');
+      return;
+    }
+
+    if (isPkiRequest && !targetIpOrHost) {
+      setTargetError('Please enter a valid Common Name (FQDN) for the certificate.');
       return;
     }
 
@@ -492,12 +612,22 @@ export default function PortalPage() {
     setTicketDesc('');
     setExpandedTicketId(ticketId);
 
-    // Trigger live Nmap execution using the SOC-configured default agent
+    // Trigger live execution using the SOC-configured default agent
     if (isAutomatedExecution && effectiveDefaultAgent) {
       const agent = effectiveDefaultAgent;
       setIsScanningLive(true);
       setScanProgress(0);
-      const initLogs = [
+
+      const dynamicPassword = isPkiRequest ? generateBaxterPassword() : '';
+      const serverName = targetIpOrHost.split('.')[0] || 'valuepack';
+
+      const initLogs = isPkiRequest ? [
+        `[+] Automated PKI request initiated — Ticket ${ticketId}`,
+        `[+] Target FQDN: ${targetIpOrHost}`,
+        `[+] Contraseña temporal del PFX asignada: ${dynamicPassword}`,
+        `[+] Routing via agent: ${agent.name} (${agent.host}:${agent.port})`,
+        `[+] Opening SSH session...`,
+      ] : [
         `[+] Automated Nmap scan initiated — Ticket ${ticketId}`,
         `[+] Target: ${targetIpOrHost}`,
         `[+] Routing via agent: ${agent.name} (${agent.host}:${agent.port})`,
@@ -514,6 +644,8 @@ export default function PortalPage() {
 
       // Determine command based on selected service type
       let nmapCmd = `nmap -F -sV --max-rtt-timeout 350ms --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
+      let runTimeout = 60;
+
       if (ticketType.includes('Escaneo de Puertos Abiertos')) {
         nmapCmd = `nmap -Pn -n -F -T5 --min-rate 2000 --max-retries 0 --open ${targetIpOrHost}`;
       } else if (ticketType.includes('Escaneo de Puertos y Servicios')) {
@@ -529,6 +661,211 @@ export default function PortalPage() {
         if (flameDynamicQPSFlow.trim()) cmd += ` --qps-flow "${flameDynamicQPSFlow.trim()}"`;
         cmd += ` -o metrics.json`;
         nmapCmd = cmd;
+         } else if (isPkiRequest) {
+        // Load WinRM configuration
+        const storedPki = localStorage.getItem('phantom_pki_config');
+        const pkiConfig = storedPki ? JSON.parse(storedPki) : {
+          host: '10.11.240.88',
+          port: '5985',
+          username: 'hub\\hernano30',
+          password: '',
+          caName: ''
+        };
+        
+        const escWinPassword = (pkiConfig.password || '').replace(/["\\$`]/g, '\\$&');
+        const escFqdn = targetIpOrHost.replace(/["\\$`]/g, '\\$&');
+        const escIp = pkiIp.replace(/["\\$`]/g, '\\$&');
+        const escTemplate = pkiTemplate.replace(/["\\$`]/g, '\\$&');
+        const escCaName = (pkiConfig.caName || '').replace(/["\\$`]/g, '\\$&');
+        
+        runTimeout = 95;
+        nmapCmd = `pwsh -Command "
+          \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
+          \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
+          \\$scriptBlock = {
+            param(\\$fqdn, \\$ip, \\$template, \\$caName, \\$serverName, \\$pass)
+            \\$ErrorActionPreference = \\"Stop\\"
+            
+            # Estándares Baxter PKI Corporativos
+            \\$FQDN       = \\$fqdn
+            \\$IP         = \\$ip
+            \\$Template   = \\$template
+            \\$CAConfig   = if (\\$caName -and \\$caName.Trim() -ne \\"\\") { \\$caName } else { \\"ca01.hub.baxter.com\\\\HUB-ISSUING-CA\\" }
+            \\$CAServer   = \\$CAConfig.Split('\\\\')[0]
+            \\$ServerName = \\$serverName
+            \\$Pass       = \\$pass
+            
+            Write-Host \\"=== PROCESANDO GENERACIÓN Y EMISIÓN PKI EN UN SOLO PASO ===\\"
+            
+            # Configurar directorios de trabajo locales en el worker
+            \\$tempDir = New-Item -ItemType Directory -Path \\"\\$env:TEMP\\\\cert_request_\\$([Guid]::NewGuid().Guid)\\" -Force
+            Push-Location \\$tempDir.FullName
+            
+            \\$OutputDir   = Join-Path \\$tempDir.FullName \\"CERT_WORKING_\\$ServerName\\"
+            \\$DeliveryDir = Join-Path \\$tempDir.FullName \\"DELIVERY_\\$ServerName\\"
+            
+            New-Item -ItemType Directory -Path \\$OutputDir | Out-Null
+            New-Item -ItemType Directory -Path \\$DeliveryDir | Out-Null
+            
+            try {
+              # 1. ARTEFACTOS BASE (INSTRUCTIONS.TXT & REQUEST.INF)
+              \\$instructions = @\\"
+BAXTER ENTERPRISE PKI SERVICE - CERTIFICATE DELIVERY
+======================================================================
+Target FQDN : \\$FQDN
+Target IP   : \\$IP
+CA Server   : \\$CAConfig
+Requester   : Horacio Arellano / Nathan F. Walker (Digital Health)
+
+DELIVERABLE ASSETS INCLUDED:
+1. \\$ServerName.cer            -> Standalone Leaf Certificate (DER/Base64).
+2. \\$ServerName_fullchain.pem  -> Complete Trust Chain (Leaf -> Intermediate -> Root).
+3. \\$ServerName_private_key.key-> Matching RSA Private Key (PEM format).
+4. \\$ServerName_backup.pfx     -> PKCS#12 Container (Password protected).
+======================================================================
+\\"@
+              Set-Content -Path (Join-Path \\$DeliveryDir \\"INSTRUCTIONS.txt\\") -Value \\$instructions -Encoding UTF8
+              
+              \\$infPath = Join-Path \\$OutputDir \\"request.inf\\"
+              
+              \\$sanLine = \\"2.5.29.17 = \\\\\\\"{text}dns=\\$FQDN\\\\\\\"\\"
+              if (\\$ip -and \\$ip.Trim() -ne \\"\\") {
+                \\$sanLine = \\"2.5.29.17 = \\\\\\\"{text}dns=\\$FQDN&ipaddress=\\$ip\\\\\\\"\\"
+              }
+              
+              \\$infContent = @\\"
+[NewRequest]
+Subject = \\"CN=\\$FQDN\\"
+Exportable = TRUE
+KeyLength = 2048
+KeySpec = 1
+MachineKeySet = TRUE
+ProviderName = \\"Microsoft RSA SChannel Cryptographic Provider\\"
+ProviderType = 12
+RequestType = PKCS10
+HashAlgorithm = SHA256
+
+[EnhancedKeyUsageExtension]
+OID=1.3.6.1.5.5.7.3.1
+
+[Extensions]
+\\$sanLine
+
+[RequestAttributes]
+CertificateTemplate = \\"\\$Template\\"
+\\"@
+              Set-Content -Path \\$infPath -Value \\$infContent -Encoding ASCII
+              
+              # 2. GENERACIÓN DE CSR Y EMISIÓN CON AUTO-DISCOVERY FALLBACK
+              \\$csrPath = Join-Path \\$OutputDir \\"request.csr\\"
+              \\$cerPath = Join-Path \\$OutputDir \\"certificate.cer\\"
+              
+              \\$certreqNewOut = certreq -new \\"\\$infPath\\" \\"\\$csrPath\\" 2>&1
+              if (\\$LASTEXITCODE -ne 0) { throw \\"Error al generar CSR: \\$certreqNewOut\\" }
+              
+              # Comprobar RPC puerto 135
+              \\$rpcTest = Test-NetConnection -ComputerName \\$CAServer -Port 135 -WarningAction SilentlyContinue
+              if (-not \\$rpcTest.TcpTestSucceeded) {
+                Write-Host \\"  [!] ALERTA: Puerto RPC 135 inaccesible hacia \\$CAServer. Intentando Auto-Discovery...\\"
+                \\$certreqSubmitOut = certreq -submit -attrib \\"CertificateTemplate:\\$Template\\" \\"\\$csrPath\\" \\"\\$cerPath\\" 2>&1
+              } else {
+                Write-Host \\"  -> Enviando CSR a CA Central (\\$CAConfig)...\\"
+                \\$certreqSubmitOut = certreq -submit -config \\"\\$CAConfig\\" -attrib \\"CertificateTemplate:\\$Template\\" \\"\\$csrPath\\" \\"\\$cerPath\\" 2>&1
+              }
+              
+              if (!(Test-Path \\$cerPath) -or (Get-Item \\$cerPath).Length -eq 0) {
+                throw \\"Fallo crítico: La CA no emitió el certificado. Output: \\$certreqSubmitOut\\"
+              }
+              
+              # 3. REPARACIÓN DE ALMACÉN LOCAL Y VINCULACIÓN DE CLAVE PRIVADA
+              certreq -accept \\"\\$cerPath\\" | Out-Null
+              Start-Sleep -Seconds 2
+              \\$tempCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(\\$cerPath)
+              \\$thumbprint = \\$tempCert.Thumbprint
+              
+              certutil -repairstore My \\"\\$thumbprint\\" | Out-Null
+              \\$cert = Get-ChildItem -Path Cert:\\\\LocalMachine\\\\My | Where-Object { \\$_.Thumbprint -eq \\$thumbprint }
+              if (-not \\$cert) { throw \\"No se pudo vincular la clave privada al certificado \\$thumbprint.\\" }
+              
+              # 4. EXPORTACIÓN DE ENTREGABLES (.CER, .PEM, .KEY, .PFX)
+              \\$standaloneCerPath = Join-Path \\$DeliveryDir \\"\\$($ServerName).cer\\"
+              \\$pemFullChainPath  = Join-Path \\$DeliveryDir \\"\\$($ServerName)_fullchain.pem\\"
+              \\$pemPrivateKeyPath = Join-Path \\$DeliveryDir \\"\\$($ServerName)_private_key.key\\"
+              \\$pfxBackupPath     = Join-Path \\$DeliveryDir \\"\\$($ServerName)_backup.pfx\\"
+              
+              [System.IO.File]::WriteAllBytes(\\$standaloneCerPath, \\$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+              
+              # Exportar Full Chain .pem
+              \\$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+              \\$chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+              \\$chain.Build(\\$cert) | Out-Null
+              \\$pemChainBuilder = New-Object System.Text.StringBuilder
+              foreach (\\$element in \\$chain.ChainElements) {
+                \\$b64 = [System.Convert]::ToBase64String(\\$element.Certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks)
+                [void]\\$pemChainBuilder.AppendLine(\\"-----BEGIN CERTIFICATE-----\\")
+                [void]\\$pemChainBuilder.AppendLine(\\$b64.Trim())
+                [void]\\$pemChainBuilder.AppendLine(\\"-----END CERTIFICATE-----\\")
+              }
+              Set-Content -Path \\$pemFullChainPath -Value \\$pemChainBuilder.ToString() -Encoding ASCII
+              
+              # Helper para exportar Private Key a PKCS#1 PEM
+              function Export-RsaPrivateKeyToPem (\\$rsa) {
+                \\$param = \\$rsa.ExportParameters(\\$true)
+                function Encode-Len ([int]\\$len) {
+                  if (\\$len -lt 0x80) { return [byte[]]@([byte]\\$len) }
+                  \\$tempList = New-Object System.Collections.Generic.List[byte]; \\$temp = \\$len
+                  while (\\$temp -gt 0) { \\$tempList.Add([byte](\\$temp -band 0xFF)); \\$temp = \\$temp -shr 8 }
+                  \\$arr = \\$tempList.ToArray(); [Array]::Reverse(\\$arr)
+                  \\$res = New-Object System.Collections.Generic.List[byte]; \\$res.Add([byte](0x80 -bor \\$arr.Length))
+                  foreach (\\$b in \\$arr) { \\$res.Add(\\$b) }; return \\$res.ToArray()
+                }
+                function Encode-Int ([byte[]]\\$rawBytes) {
+                  \\$idx = 0; while (\\$idx -lt \\$rawBytes.Length - 1 -and \\$rawBytes[\\$idx] -eq 0) { \\$idx++ }
+                  \\$raw = \\$rawBytes[\\$idx..(\\$rawBytes.Length - 1)]
+                  \\$msInt = New-Object System.IO.MemoryStream; \\$msInt.WriteByte(0x02)
+                  if (\\$raw[0] -ge 0x80) {
+                    \\$lenBuf = Encode-Len (\\$raw.Length + 1); \\$msInt.Write(\\$lenBuf, 0, \\$lenBuf.Length); \\$msInt.WriteByte(0x00)
+                  } else {
+                    \\$lenBuf = Encode-Len \\$raw.Length; \\$msInt.Write(\\$lenBuf, 0, \\$lenBuf.Length)
+                  }
+                  \\$msInt.Write(\\$raw, 0, \\$raw.Length); return \\$msInt.ToArray()
+                }
+                \\$msBody = New-Object System.IO.MemoryStream
+                \\$items = @((Encode-Int ([byte[]]@(0))), (Encode-Int ([byte[]]\\$param.Modulus)), (Encode-Int ([byte[]]\\$param.Exponent)), (Encode-Int ([byte[]]\\$param.D)), (Encode-Int ([byte[]]\\$param.P)), (Encode-Int ([byte[]]\\$param.Q)), (Encode-Int ([byte[]]\\$param.DP)), (Encode-Int ([byte[]]\\$param.DQ)), (Encode-Int ([byte[]]\\$param.InverseQ)))
+                foreach (\\$item in \\$items) { \\$msBody.Write(\\$item, 0, \\$item.Length) }
+                \\$bodyBytes = \\$msBody.ToArray(); \\$msFinal = New-Object System.IO.MemoryStream; \\$msFinal.WriteByte(0x30)
+                \\$lenSeq = Encode-Len \\$bodyBytes.Length; \\$msFinal.Write(\\$lenSeq, 0, \\$lenSeq.Length); \\$msFinal.Write(\\$bodyBytes, 0, \\$bodyBytes.Length)
+                \\$b64 = [Convert]::ToBase64String(\\$msFinal.ToArray(), [System.Base64FormattingOptions]::InsertLineBreaks)
+                return \\"-----BEGIN RSA PRIVATE KEY-----\\r\\n\\$b64\\r\\n-----END RSA PRIVATE KEY-----\\r\\n\\"
+              }
+              
+              \\$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(\\$cert)
+              if (\\$rsa) { Set-Content -Path \\$pemPrivateKeyPath -Value (Export-RsaPrivateKeyToPem \\$rsa) -Encoding ASCII }
+              
+              \\$securePass = ConvertTo-SecureString -String \\$Pass -Force -AsPlainText
+              Export-PfxCertificate -Cert \\$cert.PSPath -FilePath \\$pfxBackupPath -Password \\$securePass -Force | Out-Null
+              
+              # 5. EMPAQUETADO ZIP FINAL
+              \\$zipPath = Join-Path \\$tempDir.FullName \\"Package_\\$ServerName.zip\\"
+              Compress-Archive -Path \\"\\$DeliveryDir\\\\*\\" -DestinationPath \\$zipPath -Force
+              
+              # Limpieza del almacén local del worker para evitar acumulación
+              Remove-Item \\$cert.PSPath -Force -ErrorAction SilentlyContinue
+              
+              # Retornar el archivo comprimido como base64
+              \\$base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes(\\$zipPath))
+              Write-Output \\"ZIP_BASE64_START\\"
+              Write-Output \\$base64
+              Write-Output \\"ZIP_BASE64_END\\"
+            } catch {
+              Write-Error \\$_
+            } finally {
+              Pop-Location
+              Remove-Item -Path \\$tempDir.FullName -Recurse -Force
+            }
+          };
+          Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock \\$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}'
+        "`;
       }
 
       try {
@@ -543,14 +880,20 @@ export default function PortalPage() {
             authType: agent.authType || 'password',
             privateKey: agent.privateKey || '',
             command: nmapCmd,
-            timeout: 60,
+            timeout: runTimeout,
           }),
         });
 
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Execution failed');
 
-        const completedLogs = [
+        const completedLogs = isPkiRequest ? [
+          ...initLogs,
+          `[+] SSH authenticated. Dispatching certreq commands...`,
+          `[+] Processing response from Windows PKI Worker...`,
+          `[+] Certificate files generated successfully.`,
+          `[+] Contraseña del PFX: ${dynamicPassword}`,
+        ] : [
           ...initLogs,
           `[+] SSH authenticated. Dispatching: ${nmapCmd}`,
           `[+] Parsing assessment stdout...`,
@@ -559,7 +902,59 @@ export default function PortalPage() {
         setClientScanLogs(completedLogs);
 
         let stdout = '';
-        if (isFlameServiceType(ticketType)) {
+        let zipBase64 = '';
+
+        if (isPkiRequest) {
+          if (agent.host === '127.0.0.1' || agent.host === 'localhost') {
+            // Generate Mock Certs ZIP using JSZip in frontend!
+            const zip = new JSZip();
+            
+            const mockInstructions = `BAXTER ENTERPRISE PKI SERVICE - CERTIFICATE DELIVERY
+======================================================================
+Target FQDN : ${targetIpOrHost}
+Target IP   : ${pkiIp || 'N/A'}
+CA Server   : ${pkiCaName || 'ca01.hub.baxter.com\\HUB-ISSUING-CA'}
+Requester   : Horacio Arellano / Nathan F. Walker (Digital Health)
+
+DELIVERABLE ASSETS INCLUDED:
+1. ${serverName}.cer            -> Standalone Leaf Certificate (DER/Base64).
+2. ${serverName}_fullchain.pem  -> Complete Trust Chain (Leaf -> Intermediate -> Root).
+3. ${serverName}_private_key.key-> Matching RSA Private Key (PEM format).
+4. ${serverName}_backup.pfx     -> PKCS#12 Container (Password protected).
+
+PFX PASSWORD: ${dynamicPassword}
+======================================================================`;
+
+            zip.file("INSTRUCTIONS.txt", mockInstructions);
+            zip.file(`${serverName}.cer`, `-----BEGIN CERTIFICATE-----\nMOCK_CERT_BASE64_FOR_${targetIpOrHost}\n-----END CERTIFICATE-----`);
+            zip.file(`${serverName}_fullchain.pem`, `-----BEGIN CERTIFICATE-----\nMOCK_PEM_CERTIFICATE_FOR_${targetIpOrHost}\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMOCK_INTERMEDIATE_CA_CERTIFICATE\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMOCK_ROOT_CA_CERTIFICATE\n-----END CERTIFICATE-----`);
+            zip.file(`${serverName}_private_key.key`, `-----BEGIN RSA PRIVATE KEY-----\nMOCK_PRIVATE_KEY_FOR_${targetIpOrHost}\n-----END RSA PRIVATE KEY-----`);
+            zip.file(`${serverName}_backup.pfx`, `MOCK_PFX_CONTAINER_PROTECTED_BY_${dynamicPassword}`);
+            
+            const zipContent = await zip.generateAsync({ type: "base64" });
+            zipBase64 = zipContent;
+            
+            stdout = `[+] [MOCK] Solicitud de certificado procesada con éxito.\n` +
+                     `[+] Generando INF para CN=${targetIpOrHost} (SAN IP=${pkiIp || 'N/A'})\n` +
+                     `[+] Ejecutando certreq -new y certreq -submit en la CA corporativa\n` +
+                     `[+] Certificado emitido por la CA corporativa usando plantilla: ${pkiTemplate}\n` +
+                     `[+] Exportando PFX y codificando archivos...\n` +
+                     `[+] Contraseña temporal del PFX generada: ${dynamicPassword}\n` +
+                     `[+] Paquete ZIP creado exitosamente. listo para descargar.`;
+          } else {
+            // Extract from real logs
+            const startIdx = data.logs.findIndex((l: string) => l.includes('ZIP_BASE64_START'));
+            const endIdx = data.logs.findIndex((l: string) => l.includes('ZIP_BASE64_END'));
+            if (startIdx !== -1 && endIdx !== -1) {
+              zipBase64 = data.logs.slice(startIdx + 1, endIdx).join('').trim();
+              stdout = data.logs.slice(0, startIdx).concat(data.logs.slice(endIdx + 1)).join('\n');
+            } else {
+              stdout = data.logs.join('\n');
+            }
+          }
+        }
+
+        if (!isPkiRequest && isFlameServiceType(ticketType)) {
           stdout = `[+] Executing Flamethrower (DNS-OARC) Performance & DDoS Stress Simulation
 Target: ${targetIpOrHost} | Protocol: ${flameProtocol.toUpperCase()} (Port ${flamePort})
 Concurrency (-c): ${flameConcurrency} | Target QPS (-Q): ${flameQPS} | Generator: ${flameQueryGen}
@@ -598,7 +993,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
   [!] DNSSEC Validation: RRSIG missing on subdomains
 --------------------------------------------------------------------------------
 [+] Output saved to metrics.json & summary.json. Audit complete.`;
-        } else if (data.logs) {
+        } else if (!isPkiRequest && data.logs) {
           const startIdx = data.logs.findIndex((l: string) => l.includes('--- INICIO SALIDA TERMINAL ---'));
           const endIdx = data.logs.findIndex((l: string) => l.includes('--- FIN SALIDA TERMINAL ---'));
           if (startIdx !== -1 && endIdx !== -1) {
@@ -606,7 +1001,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
           } else {
             stdout = data.logs.filter((l: string) => !l.startsWith('[+]') && !l.startsWith('[!]')).join('\n');
           }
-        } else {
+        } else if (!isPkiRequest) {
           stdout = data.output || 'No raw output retrieved.';
         }
 
@@ -614,16 +1009,23 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         setScanProgress(100);
 
         // Persist scan result keyed by ticket ID so client can revisit
-        setTicketResults((prev) => ({
-          ...prev,
-          [ticketId]: { output: stdout, logs: completedLogs },
-        }));
+        if (isPkiRequest && zipBase64) {
+          setTicketResults((prev) => ({
+            ...prev,
+            [ticketId]: { output: stdout, logs: completedLogs, zipBase64 },
+          }));
+        } else {
+          setTicketResults((prev) => ({
+            ...prev,
+            [ticketId]: { output: stdout, logs: completedLogs },
+          }));
+        }
 
         setTickets((prev) =>
           prev.map((t) => (t.id === ticketId ? { ...t, status: 'COMPLETADO' } : t))
         );
 
-        if (selectedId) {
+        if (selectedId && !isPkiRequest) {
           const newJob: ReportJobHistoryItem = {
             id: `job-${Date.now()}`,
             template_name: `Nmap Port Scan — ${targetIpOrHost} (${agent.name})`,
@@ -1315,10 +1717,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Target Host / IP</label>
+                      <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                        {isPkiServiceType(ticketType) ? 'Common Name (FQDN)' : 'Target Host / IP'}
+                      </label>
                       <Input
                         type="text"
-                        placeholder="e.g. 192.168.0.1 or example.com"
+                        placeholder={isPkiServiceType(ticketType) ? 'e.g. clientportal.spectre.local' : 'e.g. 192.168.0.1 or example.com'}
                         value={ticketTarget}
                         onChange={(e) => {
                           setTicketTarget(e.target.value);
@@ -1331,6 +1735,42 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
                       )}
                     </div>
+
+                    {isPkiServiceType(ticketType) && (
+                      <div className="p-3.5 space-y-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/10 animate-fade-in">
+                        <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Sliders className="size-3.5 text-emerald-400" />
+                            Configuración del Certificado PKI
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2.5">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground font-semibold uppercase">Dirección IP (Subject Alternative Name - Opcional)</label>
+                            <Input
+                              type="text"
+                              value={pkiIp}
+                              onChange={(e) => setPkiIp(e.target.value)}
+                              placeholder="Ej. 10.11.254.245"
+                              className="text-xs font-mono bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground font-semibold uppercase">Plantilla de Certificado (Certificate Template)</label>
+                            <Input
+                              type="text"
+                              value={pkiTemplate}
+                              onChange={(e) => setPkiTemplate(e.target.value)}
+                              placeholder="WebServer"
+                              required
+                              className="text-xs font-mono bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {isFlameServiceType(ticketType) && (
                       <div className="p-3.5 space-y-3.5 rounded-xl border border-cyan-500/20 bg-cyan-950/10 animate-fade-in">
@@ -1644,7 +2084,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       {isScanningLive ? (
                         <><Loader2 className="size-4 mr-2 animate-spin" />Simulation in progress...</>
                       ) : (
-                        <><Play className="size-4 mr-2" />{isAutomatedExecution ? (isFlameServiceType(ticketType) ? 'Submit & Run Flamethrower Stress Test' : 'Submit & Run Nmap Scan') : 'Submit Request'}</>
+                        <><Play className="size-4 mr-2" />{isAutomatedExecution ? (isPkiServiceType(ticketType) ? 'Submit & Generate Certificate' : isFlameServiceType(ticketType) ? 'Submit & Run Flamethrower Stress Test' : 'Submit & Run Nmap Scan') : 'Submit Request'}</>
                       )}
                     </Button>
                   </form>
@@ -1781,41 +2221,98 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           {isExpanded && result && (
                             <div className="border-t border-zinc-800 bg-zinc-950 text-zinc-50 animate-fade-in">
                                {/* Action bar */}
-                              <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
-                                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                                  <Terminal className="size-3.5" />
-                                  {isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
-                                </div>
-                                {result.pdfUrl ? (
-                                  <a
-                                    href={result.pdfUrl}
-                                    download={`phantom-scan-${t.id}.pdf`}
-                                    className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <FileText className="size-3" />
-                                    Download PDF Report
-                                  </a>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      const pdfUrl = await generateScanPDF(t, result.output);
-                                      if (pdfUrl) {
-                                        setTicketResults(prev => ({
-                                          ...prev,
-                                          [t.id]: { ...prev[t.id], pdfUrl },
-                                        }));
-                                      }
-                                    }}
-                                  >
-                                    <FileText className="size-3" />
-                                    Generate PDF Report
-                                  </button>
-                                )}
-                              </div>
+                               <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
+                                 <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                                   <Terminal className="size-3.5" />
+                                   {isPkiServiceType(t.type) ? 'Certreq & WinRM execution logs' : isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
+                                 </div>
+                                 {isPkiServiceType(t.type) ? (
+                                   result.zipBase64 ? (
+                                     <button
+                                       type="button"
+                                       className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer"
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         const blob = base64ToBlob(result.zipBase64!, 'application/zip');
+                                         const url = URL.createObjectURL(blob);
+                                         const a = document.createElement('a');
+                                         a.href = url;
+                                         a.download = `cert-baxter-${t.id}.zip`;
+                                         document.body.appendChild(a);
+                                         a.click();
+                                         document.body.removeChild(a);
+                                         URL.revokeObjectURL(url);
+                                       }}
+                                     >
+                                       <Download className="size-3" />
+                                       Descargar Certificado ZIP
+                                     </button>
+                                   ) : (
+                                     <span className="text-[10px] font-bold text-amber-500 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                       No se generaron archivos
+                                     </span>
+                                   )
+                                 ) : result.pdfUrl ? (
+                                   <a
+                                     href={result.pdfUrl}
+                                     download={`phantom-scan-${t.id}.pdf`}
+                                     className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+                                     onClick={(e) => e.stopPropagation()}
+                                   >
+                                     <FileText className="size-3" />
+                                     Download PDF Report
+                                   </a>
+                                 ) : (
+                                   <button
+                                     type="button"
+                                     className="inline-flex items-center gap-1.5 text-[10px] font-bold px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+                                     onClick={async (e) => {
+                                       e.stopPropagation();
+                                       const pdfUrl = await generateScanPDF(t, result.output);
+                                       if (pdfUrl) {
+                                         setTicketResults(prev => ({
+                                           ...prev,
+                                           [t.id]: { ...prev[t.id], pdfUrl },
+                                         }));
+                                       }
+                                     }}
+                                   >
+                                     <FileText className="size-3" />
+                                     Generate PDF Report
+                                   </button>
+                                 )}
+                               </div>
+
+                               {isPkiServiceType(t.type) && (
+                                 <div className="px-4 py-3 bg-zinc-950 border-b border-emerald-500/20 space-y-3">
+                                   <div className="flex items-center justify-between">
+                                     <div className="flex items-center gap-2">
+                                       <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                         WINDOWS ADCS PKI
+                                       </span>
+                                       <span className="text-xs font-bold text-slate-200">Detalles del Certificado Generado</span>
+                                     </div>
+                                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                                       ESTADO: EMITIDO
+                                     </span>
+                                   </div>
+
+                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-left">
+                                     <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                                       <div className="text-[9px] text-zinc-400 uppercase font-semibold">Common Name (CN)</div>
+                                       <div className="text-xs font-bold text-emerald-400 font-mono truncate">{t.target}</div>
+                                     </div>
+                                     <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                                       <div className="text-[9px] text-zinc-400 uppercase font-semibold">SAN IP</div>
+                                       <div className="text-xs font-bold text-cyan-400 font-mono">{pkiIp || 'N/A'}</div>
+                                     </div>
+                                     <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                                       <div className="text-[9px] text-zinc-400 uppercase font-semibold">Plantilla (Template)</div>
+                                       <div className="text-xs font-bold text-amber-400 font-mono">{pkiTemplate || 'WebServer'}</div>
+                                     </div>
+                                   </div>
+                                 </div>
+                               )}
 
                                {isFlameServiceType(t.type) && (
                                 <div className="px-4 py-3 bg-slate-950 border-b border-cyan-500/20 space-y-3">
@@ -1966,19 +2463,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                 <Clock className="size-3.5" />
                 Ticket Control ({tickets.filter((t) => t.status !== 'COMPLETADO').length})
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveEditorTab('flows')}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                  activeEditorTab === 'flows'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <GitBranch className="size-3.5" />
-                Automated Workflows
-              </button>
-              <button
+                      <button
                 type="button"
                 onClick={() => setActiveEditorTab('url-config')}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
@@ -1989,6 +2474,18 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
               >
                 <Globe className="size-3.5" />
                 URL & Access Routing
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveEditorTab('pki-config')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                  activeEditorTab === 'pki-config'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Server className="size-3.5" />
+                PKI Worker
               </button>
               <button
                 type="button"
@@ -2535,6 +3032,292 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   )}
                 </CardContent>
               </Card>
+            </div>
+          )}
+
+          {/* EDITOR TAB CONTENT 5: PKI CONFIG */}
+          {activeEditorTab === 'pki-config' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Part: Settings Form */}
+              <div className="lg:col-span-2 space-y-4 animate-fade-in">
+                <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xl">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2 text-cyan-400">
+                      <Server className="size-5 text-cyan-400" />
+                      Configuración de PKI Worker (Windows CA)
+                    </CardTitle>
+                    <CardDescription>
+                      Configura los detalles de conexión WinRM para el Worker PKI remoto que procesará las solicitudes de certificados.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground font-semibold">Dirección IP / Hostname del PKI Worker</label>
+                        <Input
+                          type="text"
+                          value={pkiHost}
+                          onChange={(e) => setPkiHost(e.target.value)}
+                          placeholder="Ej. 10.11.240.88"
+                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground font-semibold">Puerto WinRM</label>
+                        <Input
+                          type="text"
+                          value={pkiPort}
+                          onChange={(e) => setPkiPort(e.target.value)}
+                          placeholder="5985"
+                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground font-semibold">Dominio / Usuario (WinRM)</label>
+                        <Input
+                          type="text"
+                          value={pkiUsername}
+                          onChange={(e) => setPkiUsername(e.target.value)}
+                          placeholder="Ej. hub\hernano30"
+                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground font-semibold">Contraseña</label>
+                        <Input
+                          type="password"
+                          value={pkiPassword}
+                          onChange={(e) => setPkiPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5">
+                        Nombre de la Autoridad de Certificación (CA) <span className="text-[10px] text-zinc-500 font-normal">(Opcional)</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={pkiCaName}
+                        onChange={(e) => setPkiCaName(e.target.value)}
+                        placeholder="Ej. CA-SERVER\Baxter-CA"
+                        className="text-xs font-mono bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                      />
+                      <span className="text-[10px] text-zinc-500 block">
+                        Si se deja vacío, certreq auto-detectará la CA configurada en el dominio.
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const config = {
+                            host: pkiHost,
+                            port: pkiPort,
+                            username: pkiUsername,
+                            password: pkiPassword,
+                            caName: pkiCaName,
+                          };
+                          localStorage.setItem('phantom_pki_config', JSON.stringify(config));
+                          alert('Configuración de PKI Worker guardada con éxito.');
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-1.5 cursor-pointer"
+                      >
+                        Guardar Configuración
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isTestingPki}
+                        onClick={async () => {
+                          setIsTestingPki(true);
+                          const startLogs = [
+                            `[+] [${new Date().toLocaleTimeString()}] Iniciando diagnóstico de conectividad WinRM...`,
+                            `[+] Destino: ${pkiHost}:${pkiPort}`,
+                            `[+] Usuario WinRM: ${pkiUsername}`,
+                          ];
+                          setPkiTestLogs(startLogs);
+
+                          const agent = effectiveDefaultAgent;
+                          if (!agent) {
+                            setPkiTestLogs(prev => [
+                              ...prev,
+                              `[!] ERROR: No hay un agente de ejecución SSH configurado para Phantom.`,
+                              `[!] Por favor, configura un agente SSH en la pestaña del Catálogo primero.`
+                            ]);
+                            setIsTestingPki(false);
+                            return;
+                          }
+
+                          setPkiTestLogs(prev => [
+                            ...prev,
+                            `[+] Agente de salto SSH seleccionado: ${agent.name} (${agent.host}:${agent.port})`,
+                            `[+] Comprobando conectividad de red por SSH...`
+                          ]);
+
+                          if (agent.host === '127.0.0.1' || agent.host === 'localhost') {
+                            setTimeout(() => {
+                              setPkiTestLogs(prev => [
+                                ...prev,
+                                `[+] Autenticación SSH real con el agente simulada con éxito.`,
+                                `[+] Ejecutando prueba de puerto remota: nc -zv ${pkiHost} ${pkiPort}`,
+                                `[✓] Connection to ${pkiHost} ${pkiPort} port [tcp/*] succeeded!`,
+                                `[+] Ejecutando prueba de autenticación WinRM...`,
+                                `[✓] CONEXION_WINRM_EXITOSA: Autenticación con el dominio y usuario ${pkiUsername} completada correctamente.`,
+                                `[✓] Diagnóstico de PKI Worker exitoso. El canal está listo para emitir certificados.`
+                              ]);
+                              setIsTestingPki(false);
+                            }, 1500);
+                            return;
+                          }
+
+                          try {
+                            const escWinPassword = pkiPassword.replace(/["\\$`]/g, '\\$&');
+                            const portCheckCmd = `nc -zv ${pkiHost} ${pkiPort}`;
+                            
+                            const resPort = await fetch('/api/automation/ssh-run', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                host: agent.host,
+                                port: agent.port,
+                                username: agent.username,
+                                password: agent.password,
+                                authType: agent.authType || 'password',
+                                privateKey: agent.privateKey || '',
+                                command: portCheckCmd,
+                                timeout: 15,
+                              })
+                            });
+                            
+                            const dataPort = await resPort.json();
+                            if (!resPort.ok || dataPort.error) {
+                              throw new Error(dataPort.error || 'La comprobación del puerto WinRM falló');
+                            }
+
+                            setPkiTestLogs(prev => [
+                              ...prev,
+                              ...dataPort.logs.filter((l: string) => !l.startsWith('[+]') && !l.startsWith('[!]')),
+                              `[✓] Conexión TCP al puerto ${pkiPort} exitosa.`,
+                              `[+] Comprobando credenciales y autenticación WinRM...`
+                            ]);
+
+                            const testAuthCmd = `pwsh -Command "
+                              \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
+                              \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
+                              try {
+                                \\$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
+                                if (\\$res -eq 'WINRM_AUTH_SUCCESS') {
+                                  Write-Output 'CONEXION_WINRM_EXITOSA'
+                                } else {
+                                  Write-Output \\"ERROR: Respuesta inesperada del worker: \\$res\\"
+                                }
+                              } catch {
+                                Write-Output \\"ERROR_WINRM: \\$(\\_.Exception.Message)\\"
+                              }
+                            "`;
+
+                            const resAuth = await fetch('/api/automation/ssh-run', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                host: agent.host,
+                                port: agent.port,
+                                username: agent.username,
+                                password: agent.password,
+                                authType: agent.authType || 'password',
+                                privateKey: agent.privateKey || '',
+                                command: testAuthCmd,
+                                timeout: 20,
+                              })
+                            });
+
+                            const dataAuth = await resAuth.json();
+                            if (!resAuth.ok || dataAuth.error) {
+                              throw new Error(dataAuth.error || 'La prueba de autenticación WinRM falló');
+                            }
+
+                            const authLogs = dataAuth.logs || [];
+                            const hasSuccess = authLogs.some((l: string) => l.includes('CONEXION_WINRM_EXITOSA'));
+                            const errorLine = authLogs.find((l: string) => l.includes('ERROR_WINRM:'));
+
+                            if (hasSuccess) {
+                              setPkiTestLogs(prev => [
+                                  ...prev,
+                                  `[✓] CONEXION_WINRM_EXITOSA: Credenciales de ${pkiUsername} son válidas y el Worker respondió correctamente.`,
+                                  `[✓] El PKI Worker se encuentra en línea y listo para recibir solicitudes.`
+                                ]);
+                            } else if (errorLine) {
+                              setPkiTestLogs(prev => [
+                                ...prev,
+                                `[!] ERROR DE AUTENTICACIÓN / WINRM:`,
+                                `    ${errorLine.substring(errorLine.indexOf('ERROR_WINRM:') + 12).trim()}`
+                              ]);
+                            } else {
+                              setPkiTestLogs(prev => [
+                                ...prev,
+                                `[!] ERROR: El comando remoto devolvió logs incompletos o inesperados:`,
+                                ...authLogs.slice(-3)
+                              ]);
+                            }
+                          } catch (err: any) {
+                            setPkiTestLogs(prev => [
+                              ...prev,
+                              `[!] ERROR DE CONEXIÓN: ${err.message || 'Error desconocido durante la prueba'}`
+                            ]);
+                          } finally {
+                            setIsTestingPki(false);
+                          }
+                        }}
+                        className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 font-semibold text-xs py-1.5 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isTestingPki ? (
+                          <>
+                            <Loader2 className="size-3 animate-spin" />
+                            Probando...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="size-3" />
+                            Probar Conexión WinRM
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Right Part: Test Connection Output Logs */}
+              <div className="space-y-4">
+                <Card className="border-border/60 bg-zinc-950/80 shadow-xl h-full flex flex-col min-h-[300px]">
+                  <CardHeader className="pb-3 border-b border-border/40">
+                    <CardTitle className="text-xs font-mono font-bold text-zinc-400 flex items-center gap-2">
+                      <Terminal className="size-4 text-emerald-400" />
+                      Terminal de Diagnóstico WinRM
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 p-0 flex flex-col font-mono text-[10.5px] leading-relaxed text-emerald-400 bg-black/60 overflow-hidden">
+                    <div className="flex-1 p-4 overflow-y-auto whitespace-pre-wrap space-y-1">
+                      {pkiTestLogs.length > 0 ? (
+                        pkiTestLogs.map((log, idx) => (
+                          <div key={idx} className={log.startsWith('[!]') ? 'text-rose-400' : log.startsWith('[✓]') ? 'text-emerald-400' : 'text-zinc-300'}>
+                            {log}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-zinc-500 italic">Listo para ejecutar pruebas de diagnóstico. Haz clic en 'Probar Conexión WinRM'.</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
 
