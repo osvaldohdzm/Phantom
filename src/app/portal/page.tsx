@@ -749,9 +749,12 @@ export default function PortalPage() {
         
         runTimeout = 95;
         nmapCmd = `set +H; \$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
-          \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
-          \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
-          \\$scriptBlock = {
+          try {
+            Write-Host '[+] Inicializando orquestador local en el Jump Host...'
+            Write-Host '[+] Construyendo credenciales de dominio para ${pkiConfig.username}...'
+            \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
+            \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
+            \\$scriptBlock = {
             param(\\$fqdn, \\$ip, \\$template, \\$caName, \\$serverName, \\$pass)
             \\$ErrorActionPreference = \\"Stop\\"
             
@@ -933,7 +936,13 @@ CertificateTemplate = \\"\\$Template\\"
               Remove-Item -Path \\$tempDir.FullName -Recurse -Force
             }
           };
-          Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock \\$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}'
+          Write-Host '[+] Conectando via WinRM al worker ${pkiConfig.host}...'
+          \\$res = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock \\$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}' -ErrorAction Stop
+          Write-Host '[✓] Ejecución remota completada exitosamente.'
+          Write-Output \\$res
+        } catch {
+          Write-Error \\"[!] Error crítico en el Jump Host: \\$_\\"
+        }
         "`;
       }
 
@@ -3281,9 +3290,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             ]);
 
                             const testAuthCmd = `set +H; \$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
-                              \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
-                              \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
                               try {
+                                Write-Output '[+] Comprobando credenciales para ${pkiUsername}...'
+                                \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
+                                \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
+                                
+                                Write-Output '[+] Realizando Invoke-Command de prueba en ${pkiHost}:${pkiPort}...'
                                 \\$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
                                 if (\\$res -eq 'WINRM_AUTH_SUCCESS') {
                                   Write-Output 'CONEXION_WINRM_EXITOSA'
