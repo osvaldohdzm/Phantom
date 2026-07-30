@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
 
     const host = process.env.POSTGRES_HOST || process.env.PGHOST || "localhost";
     const port = process.env.POSTGRES_PORT || process.env.PGPORT || "5432";
-    const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "phantom_security_db_dev";
+    const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "phantom_security_db_prod";
     const user = process.env.POSTGRES_USER || process.env.PGUSER || "postgres";
     const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
     let deploymentType = "PostgreSQL Local (macOS)";

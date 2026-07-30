@@ -3,7 +3,7 @@ import sys
 import psycopg2
 
 def main():
-    source_db = os.getenv("SOURCE_DB", "phantom_security_db_dev")
+    source_db = os.getenv("SOURCE_DB", "phantom_security_db_prod")
     target_db = os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
     
     if not target_db:

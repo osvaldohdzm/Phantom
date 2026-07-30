@@ -135,7 +135,7 @@ O termina TLS en el proxy y reenvía HTTP a un listener HTTP (requiere ajustar `
 5. Backups periódicos del volumen `pgdata`:
 
 ```bash
-docker compose exec postgres pg_dump -U phantom phantom_security_db_dev > backup.sql
+docker compose exec postgres pg_dump -U phantom phantom_security_db_prod > backup.sql
 ```
 
 ---
