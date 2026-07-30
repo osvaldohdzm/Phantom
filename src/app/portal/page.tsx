@@ -748,7 +748,7 @@ export default function PortalPage() {
         const escCaName = (pkiConfig.caName || '').replace(/["\\$`]/g, '\\$&');
         
         runTimeout = 95;
-        nmapCmd = `\$(which pwsh 2>/dev/null || [ -f /snap/bin/pwsh ] && echo /snap/bin/pwsh || [ -f /usr/bin/pwsh ] && echo /usr/bin/pwsh || echo pwsh) -Command "
+        nmapCmd = `\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
           \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
           \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \\$secpw);
           \\$scriptBlock = {
@@ -3280,7 +3280,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               `[+] Comprobando credenciales y autenticación WinRM...`
                             ]);
 
-                            const testAuthCmd = `\$(which pwsh 2>/dev/null || [ -f /snap/bin/pwsh ] && echo /snap/bin/pwsh || [ -f /usr/bin/pwsh ] && echo /usr/bin/pwsh || echo pwsh) -Command "
+                            const testAuthCmd = `\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi) -Command "
                               \\$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force;
                               \\$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \\$secpw);
                               try {
