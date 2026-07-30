@@ -121,9 +121,9 @@ export async function POST(request: Request) {
       sshCmdBase += ` -o PreferredAuthentications=password`;
     }
 
-    // Escape single quotes and command tokens safely
-    const escapedPassword = password.replace(/["\\$`]/g, '\\$&');
-    const escapedCommand = command.replace(/["\\$`]/g, '\\$&');
+    // Escape single quotes, command tokens, and Tcl command brackets safely
+    const escapedPassword = password.replace(/["\\$`\[\]]/g, '\\$&');
+    const escapedCommand = command.replace(/["\\$`\[\]]/g, '\\$&');
 
     // Expect script that logs stdout or outputs detailed SSH authentication errors
     const expectScript = `
