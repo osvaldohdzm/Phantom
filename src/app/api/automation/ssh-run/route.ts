@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     }
 
     // Set up SSH command flags
-    let sshCmdBase = `ssh -p ${port} -o ConnectTimeout=5 -o StrictHostKeyChecking=no`;
+    let sshCmdBase = `ssh -T -p ${port} -o ConnectTimeout=5 -o StrictHostKeyChecking=no`;
 
     if (authType === 'key') {
       if (!privateKey.trim()) {
