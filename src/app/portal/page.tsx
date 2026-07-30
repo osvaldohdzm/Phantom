@@ -759,9 +759,9 @@ export default function PortalPage() {
             try {
               \\$winWhoami = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
               \\$winHostname = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
-              Write-Host \\"  -> Diagnóstico exitoso. Usuario WinRM: \\$winWhoami, Hostname: \\$winHostname\\"
+              Write-Host ('  -> Diagnóstico exitoso. Usuario WinRM: ' + \\$winWhoami + ', Hostname: ' + \\$winHostname)
             } catch {
-              Write-Warning \\"[!] Diagnóstico fallido: \\$(\\_.Exception.Message). Intentando continuar...\\"
+              Write-Warning ('[!] Diagnóstico fallido: ' + \\$_.Exception.Message + '. Intentando continuar...')
             }
 
             \\$scriptBlock = {
@@ -951,7 +951,7 @@ CertificateTemplate = \\"\\$Template\\"
           Write-Host '[✓] Ejecución remota completada exitosamente.'
           Write-Output \\$res
         } catch {
-          Write-Error \\"[!] Error crítico en el Jump Host: \\$_\\"
+          Write-Error ('[!] Error crítico en el Jump Host: ' + \\$_)
         }
         "`;
       }
@@ -3308,18 +3308,18 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 Write-Output '[+] Realizando diagnóstico preliminar (whoami & hostname)...'
                                 \\$winWhoami = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { whoami } -ErrorAction Stop
                                 \\$winHostname = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { hostname } -ErrorAction Stop
-                                Write-Output \\"  -> Usuario WinRM: \\$winWhoami\\"
-                                Write-Output \\"  -> Hostname WinRM: \\$winHostname\\"
+                                Write-Output ('  -> Usuario WinRM: ' + \\$winWhoami)
+                                Write-Output ('  -> Hostname WinRM: ' + \\$winHostname)
                                 
                                 Write-Output '[+] Realizando Invoke-Command de prueba en ${pkiHost}:${pkiPort}...'
                                 \\$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \\$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
                                 if (\\$res -eq 'WINRM_AUTH_SUCCESS') {
                                   Write-Output 'CONEXION_WINRM_EXITOSA'
                                 } else {
-                                  Write-Output \\"ERROR: Respuesta inesperada del worker: \\$res\\"
+                                  Write-Output ('ERROR: Respuesta inesperada del worker: ' + \\$res)
                                 }
                               } catch {
-                                Write-Output \\"ERROR_WINRM: \\$(\\_.Exception.Message)\\"
+                                Write-Output ('ERROR_WINRM: ' + \\$_.Exception.Message)
                               }
                             "`;
 
