@@ -797,9 +797,9 @@ DELIVERABLE ASSETS INCLUDED:
               
               \\$infPath = Join-Path \\$OutputDir \\"request.inf\\"
               
-              \\$sanLine = \\"2.5.29.17 = \\\\\\\"{text}dns=\\$FQDN\\\\\\\"\\"
+              \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '"'
               if (\\$ip -and \\$ip.Trim() -ne \\"\\") {
-                \\$sanLine = \\"2.5.29.17 = \\\\\\\"{text}dns=\\$FQDN&ipaddress=\\$ip\\\\\\\"\\"
+                \\$sanLine = '2.5.29.17 = "{text}dns=' + \\$FQDN + '&ipaddress=' + \\$ip + '"'
               }
               
               \\$infContent = @\\"
