@@ -32,7 +32,13 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     dev|qa|prod)
-      ENV="$1"
+      if [[ -n "$NAMESPACE" && -z "$SUB_CMD" ]]; then
+        SUB_CMD="$1"
+      elif [[ -z "$NAMESPACE" && -z "$SUB_CMD" ]]; then
+        SUB_CMD="$1"
+      else
+        ENV="$1"
+      fi
       shift
       ;;
     --sync|--sync-db|sync)
@@ -165,10 +171,15 @@ phantom_docker_bin() {
 phantom_compose() {
   local docker_bin
   local compose_file="$PHANTOM_ROOT/deploy/docker/docker-compose.yml"
+  local env_args=()
+  if [[ -f "$PHANTOM_ROOT/.env" ]]; then
+    env_args=(--env-file "$PHANTOM_ROOT/.env")
+  fi
+
   if docker_bin="$(phantom_docker_bin 2>/dev/null)" && "$docker_bin" compose version &>/dev/null 2>&1; then
-    "$docker_bin" compose -f "$compose_file" "$@"
+    "$docker_bin" compose -f "$compose_file" "${env_args[@]}" "$@"
   elif command -v podman &>/dev/null && podman compose version &>/dev/null 2>&1; then
-    podman compose -f "$compose_file" "$@"
+    podman compose -f "$compose_file" "${env_args[@]}" "$@"
   else
     echo "[!] Docker Compose o Podman Compose no está disponible." >&2
     if phantom_is_darwin; then
@@ -477,15 +488,15 @@ start_env() {
   echo "Iniciando Phantom en entorno [$e]..."
   if [ "$e" = "dev" ]; then
     if [ -n "${LOG_PATH:-}" ]; then
-      nohup ./phantom dev >> "$LOG_PATH" 2>&1 &
+      nohup ./phantom local dev >> "$LOG_PATH" 2>&1 < /dev/null &
     else
-      nohup ./phantom dev >/dev/null 2>&1 &
+      nohup ./phantom local dev >/dev/null 2>&1 < /dev/null &
     fi
   else
     if [ -n "${LOG_PATH:-}" ]; then
-      nohup ./phantom prod >> "$LOG_PATH" 2>&1 &
+      nohup ./phantom local prod >> "$LOG_PATH" 2>&1 < /dev/null &
     else
-      nohup ./phantom prod >/dev/null 2>&1 &
+      nohup ./phantom local prod >/dev/null 2>&1 < /dev/null &
     fi
   fi
 
