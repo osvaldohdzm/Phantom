@@ -23,6 +23,7 @@ from app.models.execution_log import ExecutionLog
 from app.models.evidence import EvidenceAttachment, AttachmentType, ComplianceMapping, ComplianceFramework, ComplianceControl
 from app.models.reports import DocxTemplate, ReportJob, ReportJobStatus
 from app.models.workspace import PhantomWorkspace
+from app.models.shared_mission import SharedMission
 
 __all__ = [
     "AuditEvent",
@@ -57,4 +58,5 @@ __all__ = [
     "ReportJob",
     "ReportJobStatus",
     "PhantomWorkspace",
+    "SharedMission",
 ]

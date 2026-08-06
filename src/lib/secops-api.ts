@@ -1512,3 +1512,27 @@ export interface SystemLogsResponse {
 export async function getSystemLogs(lines = 200): Promise<SystemLogsResponse> {
   return apiFetch<SystemLogsResponse>(`/api/v1/admin/system-logs?lines=${lines}`);
 }
+
+export interface SharedMissionResponse {
+  share_hash: string;
+  access_code: string;
+  share_url: string;
+}
+
+export interface SharedMissionUnlockResponse {
+  snapshot: any;
+}
+
+export async function createSharedMission(engagementId: string): Promise<SharedMissionResponse> {
+  return apiFetch<SharedMissionResponse>(`/api/v1/shared-missions/engagements/${engagementId}`, {
+    method: 'POST',
+  });
+}
+
+export async function unlockSharedMission(shareHash: string, accessCode: string): Promise<SharedMissionUnlockResponse> {
+  return apiFetch<SharedMissionUnlockResponse>(`/api/v1/shared-missions/${shareHash}/unlock`, {
+    method: 'POST',
+    body: JSON.stringify({ access_code: accessCode }),
+  });
+}
+

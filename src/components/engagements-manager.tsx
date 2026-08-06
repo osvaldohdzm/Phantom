@@ -22,6 +22,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Share2,
 } from 'lucide-react';
 import { classifyTargetScope } from '@/lib/classify-target-scope';
 import { ProjectDetailsFullView } from '@/components/phantom/services/ProjectDetailsFullView';
@@ -37,6 +38,7 @@ import {
   listEngagements,
   listFindings,
   updateEngagement,
+  createSharedMission,
   type Engagement,
   type EngagementCreateBody,
   type Finding,
@@ -219,6 +221,25 @@ export function EngagementsManager({
 
   // Full Results View State
   const [activeFullResultsEngagement, setActiveFullResultsEngagement] = useState<Engagement | null>(null);
+
+  // Share Mission State
+  const [sharedMission, setSharedMission] = useState<{ share_hash: string; access_code: string; share_url: string } | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const handleShareMission = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await createSharedMission(id);
+      setSharedMission(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al compartir la misión');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openResultsModal = (eg: Engagement) => {
     setActiveFullResultsEngagement(eg);
@@ -517,6 +538,19 @@ export function EngagementsManager({
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs font-semibold flex items-center gap-1 border-border/80 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all cursor-pointer"
+                              onClick={() => void handleShareMission(eg.id)}
+                              disabled={busy}
+                              title="Generar enlace seguro para compartir los detalles del servicio"
+                            >
+                              <Share2 className="size-3.5 text-violet-400" />
+                              <span>Share mission</span>
+                            </Button>
+
                             <Button
                               type="button"
                               variant="outline"
@@ -1274,6 +1308,102 @@ export function EngagementsManager({
           </>
         )}
       </CardContent>
+
+      {sharedMission && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-violet-500/20 bg-background p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 text-left">
+            <button
+              onClick={() => setSharedMission(null)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="rounded-full bg-violet-500/10 p-3 text-violet-400">
+                <Share2 className="size-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Mission Shared</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Se ha creado una instantánea segura del servicio. Comparte este enlace y clave de acceso con el destinatario.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 mt-6">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  URL de la Misión
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={typeof window !== 'undefined' ? `${window.location.origin}${sharedMission.share_url}` : ''}
+                    className="flex-1 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs font-mono text-foreground focus:outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(`${window.location.origin}${sharedMission.share_url}`);
+                        setCopiedUrl(true);
+                        setTimeout(() => setCopiedUrl(false), 2000);
+                      }
+                    }}
+                    className="h-9 px-3 flex items-center gap-1 hover:border-violet-500/50 hover:bg-violet-500/10"
+                  >
+                    {copiedUrl ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                    <span>{copiedUrl ? 'Copied' : 'Copy'}</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Clave de Acceso (Access Code)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={sharedMission.access_code}
+                    className="flex-1 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-mono font-bold tracking-widest text-violet-400 focus:outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(sharedMission.access_code);
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }
+                    }}
+                    className="h-9 px-3 flex items-center gap-1 hover:border-violet-500/50 hover:bg-violet-500/10"
+                  >
+                    {copiedCode ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                    <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setSharedMission(null)}
+                className="bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs py-2 px-4 rounded-lg shadow-sm"
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
