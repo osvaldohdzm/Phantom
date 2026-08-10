@@ -1,4 +1,13 @@
+import { execSync } from "child_process";
 import type { NextConfig } from "next";
+
+// Get git commit hash at build time
+let commitId = "";
+try {
+  commitId = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+} catch (e) {
+  commitId = "unknown";
+}
 
 /** Dev-only (Turbopack / RSC). En producción no importa módulos bajo src/ (Docker runner). */
 function collectDevOrigins(): string[] {
@@ -16,6 +25,9 @@ function collectDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_GIT_COMMIT_ID: commitId,
+  },
   // Turbopack blocks cross-origin dev/RSC fetches unless the browser host is listed.
   // @ts-ignore - Next.js 16 root config
   allowedDevOrigins: collectDevOrigins(),
