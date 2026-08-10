@@ -99,6 +99,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_GIT_COMMIT_ID: ${NEXT_PUBLIC_GIT_COMMIT_ID:-}
     restart: unless-stopped
     ports:
       - "${PHANTOM_HTTP_PORT:-3000}:3000"

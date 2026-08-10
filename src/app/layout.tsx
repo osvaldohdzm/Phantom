@@ -3,6 +3,7 @@ import { Roboto, Roboto_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/auth-context";
 import { BrandingProvider } from "@/contexts/branding-context";
+import DevEnvBanner from "@/components/dev-env-banner";
 import "./globals.css";
 
 const roboto = Roboto({
@@ -42,6 +43,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <DevEnvBanner />
         <ThemeProvider>
           <AuthProvider>
             <BrandingProvider>{children}</BrandingProvider>
