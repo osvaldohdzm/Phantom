@@ -122,6 +122,34 @@ export default function SharePage() {
       }
     };
 
+    const drawCenteredCellText = (
+      text: string,
+      cellX: number,
+      cellY: number,
+      cellWidth: number,
+      cellHeight: number,
+      isBold: boolean = false
+    ) => {
+      if (isBold) {
+        doc.setFont('Helvetica', 'bold');
+        doc.setTextColor(71, 85, 105);
+      } else {
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(15, 23, 42);
+      }
+      doc.setFontSize(8.5);
+
+      const padding = 6;
+      const wrapped = doc.splitTextToSize(text, cellWidth - padding);
+      const N = wrapped.length;
+      const lh = 4.2;
+
+      for (let i = 0; i < N; i++) {
+        const lineY = cellY + (cellHeight / 2) - ((N - 1) * lh) / 2 + i * lh;
+        doc.text(wrapped[i], cellX + (cellWidth / 2), lineY, { align: 'center', baseline: 'middle' });
+      }
+    };
+
     // Draw page 1 header
     drawPageHeader(1);
 
@@ -209,22 +237,9 @@ export default function SharePage() {
       doc.setFillColor(255, 255, 255);
       doc.rect(startX + col1Width, y, col2Width, rowHeight, 'FD');
 
-      // Print label
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105); // slate-600
-      doc.text(label, startX + 3, y + (rowHeight / 2), { baseline: 'middle' });
-
-      // Print value
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42); // slate-900
-
-      let valY = y + 4.5;
-      for (const line of wrappedVal) {
-        doc.text(line, startX + col1Width + 3, valY);
-        valY += 5;
-      }
+      // Print label and value centered
+      drawCenteredCellText(label, startX, y, col1Width, rowHeight, true);
+      drawCenteredCellText(cleanVal, startX + col1Width, y, col2Width, rowHeight, false);
 
       y += rowHeight;
     }

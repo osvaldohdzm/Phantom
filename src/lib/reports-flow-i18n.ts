@@ -13,7 +13,7 @@ type FlowCopy = {
 const FLOW_COPY: Record<ReportFlowId, Record<TenantLanguage, FlowCopy>> = {
   pentest: {
     es: {
-      label: 'Pentest',
+      label: 'Servicio',
       subtitle:
         'Servicio de pentest en infraestructura, red y aplicación — Nessus, Nmap, CSV universal y hallazgos manuales.',
       ingest: {
@@ -62,7 +62,7 @@ const FLOW_COPY: Record<ReportFlowId, Record<TenantLanguage, FlowCopy>> = {
       ],
     },
     en: {
-      label: 'Pentest',
+      label: 'Service',
       subtitle:
         'Infrastructure, network and application pentest — Nessus, Nmap, universal CSV and manual findings.',
       ingest: {
