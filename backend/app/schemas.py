@@ -982,6 +982,7 @@ class UserRoleEnum(str, Enum):
     analyst = "analyst"
     client_viewer = "client_viewer"
     platform_admin = "platform_admin"
+    lead = "lead"
 
 
 class AdminUserRead(BaseModel):

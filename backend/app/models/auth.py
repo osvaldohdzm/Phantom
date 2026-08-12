@@ -20,6 +20,7 @@ class UserRole(str, enum.Enum):
     tenant_admin = "tenant_admin"
     analyst = "analyst"
     client_viewer = "client_viewer"
+    lead = "lead"
 
 
 class Tenant(Base):

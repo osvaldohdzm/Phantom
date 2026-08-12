@@ -1576,12 +1576,14 @@ const ROLE_LABELS_I18N: Record<TenantLanguage, Record<UserRole, string>> = {
   es: {
     platform_admin: 'Admin plataforma',
     tenant_admin: 'Admin tenant',
+    lead: 'Lead',
     analyst: 'Analista',
     client_viewer: 'Cliente',
   },
   en: {
     platform_admin: 'Platform admin',
     tenant_admin: 'Tenant admin',
+    lead: 'Lead',
     analyst: 'Analyst',
     client_viewer: 'Client',
   },

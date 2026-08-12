@@ -33,6 +33,7 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     'secops:read',
   ],
   analyst: ['secops:write', 'secops:read'],
+  lead: ['secops:write', 'secops:read'],
   client_viewer: ['portal:view', 'secops:read'],
 };
 

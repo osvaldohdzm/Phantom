@@ -8,6 +8,7 @@ import type { UiLanguagePreference } from '@/lib/user-preferences';
 export type UserRole =
   | 'platform_admin'
   | 'tenant_admin'
+  | 'lead'
   | 'analyst'
   | 'client_viewer';
 
@@ -165,6 +166,7 @@ export function logout() {
 export const ROLE_LABELS: Record<UserRole, string> = {
   platform_admin: 'Admin plataforma',
   tenant_admin: 'Admin tenant',
+  lead: 'Lead',
   analyst: 'Analista',
   client_viewer: 'Cliente',
 };

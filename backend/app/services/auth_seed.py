@@ -43,8 +43,9 @@ def _get_or_create_tenant(db: Session, slug: str, nombre: str) -> Tenant:
 
 
 _ROLE_RANK = {
-    UserRole.platform_admin: 4,
-    UserRole.tenant_admin: 3,
+    UserRole.platform_admin: 5,
+    UserRole.tenant_admin: 4,
+    UserRole.lead: 3,
     UserRole.analyst: 2,
     UserRole.client_viewer: 1,
 }

@@ -20,7 +20,7 @@ import {
   type UserRole,
 } from '@/lib/auth-api';
 
-const ASSIGNABLE_ROLES: UserRole[] = ['tenant_admin', 'analyst', 'client_viewer'];
+const ASSIGNABLE_ROLES: UserRole[] = ['tenant_admin', 'lead', 'analyst', 'client_viewer'];
 
 type EditRow = { tenant_id: string; role: UserRole };
 
