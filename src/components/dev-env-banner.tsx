@@ -13,9 +13,9 @@ export default function DevEnvBanner() {
   useEffect(() => {
     setMounted(true);
     if (typeof window !== "undefined") {
-      // Validate environment based on the URL (exclusively phantom-dev.orbitalapps.lan)
-      const isTargetUrl = window.location.origin === "https://phantom-dev.orbitalapps.lan" || 
-                          window.location.href.startsWith("https://phantom-dev.orbitalapps.lan/");
+      // Validate environment based on the URL (exclusively phantom-dev.gemapps.lan)
+      const isTargetUrl = window.location.origin === "https://phantom-dev.gemapps.lan" || 
+                          window.location.href.startsWith("https://phantom-dev.gemapps.lan/");
       setIsDevEnv(isTargetUrl);
     }
   }, []);

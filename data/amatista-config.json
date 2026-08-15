@@ -1,0 +1,11 @@
+{
+  "isConnected": true,
+  "amatistaUrl": "https://amatista.gemapps.lan",
+  "hostIp": "127.0.0.1",
+  "apiKey": "amatista-key-secret-987654",
+  "username": "Administrador",
+  "userId": "d68cee31-483a-403b-8e6d-7c63a4f662e2",
+  "phantomUrl": "https://localhost:3000",
+  "vaultId": "cms2294fp000126tlpwdtsso3",
+  "lastSyncedAt": "2026-07-27T07:37:47.017Z"
+}

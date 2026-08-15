@@ -91,7 +91,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: phantom.orbitalapps.lan
+  - host: phantom.gemapps.lan
     http:
       paths:
       - path: /api/secops

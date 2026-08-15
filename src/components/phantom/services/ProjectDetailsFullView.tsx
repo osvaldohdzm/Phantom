@@ -20,6 +20,7 @@ import {
   Trash2,
   Sparkles,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Engagement, Finding, FindingStatus } from '@/lib/secops-api';
@@ -27,6 +28,7 @@ import { listFindings, createFinding, uploadEvidence, updateFindingStatus } from
 import { SecurityTestsActivePage } from '@/app/(secops)/pruebas-seguridad/page';
 import { QuillEditor } from '@/components/QuillEditor';
 import { listUsersWithMemberships } from '@/lib/auth-api';
+import { VulIngestPanel } from '@/components/vul-ingest-panel';
 
 interface ProjectDetailsFullViewProps {
   engagement: Engagement;
@@ -299,6 +301,20 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
 
   // Manual Vulnerability Form Modal State
   const [showAddVulnModal, setShowAddVulnModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [isDevEnv, setIsDevEnv] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined') {
+      setIsDevEnv(
+        window.location.hostname === 'phantom-dev.gemapps.lan' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      );
+    }
+  }, []);
   const [newVulnTitle, setNewVulnTitle] = useState('');
   const [newVulnSeverity, setNewVulnSeverity] = useState<'Critical' | 'High' | 'Medium' | 'Low'>('High');
   const [newVulnCvss, setNewVulnCvss] = useState(8.5);
@@ -563,14 +579,16 @@ ${pocText || 'Sin texto de PoC ingresado.'}
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowAddVulnModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-          >
-            <Plus className="size-3.5" />
-            <span>+ Cargar Vulnerabilidad Manual</span>
-          </button>
+          {(!mounted || !isDevEnv) && (
+            <button
+              type="button"
+              onClick={() => setShowAddVulnModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="size-3.5" />
+              <span>+ Cargar Vulnerabilidad Manual</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -822,14 +840,26 @@ ${pocText || 'Sin texto de PoC ingresado.'}
                   <ShieldAlert className="size-4 text-rose-500" />
                   Vulnerabilities Catalog ({findings.length})
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAddVulnModal(true)}
-                  className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="size-3" />
-                  <span>Cargar Manual</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {mounted && isDevEnv && (
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(true)}
+                      className="px-2.5 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <Upload className="size-3" />
+                      <span>Importar Escaneo</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddVulnModal(true)}
+                    className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="size-3" />
+                    <span>Cargar Manual</span>
+                  </button>
+                </div>
               </div>
 
               {loadingFindings ? (
@@ -841,7 +871,11 @@ ${pocText || 'Sin texto de PoC ingresado.'}
                 <div className="p-8 text-center rounded-xl border border-dashed border-border space-y-2">
                   <ShieldAlert className="size-8 mx-auto text-muted-foreground/60" />
                   <p className="text-sm font-semibold text-foreground">No hay vulnerabilidades cargadas</p>
-                  <p className="text-xs text-muted-foreground">Haz clic en &quot;+ Cargar Vulnerabilidad Manual&quot; para agregar una.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {mounted && isDevEnv
+                      ? 'Haz clic en "Cargar Manual" o "Importar Escaneo" para agregar una.'
+                      : 'Haz clic en "+ Cargar Vulnerabilidad Manual" para agregar una.'}
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1463,6 +1497,42 @@ ${pocText || 'Sin texto de PoC ingresado.'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SCAN IMPORT MODAL */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl bg-card border border-border rounded-2xl shadow-2xl p-5 my-6 space-y-3.5 max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <Upload className="size-4 text-violet-400" />
+                  Importar Escaneo (Nessus / Nmap / Acunetix)
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Importa archivos de resultados de escaneos para poblar automáticamente los hallazgos en este servicio.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-2">
+              <VulIngestPanel
+                engagementId={engagement.id}
+                onIngestComplete={(result) => {
+                  console.log('Ingest complete', result);
+                  fetchFindings();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
