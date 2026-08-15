@@ -24,9 +24,9 @@ _PASSWORD_CHANGE_ALLOWED = (
 def _password_change_allowed(path: str) -> bool:
     return any(path.rstrip("/").endswith(suffix) for suffix in _PASSWORD_CHANGE_ALLOWED)
 
-WRITE_ROLES = {UserRole.platform_admin, UserRole.tenant_admin, UserRole.analyst}
+WRITE_ROLES = {UserRole.platform_admin, UserRole.tenant_admin, UserRole.analyst, UserRole.lead}
 ADMIN_ROLES = {UserRole.platform_admin, UserRole.tenant_admin}
-PORTAL_ROLES = {UserRole.client_viewer, UserRole.tenant_admin, UserRole.platform_admin, UserRole.analyst}
+PORTAL_ROLES = {UserRole.client_viewer, UserRole.tenant_admin, UserRole.platform_admin, UserRole.analyst, UserRole.lead}
 
 
 @dataclass

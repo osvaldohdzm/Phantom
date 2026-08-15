@@ -8,6 +8,7 @@ import type { UiLanguagePreference } from '@/lib/user-preferences';
 export type UserRole =
   | 'platform_admin'
   | 'tenant_admin'
+  | 'lead'
   | 'analyst'
   | 'client_viewer';
 
@@ -165,6 +166,7 @@ export function logout() {
 export const ROLE_LABELS: Record<UserRole, string> = {
   platform_admin: 'Admin plataforma',
   tenant_admin: 'Admin tenant',
+  lead: 'Lead',
   analyst: 'Analista',
   client_viewer: 'Cliente',
 };
@@ -398,3 +400,21 @@ export async function listDeploymentProfiles(): Promise<AdminDeploymentProfile[]
 export async function downloadDeploymentEnv(profileId: string): Promise<AdminDeploymentEnv> {
   return authFetch<AdminDeploymentEnv>(`/api/v1/admin/database/deployment-env/${profileId}`);
 }
+
+export interface AdminUserUpdateInput {
+  nombre?: string;
+  email?: string;
+  password?: string;
+  is_active?: boolean;
+}
+
+export async function updateAdminUser(
+  userId: string,
+  input: AdminUserUpdateInput
+): Promise<AdminUserWithMemberships> {
+  return authFetch<AdminUserWithMemberships>(`/api/v1/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+

@@ -15,12 +15,13 @@ import {
   removeUserMembership,
   setUserMemberships,
   updateTenantUserRole,
+  updateAdminUser,
   type AdminTenant,
   type AdminUserWithMemberships,
   type UserRole,
 } from '@/lib/auth-api';
 
-const ASSIGNABLE_ROLES: UserRole[] = ['tenant_admin', 'analyst', 'client_viewer'];
+const ASSIGNABLE_ROLES: UserRole[] = ['tenant_admin', 'lead', 'analyst', 'client_viewer'];
 
 type EditRow = { tenant_id: string; role: UserRole };
 
@@ -42,6 +43,9 @@ export function UsersMembershipPanel() {
 
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editRows, setEditRows] = useState<EditRow[]>([]);
+  const [editNombre, setEditNombre] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,6 +106,9 @@ export function UsersMembershipPanel() {
 
   function openEdit(user: AdminUserWithMemberships) {
     setEditingUserId(user.id);
+    setEditNombre(user.nombre);
+    setEditEmail(user.email);
+    setEditPassword('');
     setEditRows(
       user.memberships.map((m) => ({
         tenant_id: m.tenant_id,
@@ -117,13 +124,21 @@ export function UsersMembershipPanel() {
   }
 
   async function saveEdit() {
-    if (!editingUserId || !editRows.length) return;
+    if (!editingUserId) return;
     setError(null);
     try {
-      await setUserMemberships(
-        editingUserId,
-        editRows.map((r) => ({ tenant_id: r.tenant_id, role: r.role }))
-      );
+      await updateAdminUser(editingUserId, {
+        nombre: editNombre,
+        email: editEmail,
+        password: editPassword || undefined,
+      });
+
+      if (editRows.length) {
+        await setUserMemberships(
+          editingUserId,
+          editRows.map((r) => ({ tenant_id: r.tenant_id, role: r.role }))
+        );
+      }
       setEditingUserId(null);
       await load();
       await refresh();
@@ -268,8 +283,45 @@ export function UsersMembershipPanel() {
         )}
 
         {editingUserId && isPlatformAdmin ? (
-          <div className="rounded-lg border border-border p-4 space-y-3">
-            <p className="text-sm font-medium">{t('usersTenantAssignment')}</p>
+          <div className="rounded-lg border border-border p-4 space-y-4">
+            <div className="space-y-3">
+              <p className="text-sm font-medium">{t('usersEditBasicTitle')}</p>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">{t('usersEmail')}</label>
+                  <Input
+                    placeholder={t('usersEmail')}
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">{t('usersName')}</label>
+                  <Input
+                    placeholder={t('usersName')}
+                    value={editNombre}
+                    onChange={(e) => setEditNombre(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    {t('usersPassword').split(' ')[0]}
+                  </label>
+                  <Input
+                    placeholder={t('usersPasswordPlaceholder')}
+                    type="password"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-3 border-t border-border/40">
+              <p className="text-sm font-medium">{t('usersTenantAssignment')}</p>
             {editRows.map((row, idx) => (
               <div key={`${row.tenant_id}-${idx}`} className="flex flex-wrap gap-2 items-center">
                 <select
@@ -316,6 +368,7 @@ export function UsersMembershipPanel() {
                 </Button>
               </div>
             ))}
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={addEditRow}>
                 <Plus className="size-3.5 mr-1" aria-hidden />
@@ -352,6 +405,7 @@ export function UsersMembershipPanel() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
             />
             <select
               className="h-9 rounded-md border border-border bg-background px-2 text-sm"

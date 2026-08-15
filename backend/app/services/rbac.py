@@ -10,9 +10,10 @@ PLATFORM_ADMIN = UserRole.platform_admin
 TENANT_ADMIN = UserRole.tenant_admin
 ANALYST = UserRole.analyst
 CLIENT = UserRole.client_viewer
+LEAD = UserRole.lead
 
 ADMIN_ROLES = frozenset({PLATFORM_ADMIN, TENANT_ADMIN})
-WRITE_ROLES = frozenset({PLATFORM_ADMIN, TENANT_ADMIN, ANALYST})
+WRITE_ROLES = frozenset({PLATFORM_ADMIN, TENANT_ADMIN, ANALYST, LEAD})
 
 
 class Capability(str, Enum):
@@ -44,6 +45,7 @@ ROLE_CAPABILITIES: dict[UserRole, frozenset[Capability]] = {
             Capability.secops_read,
         }
     ),
+    LEAD: frozenset({Capability.secops_write, Capability.secops_read}),
     ANALYST: frozenset({Capability.secops_write, Capability.secops_read}),
     CLIENT: frozenset({Capability.portal_view, Capability.secops_read}),
 }

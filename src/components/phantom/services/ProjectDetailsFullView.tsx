@@ -8,7 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
-  Shield,
   ShieldAlert,
   Terminal,
   Layers,
@@ -19,24 +18,17 @@ import {
   Download,
   Plus,
   Trash2,
-  Edit,
-  Search,
-  CheckCircle2,
-  Clock,
   Sparkles,
-  ExternalLink,
-  ChevronRight,
-  Tag,
-  AlertTriangle,
-  Upload,
   RefreshCw,
-  Copy,
-  Check,
+  Upload,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Engagement, Finding } from '@/lib/secops-api';
-import { listFindings, createFinding } from '@/lib/secops-api';
+import type { Engagement, Finding, FindingStatus } from '@/lib/secops-api';
+import { listFindings, createFinding, uploadEvidence, updateFindingStatus } from '@/lib/secops-api';
 import { SecurityTestsActivePage } from '@/app/(secops)/pruebas-seguridad/page';
+import { QuillEditor } from '@/components/QuillEditor';
+import { listUsersWithMemberships } from '@/lib/auth-api';
+import { VulIngestPanel } from '@/components/vul-ingest-panel';
 
 interface ProjectDetailsFullViewProps {
   engagement: Engagement;
@@ -115,6 +107,34 @@ const OFFICIAL_METHODOLOGIES_CATALOG = [
     description: 'Auditoría de postura de seguridad y configuración en entornos AWS, Azure y Google Cloud.',
   },
 ];
+
+const VULN_CATEGORIES: Record<string, string[]> = {
+  'Gestión de Sesiones': [
+    'Cookie de sesión sin HTTPOnly',
+    'Cookie de sesión sin Secure',
+    'Expiración de sesión inadecuada',
+    'Fijación de sesión'
+  ],
+  'Inyección de Código': [
+    'SQL Injection (SQLi)',
+    'Command Injection',
+    'Cross-Site Scripting (XSS) Reflejado',
+    'Cross-Site Scripting (XSS) Almacenado'
+  ],
+  'Control de Acceso': [
+    'Broken Object Level Authorization (BOLA / IDOR)',
+    'Broken Function Level Authorization (BFLA)',
+    'Privilegios Elevados no Autorizados'
+  ],
+  'Cifrado y Criptografía': [
+    'Uso de algoritmos criptográficos débiles',
+    'Transporte de datos en texto plano (HTTP)',
+    'Almacenamiento inseguro de credenciales'
+  ],
+  'Otros': [
+    'Otros'
+  ]
+};
 
 export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFullViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
@@ -213,7 +233,7 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
         if (res.ok) {
           const data = await res.json();
           if (data.success && Array.isArray(data.instances)) {
-            const serverItems = data.instances.map((inst: any) => ({
+            const serverItems = data.instances.map((inst: { id: string; name: string; type?: string; description?: string }) => ({
               id: inst.id,
               name: inst.name,
               type: inst.type || 'Custom Pentest Methodology',
@@ -235,7 +255,7 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
     fetchCatalogSuites();
   }, [showAddMethodologyModal]);
 
-  const handleAddMethodology = (item: typeof OFFICIAL_METHODOLOGIES_CATALOG[0]) => {
+  const handleAddMethodology = React.useCallback((item: typeof OFFICIAL_METHODOLOGIES_CATALOG[0]) => {
     if (methodologies.some((m) => m.name === item.name)) return;
     const newM: SampleMethodology = {
       id: `m-${Date.now()}`,
@@ -244,11 +264,11 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
       modifiedAt: new Date().toLocaleDateString('es-ES'),
     };
     setMethodologies((prev) => [...prev, newM]);
-  };
+  }, [methodologies]);
 
-  const handleRemoveMethodology = (id: string) => {
+  const handleRemoveMethodology = React.useCallback((id: string) => {
     setMethodologies((prev) => prev.filter((m) => m.id !== id));
-  };
+  }, []);
 
   // Test Cases state
   const [testCases, setTestCases] = useState<SampleTestCase[]>([
@@ -281,53 +301,250 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
 
   // Manual Vulnerability Form Modal State
   const [showAddVulnModal, setShowAddVulnModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [isDevEnv, setIsDevEnv] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined') {
+      setIsDevEnv(
+        window.location.hostname === 'phantom-dev.gemapps.lan' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      );
+    }
+  }, []);
   const [newVulnTitle, setNewVulnTitle] = useState('');
   const [newVulnSeverity, setNewVulnSeverity] = useState<'Critical' | 'High' | 'Medium' | 'Low'>('High');
   const [newVulnCvss, setNewVulnCvss] = useState(8.5);
   const [newVulnDesc, setNewVulnDesc] = useState('');
   const [associatedTcCode, setAssociatedTcCode] = useState('API1:2023-BOLA');
 
-  useEffect(() => {
-    fetchFindings();
-  }, [engagement.id]);
+  // Classification info fields
+  const [vulnStatus, setVulnStatus] = useState<string>('Abierta');
+  const [vulnType, setVulnType] = useState<string>('Defecto');
+  const [vulnCategory, setVulnCategory] = useState<string>('Gestión de Sesiones');
+  const [vulnSubcategory, setVulnSubcategory] = useState<string>('Cookie de sesión sin HTTPOnly');
+  const [identifiedBy, setIdentifiedBy] = useState<string>('');
+  const [owner, setOwner] = useState<string>('');
+  const [identificationDate, setIdentificationDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [relatedTo, setRelatedTo] = useState<string>('Aplicación');
 
-  const fetchFindings = async () => {
+  // Dynamic system users
+  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; email: string }[]>([]);
+
+  // Active form tab for editors grouping
+  const [activeFormTab, setActiveFormTab] = useState<'description' | 'impact' | 'remediation'>('description');
+
+  // Custom Dropdowns open/closed
+  const [isIdentifiedByOpen, setIsIdentifiedByOpen] = useState(false);
+  const [isOwnerOpen, setIsOwnerOpen] = useState(false);
+
+  // Additional rich text areas
+  const [newVulnImpact, setNewVulnImpact] = useState('');
+  const [newVulnRemediation, setNewVulnRemediation] = useState('');
+
+  // Evidences (PoC) & text
+  const [pocText, setPocText] = useState('');
+  const [pendingEvidences, setPendingEvidences] = useState<{ id: string; file: File; preview: string }[]>([]);
+
+  // Remediation Plan
+  const [remediationPlanDate, setRemediationPlanDate] = useState<string>(() => {
+    // default to 30 days from now
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [remediationPlanText, setRemediationPlanText] = useState('');
+
+  // Form saving state
+  const [isSavingManualVuln, setIsSavingManualVuln] = useState(false);
+
+  const fetchFindings = React.useCallback(async () => {
     setLoadingFindings(true);
     try {
       const data = await listFindings({ engagement_id: engagement.id, limit: 500 });
       setFindings(data);
-      if (data.length > 0 && !selectedFindingId) {
-        setSelectedFindingId(data[0].id);
+      if (data.length > 0) {
+        setSelectedFindingId((curr) => curr || data[0].id);
       }
     } catch {
       setFindings([]);
     } finally {
       setLoadingFindings(false);
     }
-  };
+  }, [engagement.id]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchFindings();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchFindings]);
+
+  // Load real system users or fallback to project members
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const users = await listUsersWithMemberships();
+        if (users && users.length > 0) {
+          const mappedUsers = users.map(u => ({
+            id: u.id,
+            name: u.nombre || u.email.split('@')[0],
+            email: u.email
+          }));
+          setSystemUsers(mappedUsers);
+          setIdentifiedBy(mappedUsers[0].name);
+          setOwner(mappedUsers.length > 1 ? mappedUsers[1].name : mappedUsers[0].name);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not fetch system users, falling back to project members', err);
+      }
+
+      // Fallback to project members
+      if (members && members.length > 0) {
+        const mappedMembers = members.map((m, idx) => ({
+          id: m.id || `fallback-user-${idx}`,
+          name: m.email.split('@')[0],
+          email: m.email
+        }));
+        setSystemUsers(mappedMembers);
+        setIdentifiedBy(mappedMembers[0].name);
+        setOwner(mappedMembers.length > 1 ? mappedMembers[1].name : mappedMembers[0].name);
+      }
+    };
+    fetchUsers();
+  }, [members]);
 
   const handleCreateManualVuln = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newVulnTitle.trim()) return;
 
+    setIsSavingManualVuln(true);
     try {
+      // Format classification and remediation metadata in references to persist it
+      const referencesMarkdown = `
+### Información de Clasificación
+- **Estado de la Vulnerabilidad:** ${vulnStatus}
+- **Tipo de Vulnerabilidad:** ${vulnType}
+- **Categoría:** ${vulnCategory}
+- **Subcategoría:** ${vulnSubcategory}
+- **Identificado por:** ${identifiedBy}
+- **Propietario:** ${owner}
+- **Fecha de Identificación:** ${identificationDate}
+- **Relacionado con:** ${relatedTo}
+
+### Evidencia y Prueba de Concepto (PoC)
+- **Texto del PoC:**
+\`\`\`
+${pocText || 'Sin texto de PoC ingresado.'}
+\`\`\`
+
+### Plan de Remediación
+- **Fecha Planificada de Remediación:** ${remediationPlanDate}
+- **Detalle del Plan:** ${remediationPlanText || 'Sin detalles ingresados.'}
+      `.trim();
+
       const created = await createFinding({
         engagement_id: engagement.id,
         titulo: newVulnTitle.trim(),
         severidad: newVulnSeverity,
         cvss_score: newVulnCvss,
         descripcion: newVulnDesc.trim(),
+        explicacion_tecnica: newVulnImpact.trim(),
+        propuesta_remediacion: newVulnRemediation.trim(),
         metodo_deteccion: 'Manual Pentest',
+        referencias: referencesMarkdown,
       });
 
-      setFindings((prev) => [created, ...prev]);
-      setSelectedFindingId(created.id);
-      setShowAddVulnModal(false);
+      // Update status on backend
+      const mapStatusToFindingStatus = (status: string): FindingStatus => {
+        switch (status) {
+          case 'Abierta': return 'Identificado';
+          case 'Cerrada': return 'Cerrado';
+          case 'Mitigada': return 'Remediado';
+          case 'Falso Positivo': return 'Falso Positivo';
+          case 'Riesgo Aceptado': return 'Riesgo Aceptado';
+          case 'En Proceso': return 'En Proceso de Remediación';
+          default: return 'Identificado';
+        }
+      };
+      await updateFindingStatus(created.id, mapStatusToFindingStatus(vulnStatus), 'Estado inicial establecido en carga manual');
+
+      // Upload evidence files
+      for (const ev of pendingEvidences) {
+        await uploadEvidence(created.id, ev.file, 'screenshot');
+      }
+
+      // Revoke previews to avoid leaks
+      pendingEvidences.forEach((ev) => URL.revokeObjectURL(ev.preview));
+
+      // Clean form states
       setNewVulnTitle('');
       setNewVulnDesc('');
+      setNewVulnImpact('');
+      setNewVulnRemediation('');
+      setPocText('');
+      setPendingEvidences([]);
+      setRemediationPlanText('');
+      
+      // Reload findings list and select the created one
+      await fetchFindings();
+      setSelectedFindingId(created.id);
+      
+      setShowAddVulnModal(false);
     } catch (err) {
       console.error('Error creating vulnerability', err);
+    } finally {
+      setIsSavingManualVuln(false);
     }
+  };
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleEvidenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files).filter((f) => f.type.startsWith('image/'));
+    const newEvs = files.map((file) => ({
+      id: `pending-ev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setPendingEvidences((prev) => [...prev, ...newEvs]);
+  };
+
+  const removeEvidence = (id: string) => {
+    setPendingEvidences((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+  const renderUserAvatar = (name: string) => {
+    const initials = name
+      ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+      : 'U';
+    
+    const colors = [
+      'bg-violet-500/20 text-violet-300 border-violet-500/30',
+      'bg-sky-500/20 text-sky-300 border-sky-500/30',
+      'bg-amber-500/20 text-amber-300 border-amber-500/30',
+      'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colorClass = colors[Math.abs(hash) % colors.length];
+
+    return (
+      <div className={cn("size-4.5 rounded-full flex items-center justify-center text-[9px] font-bold border shrink-0", colorClass)}>
+        {initials}
+      </div>
+    );
   };
 
   const selectedFinding = findings.find((f) => f.id === selectedFindingId) || findings[0];
@@ -362,14 +579,16 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowAddVulnModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-          >
-            <Plus className="size-3.5" />
-            <span>+ Cargar Vulnerabilidad Manual</span>
-          </button>
+          {(!mounted || !isDevEnv) && (
+            <button
+              type="button"
+              onClick={() => setShowAddVulnModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="size-3.5" />
+              <span>+ Cargar Vulnerabilidad Manual</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -621,14 +840,26 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
                   <ShieldAlert className="size-4 text-rose-500" />
                   Vulnerabilities Catalog ({findings.length})
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAddVulnModal(true)}
-                  className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="size-3" />
-                  <span>Cargar Manual</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {mounted && isDevEnv && (
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(true)}
+                      className="px-2.5 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <Upload className="size-3" />
+                      <span>Importar Escaneo</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddVulnModal(true)}
+                    className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="size-3" />
+                    <span>Cargar Manual</span>
+                  </button>
+                </div>
               </div>
 
               {loadingFindings ? (
@@ -640,7 +871,11 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
                 <div className="p-8 text-center rounded-xl border border-dashed border-border space-y-2">
                   <ShieldAlert className="size-8 mx-auto text-muted-foreground/60" />
                   <p className="text-sm font-semibold text-foreground">No hay vulnerabilidades cargadas</p>
-                  <p className="text-xs text-muted-foreground">Haz clic en &quot;+ Cargar Vulnerabilidad Manual&quot; para agregar una.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {mounted && isDevEnv
+                      ? 'Haz clic en "Cargar Manual" o "Importar Escaneo" para agregar una.'
+                      : 'Haz clic en "+ Cargar Vulnerabilidad Manual" para agregar una.'}
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -809,41 +1044,45 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
 
       {/* MANUAL VULNERABILITY CREATION MODAL */}
       {showAddVulnModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-2">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <Plus className="size-4 text-violet-400" />
-                Cargar Vulnerabilidad Manual
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 my-6 space-y-3.5 max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <Plus className="size-4 text-violet-400" />
+                  Cargar Vulnerabilidad Manual
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Registra un nuevo hallazgo de seguridad con todos sus metadatos e información de remediación.</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowAddVulnModal(false)}
-                className="p-1 text-muted-foreground hover:text-foreground"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateManualVuln} className="space-y-3 text-xs">
-              <div className="space-y-1">
-                <label className="font-semibold text-foreground">Título de la Vulnerabilidad</label>
-                <input
-                  type="text"
-                  required
-                  value={newVulnTitle}
-                  onChange={(e) => setNewVulnTitle(e.target.value)}
-                  placeholder="Ej: Broken Object Level Authorization en /api/v1/users"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
-                />
-              </div>
+            <form onSubmit={handleCreateManualVuln} className="space-y-3.5 text-xs">
+              {/* Row 1: Basic details */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="md:col-span-2 space-y-1">
+                  <label className="font-semibold text-foreground">Título de la Vulnerabilidad</label>
+                  <input
+                    type="text"
+                    required
+                    value={newVulnTitle}
+                    onChange={(e) => setNewVulnTitle(e.target.value)}
+                    placeholder="Ej: Broken Object Level Authorization en /api/v1/users"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                  />
+                </div>
 
-              <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="font-semibold text-foreground">Severidad</label>
                   <select
                     value={newVulnSeverity}
-                    onChange={(e) => setNewVulnSeverity(e.target.value as any)}
+                    onChange={(e) => setNewVulnSeverity(e.target.value as 'Critical' | 'High' | 'Medium' | 'Low')}
                     className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
                   >
                     <option value="Critical">Critical</option>
@@ -867,6 +1106,7 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
                 </div>
               </div>
 
+              {/* Row 2: Associated Test Case */}
               <div className="space-y-1">
                 <label className="font-semibold text-foreground">Test Case Asociado (Opcional)</label>
                 <select
@@ -875,38 +1115,424 @@ export function ProjectDetailsFullView({ engagement, onBack }: ProjectDetailsFul
                   className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500 font-mono text-xs"
                 >
                   <option value="API1:2023-BOLA">API1:2023-BOLA - Broken Object Level Authorization</option>
-                  <option value="API2:2023-AUTH">API2:2023-AUTH - Broken Authentication</option>
+                  <option value="API2:2023-AUTH">API2:2023-AUTH - Broken Authentication & Token Signature Flaws</option>
                   <option value="API3:2023-BFLA">API3:2023-BFLA - Broken Function Level Authorization</option>
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="font-semibold text-foreground">Descripción</label>
-                <textarea
-                  rows={3}
-                  value={newVulnDesc}
-                  onChange={(e) => setNewVulnDesc(e.target.value)}
-                  placeholder="Detalles de la vulnerabilidad encontrada..."
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500 resize-none"
-                />
+              {/* SECTION: Información de Clasificación */}
+              <div className="border-t border-border pt-3 space-y-2">
+                <h4 className="text-[10px] font-mono uppercase font-bold text-violet-400 tracking-wider">Información de Clasificación</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Column 1: Estado */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Estado de la Vulnerabilidad</label>
+                    <select
+                      value={vulnStatus}
+                      onChange={(e) => setVulnStatus(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="Abierta">Abierta</option>
+                      <option value="Cerrada">Cerrada</option>
+                      <option value="Mitigada">Mitigada</option>
+                      <option value="Falso Positivo">Falso Positivo</option>
+                      <option value="Riesgo Aceptado">Riesgo Aceptado</option>
+                      <option value="En Proceso">En Proceso</option>
+                    </select>
+                  </div>
+
+                  {/* Column 2: Tipo */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Tipo de Vulnerabilidad</label>
+                    <select
+                      value={vulnType}
+                      onChange={(e) => setVulnType(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="Defecto">Defecto</option>
+                      <option value="Configuración Incorrecta">Configuración Incorrecta</option>
+                      <option value="Lógica de Negocio">Lógica de Negocio</option>
+                      <option value="Falta de Control de Acceso">Falta de Control de Acceso</option>
+                      <option value="Inyección">Inyección</option>
+                    </select>
+                  </div>
+
+                  {/* Column 3: Categoría */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Categoría de Vulnerabilidad</label>
+                    <select
+                      value={vulnCategory}
+                      onChange={(e) => {
+                        const cat = e.target.value;
+                        setVulnCategory(cat);
+                        const subcats = VULN_CATEGORIES[cat] || ['Otros'];
+                        setVulnSubcategory(subcats[0]);
+                      }}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    >
+                      {Object.keys(VULN_CATEGORIES).map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Column 4: Subcategoría */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Subcategoría</label>
+                    <select
+                      value={vulnSubcategory}
+                      onChange={(e) => setVulnSubcategory(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    >
+                      {(VULN_CATEGORIES[vulnCategory] || ['Otros']).map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Column 5: Identificado por (Custom Avatar Dropdown) */}
+                  <div className="space-y-1 relative">
+                    <label className="font-semibold text-foreground">Identificado por</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsIdentifiedByOpen(!isIdentifiedByOpen);
+                        setIsOwnerOpen(false);
+                      }}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-foreground flex items-center justify-between focus:outline-none focus:border-violet-500 cursor-pointer min-h-[32px]"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        {identifiedBy ? (
+                          <>
+                            {renderUserAvatar(identifiedBy)}
+                            <span className="truncate">{identifiedBy}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground truncate">Seleccionar auditor...</span>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground text-[8px] ml-1 shrink-0">▼</span>
+                    </button>
+                    {isIdentifiedByOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden py-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        {systemUsers.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-muted-foreground">No hay usuarios disponibles</div>
+                        ) : (
+                          systemUsers.map((aud) => (
+                            <button
+                              key={aud.id}
+                              type="button"
+                              onClick={() => {
+                                setIdentifiedBy(aud.name);
+                                setIsIdentifiedByOpen(false);
+                              }}
+                              className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-muted text-xs text-foreground cursor-pointer"
+                            >
+                              {renderUserAvatar(aud.name)}
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-semibold leading-none truncate">{aud.name}</span>
+                                <span className="text-[8px] text-muted-foreground mt-0.5 truncate">{aud.email}</span>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 6: Propietario (Custom Avatar Dropdown) */}
+                  <div className="space-y-1 relative">
+                    <label className="font-semibold text-foreground">Propietario</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOwnerOpen(!isOwnerOpen);
+                        setIsIdentifiedByOpen(false);
+                      }}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-foreground flex items-center justify-between focus:outline-none focus:border-violet-500 cursor-pointer min-h-[32px]"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        {owner ? (
+                          <>
+                            {renderUserAvatar(owner)}
+                            <span className="truncate">{owner}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground truncate">Seleccionar propietario...</span>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground text-[8px] ml-1 shrink-0">▼</span>
+                    </button>
+                    {isOwnerOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden py-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        {systemUsers.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-muted-foreground">No hay usuarios disponibles</div>
+                        ) : (
+                          systemUsers.map((aud) => (
+                            <button
+                              key={aud.id}
+                              type="button"
+                              onClick={() => {
+                                setOwner(aud.name);
+                                setIsOwnerOpen(false);
+                              }}
+                              className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-muted text-xs text-foreground cursor-pointer"
+                            >
+                              {renderUserAvatar(aud.name)}
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-semibold leading-none truncate">{aud.name}</span>
+                                <span className="text-[8px] text-muted-foreground mt-0.5 truncate">{aud.email}</span>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 7: Fecha de Identificación */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Fecha de Identificación</label>
+                    <input
+                      type="date"
+                      value={identificationDate}
+                      onChange={(e) => setIdentificationDate(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500 font-mono"
+                    />
+                  </div>
+
+                  {/* Column 8: Relacionado con */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Relacionado con</label>
+                    <select
+                      value={relatedTo}
+                      onChange={(e) => setRelatedTo(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="Aplicación">Aplicación</option>
+                      <option value="Infraestructura">Infraestructura</option>
+                      <option value="API">API</option>
+                      <option value="Base de Datos">Base de Datos</option>
+                      <option value="Red">Red</option>
+                      <option value="Dispositivo Móvil">Dispositivo Móvil</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              {/* SECTION: Editores en Pestañas (Tabs) */}
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex gap-1 border-b border-border">
+                  <button
+                    type="button"
+                    onClick={() => setActiveFormTab('description')}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                      activeFormTab === 'description' ? "border-violet-500 text-violet-400" : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Descripción
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFormTab('impact')}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                      activeFormTab === 'impact' ? "border-violet-500 text-violet-400" : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Impacto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFormTab('remediation')}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                      activeFormTab === 'remediation' ? "border-violet-500 text-violet-400" : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Recomendación de Remediación
+                  </button>
+                </div>
+
+                {/* Visually toggle blocks using css hidden/block so that Quill maintains mount states & draft states */}
+                <div className={cn(activeFormTab === 'description' ? 'block' : 'hidden', "space-y-1")}>
+                  <QuillEditor
+                    value={newVulnDesc}
+                    onChange={setNewVulnDesc}
+                    placeholder="Detalles de la vulnerabilidad encontrada, comportamiento observado..."
+                    height="120px"
+                  />
+                </div>
+                <div className={cn(activeFormTab === 'impact' ? 'block' : 'hidden', "space-y-1")}>
+                  <QuillEditor
+                    value={newVulnImpact}
+                    onChange={setNewVulnImpact}
+                    placeholder="Describe el impacto potencial en el negocio y sistemas..."
+                    height="85px"
+                  />
+                </div>
+                <div className={cn(activeFormTab === 'remediation' ? 'block' : 'hidden', "space-y-1")}>
+                  <QuillEditor
+                    value={newVulnRemediation}
+                    onChange={setNewVulnRemediation}
+                    placeholder="Describe las acciones necesarias para mitigar o solucionar..."
+                    height="85px"
+                  />
+                </div>
+              </div>
+
+              {/* SECTION: Evidencia (PoC) y Capturas */}
+              <div className="border-t border-border pt-4 space-y-2">
+                <h4 className="text-[10px] font-mono uppercase font-bold text-violet-400 tracking-wider">Evidencia (PoC) y Capturas</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Left Block: PoC Text */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-muted-foreground">Texto del PoC</label>
+                    <textarea
+                      rows={4}
+                      value={pocText}
+                      onChange={(e) => setPocText(e.target.value)}
+                      placeholder="GET /ADAMIntranet/pinsbate/consultaDetalleFactura...&#10;Cookie: JWT_TOKEN"
+                      className="w-full h-24 bg-background border border-border rounded-xl p-2 font-mono text-[9px] text-foreground focus:outline-none focus:border-violet-500 resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Middle Block: Attached Images Grid */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-muted-foreground">Capturas Adjuntas</label>
+                    <div className="h-24 border border-border bg-background rounded-xl p-2 flex gap-2 overflow-x-auto items-center">
+                      {pendingEvidences.length === 0 ? (
+                        <div className="m-auto text-[10px] text-muted-foreground font-mono">Sin capturas adjuntas</div>
+                      ) : (
+                        pendingEvidences.map((ev) => (
+                          <div key={ev.id} className="relative group shrink-0 w-20 h-20 border border-border/80 rounded-lg overflow-hidden bg-muted">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ev.preview} alt="Evidence" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeEvidence(ev.id)}
+                              className="absolute top-0.5 right-0.5 p-1 rounded bg-black/60 hover:bg-black/90 text-rose-300 transition-colors"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Block: Add Evidence Trigger */}
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl h-24 hover:bg-muted/20 hover:border-violet-500/50 cursor-pointer transition-colors" onClick={() => fileInputRef.current?.click()}>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      multiple
+                      onChange={handleEvidenceFileChange}
+                    />
+                    <Plus className="size-5 text-violet-400 mb-1" />
+                    <span className="text-violet-400 font-bold text-xs">+ Añadir Evidencia</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: Plan de Remediación */}
+              <div className="border-t border-border pt-4 space-y-2">
+                <h4 className="text-[10px] font-mono uppercase font-bold text-violet-400 tracking-wider">Plan de Remediación</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-start">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-foreground">Fecha Planificada de Remediación</label>
+                    <input
+                      type="date"
+                      value={remediationPlanDate}
+                      onChange={(e) => setRemediationPlanDate(e.target.value)}
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500 font-mono"
+                    />
+                  </div>
+                  
+                  <div className="md:col-span-3 space-y-1">
+                    <label className="font-semibold text-foreground">Detalle del Plan</label>
+                    <input
+                      type="text"
+                      value={remediationPlanText}
+                      onChange={(e) => setRemediationPlanText(e.target.value)}
+                      placeholder="Ej: Remediación planificada dentro de los tiempos máximos permitidos por el SLA."
+                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-foreground focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer / Form Actions */}
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddVulnModal(false)}
-                  className="px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:bg-muted text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl border border-border text-muted-foreground hover:bg-muted text-xs font-semibold cursor-pointer"
+                  disabled={isSavingManualVuln}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-md"
+                  className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-md flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50 disabled:pointer-events-none"
+                  disabled={isSavingManualVuln}
                 >
-                  Guardar Vulnerabilidad
+                  {isSavingManualVuln ? (
+                    <>
+                      <span className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="size-3.5" />
+                      <span>Guardar Vulnerabilidad</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SCAN IMPORT MODAL */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl bg-card border border-border rounded-2xl shadow-2xl p-5 my-6 space-y-3.5 max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <Upload className="size-4 text-violet-400" />
+                  Importar Escaneo (Nessus / Nmap / Acunetix)
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Importa archivos de resultados de escaneos para poblar automáticamente los hallazgos en este servicio.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-2">
+              <VulIngestPanel
+                engagementId={engagement.id}
+                onIngestComplete={(result) => {
+                  console.log('Ingest complete', result);
+                  fetchFindings();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

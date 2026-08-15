@@ -1,235 +1,333 @@
-# PROMPT: 01_setup_and_environment (Ambiente Local)
-**Rol**: DevOps / SRE Engineer
-**Objetivo**: Validar el estado limpio del área de trabajo e inicializar las variables de entorno locales de desarrollo.
-**Capa de Arquitectura**: Infraestructura / Configuración.
 
-## Instrucciones para la IA
-1. Comprobar que no existan cambios sin confirmar ejecutando `git status`.
-2. Verificar que los archivos `.env.example` y `.env.local.example` estén alineados.
-3. Copiar las plantillas a `.env` y `.env.local` si no existen.
-4. Validar puertos libres para el backend (29214) y frontend (29204) ejecutando `lsof -i :29204 -i :29214`.
+**Principal Software Architect, DevOps & SRE Engineer**
 
+## Objetivo
 
-**Rol:** Principal Software Architect & DevOps Engineer
+Validar que el entorno de trabajo del proyecto se encuentre en un estado seguro, limpio y consistente antes de realizar cualquier modificación. Si el entorno ya cumple todas las condiciones, **no realizar ningún cambio**. Si alguna condición no se cumple, corregir únicamente lo necesario para dejar el proyecto en el estado esperado.
 
-**Objetivo:** Guiar el proceso de auditoría, reestructuración a arquitecturas bare/worktrees (`dev`/`prod`), ordenamiento del historial Git mediante *Conventional Commits*, y la reestructuración de despliegue y proxy inverso con **Caddy** en entornos macOS/Linux.
+## Capa de Arquitectura
 
-ASEGURTE DE QUE SE CUPLET ACUALN ESTRA CONDCION DE TRAGBAJO SINO ES ASI CORRGIE SI ES AHI NO PASA NAD NO HAGAS NADA 
-
-## FASE 1: Auditoría Preliminar y Reglas de Seguridad Git
-
-### Instrucciones de Auditoría Exclusiva
-
-Para cada carpeta que sea un repositorio Git dentro del directorio raíz actual (ej. `ls` del usuario):
-
-1. **Identificación de Repositorios:**
-* Listar las carpetas del directorio raíz y validar cuáles son repositorios Git activos mediante:
-```bash
-git -C <carpeta> rev-parse --is-inside-work-tree
-
-```
-
-
-
-
-2. **Matriz de Estado (Tabla de Auditoría):**
-Antes de realizar cualquier cambio, presentar al usuario una tabla comparativa con los siguientes datos:
-* **Nombre de carpeta**
-* **Rama actual** (`git branch --show-current`)
-* **Estado del directorio de trabajo** (`git status --porcelain` $\rightarrow$ marcar como **SUCIO** si hay diferencias)
-* **Commits pendientes de push** (`git log @{u}.. --oneline` si existe *upstream*)
-* **Remotos configurados** (`git remote -v`)
-* **Procesos asociados activos** (identificados vía `.pid.*` o variables de puerto en `.env`)
-
-
-3. **Filtro de Exclusión ("NO TOCAR"):**
-* Marcar explícitamente como **NO TOCAR** cualquier carpeta que no sea parte de los proyectos objetivo permitidos.
-
-
-4. **Gestión de Repositorios Sucios:**
-Si una carpeta objetivo está marcada como **SUCIO**, **DETENER** el flujo y solicitar confirmación explícita:
-* **Opción A:** Commitear/pushear los cambios pendientes.
-* **Opción B:** Descartar cambios (requiere confirmación explícita `YES`).
-* **Opción C:** Excluir el proyecto del proceso actual.
-
-
-
-> **Regla de seguridad:** No avanzar a la Fase 2 para ningún proyecto que no esté completamente limpio y confirmado por el usuario.
+Infraestructura / Configuración
 
 ---
 
-## FASE 2: Organizado Profesional del Historial Git (Commit Strategy)
+# Reglas Generales
 
-Antes de mover estructuras, si se requiere consolidar cambios pendientes:
+1. **Auditar antes de modificar.** Nunca ejecutar cambios sin verificar previamente el estado del proyecto.
+2. **No asumir.** Toda decisión debe basarse en la información obtenida mediante comandos de verificación.
+3. **No modificar un proyecto limpio.** Si el proyecto ya cumple todas las condiciones solicitadas, informar que no es necesario realizar cambios.
+4. **Corregir únicamente las desviaciones detectadas.** No aplicar cambios adicionales que no hayan sido solicitados.
+5. **Detener el proceso** si existen cambios sin confirmar en Git, salvo que el usuario autorice explícitamente cómo proceder.
 
-### Reglas de Clasificación de Commits
+---
 
-* **Aislamiento Semántico:** NUNCA mezclar en un solo commit cambios pertenecientes a categorías distintas: `frontend`, `backend`, `docs`, `infrastructure`, `k8s`, `docker`, `security`, `refactor`, `fixes`, `features`, `scripts`, `data` o `config`.
-* **Convención:** Usar estrictamente **Conventional Commits** (`feat`, `fix`, `refactor`, `docs`, `build`, `ci`, `test`, `perf`, `security`, `style`, `chore`).
-* **Mensajes Prohibidos:** Prohibido usar mensajes genéricos como `update`, `saved`, `wip`, `test`, `changes`, `checkpoint`.
+# Validación Inicial del Entorno
 
-### Plantilla de Salida por Commit
+## 1. Estado del repositorio Git
+
+Verificar que no existan cambios pendientes:
+
+```bash
+git status
+```
+
+El repositorio debe encontrarse completamente limpio.
+
+---
+
+## 2. Validación de archivos de entorno
+
+Verificar que los archivos:
+
+* `.env.example`
+* `.env.local.example`
+
+se encuentren alineados y contengan las mismas variables requeridas.
+
+Si no existen:
+
+* `.env`
+* `.env.local`
+
+copiar automáticamente las plantillas correspondientes.
+
+---
+
+## 3. Validación de puertos
+
+Comprobar que los siguientes puertos estén disponibles:
+
+* Frontend: **29204**
+* Backend: **29214**
+
+```bash
+lsof -i :29204 -i :29214
+```
+
+Si alguno está ocupado, identificar el proceso responsable antes de tomar cualquier acción.
+
+---
+
+# FASE 1 — Auditoría Preliminar y Reglas de Seguridad Git
+
+## Auditoría de repositorios
+
+Para cada carpeta del directorio raíz, identificar cuáles son repositorios Git mediante:
+
+```bash
+git -C <carpeta> rev-parse --is-inside-work-tree
+```
+
+---
+
+## Matriz de Auditoría
+
+Antes de realizar cualquier modificación, presentar una tabla con la siguiente información para cada repositorio:
+
+| Campo                      | Descripción                                        |
+| -------------------------- | -------------------------------------------------- |
+| Carpeta                    | Nombre del proyecto                                |
+| Rama actual                | `git branch --show-current`                        |
+| Estado                     | `git status --porcelain`                           |
+| Estado del repositorio     | LIMPIO / SUCIO                                     |
+| Commits pendientes de push | `git log @{u}.. --oneline`                         |
+| Remotos configurados       | `git remote -v`                                    |
+| Procesos activos           | Detectados mediante `.pid.*` o variables de puerto |
+
+---
+
+## Exclusión de proyectos
+
+Marcar explícitamente como **NO TOCAR** cualquier carpeta que no forme parte de los proyectos autorizados.
+
+No ejecutar ninguna acción sobre estos directorios.
+
+---
+
+## Repositorios con cambios
+
+Si un proyecto presenta cambios sin confirmar (**SUCIO**), detener completamente el flujo y solicitar al usuario una de las siguientes opciones:
+
+**A.** Crear los commits correspondientes utilizando **Conventional Commits** y realizar `push`.
+
+**B.** Descartar todos los cambios (requiere confirmación explícita escribiendo `YES`).
+
+**C.** Excluir el proyecto del proceso actual.
+
+> **Regla obligatoria:** No avanzar a la siguiente fase hasta que todos los proyectos seleccionados se encuentren completamente limpios o hayan sido excluidos.
+
+---
+
+# FASE 2 — Organización Profesional del Historial Git
+
+Si existen cambios pendientes que deban conservarse, clasificarlos por categoría.
+
+## Reglas
+
+* No mezclar cambios de diferentes áreas en un mismo commit.
+
+* Utilizar estrictamente **Conventional Commits**.
+
+* No utilizar mensajes genéricos como:
+
+* update
+
+* changes
+
+* test
+
+* saved
+
+* checkpoint
+
+* wip
+
+## Categorías permitidas
+
+* frontend
+* backend
+* docs
+* infrastructure
+* docker
+* k8s
+* security
+* refactor
+* feature
+* fix
+* scripts
+* config
+* data
+
+---
+
+## Formato de salida por cada commit
 
 ```text
 -------------------------------------------------
 Commit N/X
-Archivos incluidos: <lista_de_archivos>
-Razón: <explicación del POR QUÉ>
-Riesgo: <Bajo/Medio/Alto>
-Compatibilidad: <Breaking Changes / Backward-compatible>
-Mensaje Conventional Commit: <tipo>(<ámbito>): <descripción_corta>
-Resumen: <explicación detallada>
+
+Archivos:
+<lista>
+
+Razón:
+<explicación>
+
+Riesgo:
+Bajo | Medio | Alto
+
+Compatibilidad:
+Backward-compatible | Breaking Change
+
+Mensaje:
+tipo(scope): descripción
+
+Resumen:
+<detalle>
+
 -------------------------------------------------
-
 ```
 
 ---
 
-## FASE 3: Reestructuración de Arquitectura Git Bare & Worktrees
+# FASE 3 — Reestructuración Git Bare + Worktrees
 
-Aplicar este flujo individualmente por proyecto confirmado (`PROJECT_DIR` $\rightarrow$ `apps/<PROJECT_NAME>`):
+Aplicar únicamente sobre proyectos previamente aprobados.
 
-### Variables de Configuración
+Variables:
 
-* `PROJECT_DIR`: Carpeta fuente original
-* `PROJECT_NAME`: Identificador corto (ej. `ambar`, `phantom`, `amatista`)
-* `MAIN_BRANCH`: Rama base (`main` o `master`)
-* `PORT_DEV`, `PORT_PROD`: Leídos desde archivo central de referencia o especificados manualmente.
+* PROJECT_DIR
+* PROJECT_NAME
+* MAIN_BRANCH
+* PORT_DEV
+* PORT_PROD
 
-### Estructura Target
-
-```text
-<raiz>/
-└── apps/
-    ├── <PROJECT_NAME>.git/              (Repo bare central)
-    ├── dev/
-    │   └── <PROJECT_NAME>-dev/           (Worktree: MAIN_BRANCH, PORT_DEV)
-    └── prod/
-        └── <PROJECT_NAME>-prod/          (Worktree: prod, PORT_PROD)
-
-```
-
-### Protocolo de Ejecución Comando por Comando
-
-1. **Re-verificación de Seguridad:**
-```bash
-git -C <raiz>/<PROJECT_DIR> status --porcelain
-
-```
-
-
-2. **Detención de Procesos:**
-Detener servicios activos en los puertos asignados o terminar PIDs de `.pid.*`.
-3. **Creación de Bare Repository:**
-```bash
-git clone --bare <raiz>/<PROJECT_DIR> <raiz>/apps/<PROJECT_NAME>.git
-
-```
-
-
-4. **Estructura de Directorios:**
-```bash
-mkdir -p <raiz>/apps/dev <raiz>/apps/prod
-
-```
-
-
-5. **Configuración Worktree DEV:**
-```bash
-git --git-dir=<raiz>/apps/<PROJECT_NAME>.git worktree add \
-  <raiz>/apps/dev/<PROJECT_NAME>-dev <MAIN_BRANCH>
-
-```
-
-
-6. **Configuración Worktree PROD:**
-```bash
-git --git-dir=<raiz>/apps/<PROJECT_NAME>.git branch prod <MAIN_BRANCH>
-git --git-dir=<raiz>/apps/<PROJECT_NAME>.git worktree add \
-  <raiz>/apps/prod/<PROJECT_NAME>-prod prod
-
-```
-
-
-7. **Provisionamiento de Entornos:**
-Copiar archivos `.env` a cada worktree ajustando `PORT` y `NODE_ENV` (`development` para dev, `production` para prod).
-8. **Instalación y Verificación:**
-Ejecutar `npm install` (o gestor equivalente), levantar ambos worktrees y verificar su respuesta HTTP en los puertos asignados antes de continuar.
-9. **Limpieza:** Preguntar explícitamente al usuario si desea eliminar el directorio original `<raiz>/<PROJECT_DIR>`.
-
----
-
-## FASE 4: Estrategia de Puertos e Infraestructura con Caddy
-
-### 1. Estructura Estándar de Directorios
+## Estructura objetivo
 
 ```text
-/opt/orbitalapps/ (o <raiz>/apps/)
-└── dev/
-│   └── <PROJECT_NAME>-dev/           (Puerto PORT_DEV)
+apps/
+├── <PROJECT_NAME>.git
+├── dev/
+│   └── <PROJECT_NAME>-dev
 └── prod/
-    └── <PROJECT_NAME>-prod/          (Puerto PORT_PROD)
-
+    └── <PROJECT_NAME>-prod
 ```
 
-### 2. Esquema de Rangos por Entorno (29xxx)
+## Procedimiento
 
-| Rango de Puerto | Entorno | Descripción / Uso |
-| --- | --- | --- |
-| **`292xx`** | **Desarrollo (`dev`)** | Instancias de desarrollo activo y pruebas de integración. |
-| **`299xx`** | **Producción (`prod`)** | Instancias estables para tráfico de producción final. |
+1. Verificar nuevamente que el repositorio esté limpio.
 
-### 3. Regla de Mapeo Interno (`29<ENV><ID>`)
+```bash
+git status --porcelain
+```
 
-Cada servicio recibe un **Identificador Numérico Único (`ID`) de dos dígitos** (ej. `03` para Amatista, `04` para Phantom, `05` para Ambar):
+2. Detener procesos asociados.
 
-* **Puerto `dev`:** `292` + `ID`
-* **Puerto `prod`:** `299` + `ID`
+3. Crear el repositorio bare.
+
+```bash
+git clone --bare <PROJECT_DIR> apps/<PROJECT_NAME>.git
+```
+
+4. Crear la estructura.
+
+```bash
+mkdir -p apps/dev apps/prod
+```
+
+5. Crear el Worktree DEV.
+
+6. Crear la rama y Worktree PROD.
+
+7. Copiar los archivos `.env`.
+
+8. Ajustar:
+
+* PORT
+* NODE_ENV
+
+9. Instalar dependencias.
+
+10. Levantar ambos entornos.
+
+11. Validar respuesta HTTP.
+
+12. Preguntar explícitamente al usuario si desea eliminar el directorio original.
 
 ---
 
-### 4. Configuración Proxy Inverso Nativo (Caddy)
+# FASE 4 — Infraestructura y Proxy Inverso con Caddy
 
-Administrar las entradas dentro de la configuración de **Caddy** (ej. `/opt/orbitalapps/caddy/Caddyfile`) asignando dominios locales bajo el TLD `*.orbitalapps.lan` y mapeándolos hacia los puertos `29xxx` locales:
+## Organización
 
-#### A. Entorno de Desarrollo (`*-dev.orbitalapps.lan`)
+```text
+apps/
+
+dev/
+└── proyecto-dev
+
+prod/
+└── proyecto-prod
+```
+
+---
+
+## Esquema de puertos
+
+| Entorno    | Rango |
+| ---------- | ----- |
+| Desarrollo | 292xx |
+| Producción | 299xx |
+
+Cada proyecto posee un identificador único de dos dígitos.
+
+Ejemplo:
+
+| Proyecto | DEV   | PROD  |
+| -------- | ----- | ----- |
+| Amatista | 29203 | 29903 |
+| Phantom  | 29204 | 29904 |
+| Ámbar    | 29205 | 29905 |
+
+---
+
+## Configuración de Caddy
+
+Mantener el archivo `Caddyfile` actualizado para mapear cada dominio hacia su puerto correspondiente.
+
+Ejemplo:
 
 ```caddy
-ambar-dev.orbitalapps.lan {
-    reverse_proxy 127.0.0.1:29205
-}
-
 phantom-dev.orbitalapps.lan {
     reverse_proxy 127.0.0.1:29204
-}
-
-amatista-dev.orbitalapps.lan {
-    reverse_proxy 127.0.0.1:29203
-}
-
-```
-
-#### B. Entorno de Producción (`*.orbitalapps.lan`)
-
-```caddy
-ambar.orbitalapps.lan {
-    reverse_proxy 127.0.0.1:29905
 }
 
 phantom.orbitalapps.lan {
     reverse_proxy 127.0.0.1:29904
 }
-
-amatista.orbitalapps.lan {
-    reverse_proxy 127.0.0.1:29903
-}
-
 ```
 
-#### C. Control de Caddy
+Recargar la configuración:
 
-* Iniciar / Recargar configuración:
 ```bash
 caddy reload --config /opt/orbitalapps/caddy/Caddyfile
-
 ```
+
+---
+
+# Regla Final (Obligatoria)
+
+Antes de realizar cualquier modificación, validar que el proyecto seleccionado cumple todas las condiciones anteriores.
+
+**Si el proyecto ya se encuentra correctamente configurado, limpio y funcionando según lo esperado, no realizar ningún cambio y comunicar que no es necesario intervenir.**
+
+**Si alguna condición no se cumple, corregir únicamente los elementos que incumplan los requisitos, preservando el resto del entorno sin modificaciones.**
+
+---
+
+# Proyecto objetivo
+
+El proyecto autorizado para este procedimiento es:
+
+**Phantom**
+
+No realizar acciones sobre ningún otro proyecto sin autorización explícita del usuario.

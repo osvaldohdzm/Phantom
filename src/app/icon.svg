@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="neonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <radialGradient id="shieldGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <!-- Background with deep dark grid space -->
+  <rect width="128" height="128" rx="32" fill="#020617" stroke="#22c55e" stroke-width="4" />
+  <circle cx="64" cy="64" r="40" fill="url(#shieldGlow)" />
+  <!-- Shield outline -->
+  <path d="M64,24 L96,36 L96,72 C96,92 64,108 64,108 C64,108 32,92 32,72 L32,36 Z" fill="none" stroke="url(#neonGrad)" stroke-width="6" stroke-linejoin="round" />
+  <!-- Ghost shape in center of shield -->
+  <path d="M64,42 C54,42 46,50 46,60 L46,80 L52,74 L58,80 L64,74 L70,80 L76,74 L82,80 L82,60 C82,50 74,42 64,42 Z" fill="url(#neonGrad)" />
+  <!-- Ghost eyes -->
+  <circle cx="56" cy="56" r="3" fill="#020617" />
+  <circle cx="72" cy="56" r="3" fill="#020617" />
+</svg>

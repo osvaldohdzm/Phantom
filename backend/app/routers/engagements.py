@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.deps.auth import AuthContext, get_auth_context, require_write
 from app.database import get_db
 from app.models.core import Engagement, EngagementType
-from app.schemas import EngagementCreate, EngagementProfile, EngagementRead, EngagementUpdate
+from app.schemas import AdminUserRead, EngagementCreate, EngagementProfile, EngagementRead, EngagementUpdate
 from app.services.default_engagement import is_default_engagement
 from app.services.engagement_cleanup import delete_engagement as delete_engagement_record
 
@@ -78,6 +78,37 @@ def create_engagement(
     db.commit()
     db.refresh(eg)
     return eg
+
+
+@router.get("/responsables", response_model=List[AdminUserRead])
+def list_responsable_users(
+    db: Session = Depends(get_db),
+    ctx: AuthContext = Depends(get_auth_context),
+) -> List[AdminUserRead]:
+    """Lista usuarios activos con rol de analyst o lead en el tenant actual."""
+    from app.models.auth import User, TenantMembership, UserRole
+
+    rows = (
+        db.query(User, TenantMembership)
+        .join(TenantMembership, TenantMembership.user_id == User.id)
+        .filter(
+            TenantMembership.tenant_id == ctx.tenant_id,
+            TenantMembership.role.in_([UserRole.analyst, UserRole.lead]),
+            User.is_active == True
+        )
+        .order_by(User.nombre)
+        .all()
+    )
+    return [
+        AdminUserRead(
+            id=u.id,
+            email=u.email,
+            nombre=u.nombre,
+            is_active=u.is_active,
+            role=m.role.value,
+        )
+        for u, m in rows
+    ]
 
 
 @router.get("/{engagement_id}", response_model=EngagementRead)

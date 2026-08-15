@@ -32,6 +32,7 @@ from app.schemas import (
     AdminUserWithMembershipsRead,
     AdminMembershipAssign,
     AdminUserMembershipsSet,
+    AdminUserUpdate,
     UserRoleEnum,
 )
 from app.services.audit import log_audit_event
@@ -431,6 +432,72 @@ def set_user_memberships(
     return _user_with_memberships(db, user)
 
 
+@router.patch("/users/{user_id}", response_model=AdminUserWithMembershipsRead)
+def update_user_details(
+    user_id: UUID,
+    payload: AdminUserUpdate,
+    request: Request,
+    ctx: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserWithMembershipsRead:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not is_effective_platform_admin(ctx, db):
+        membership = (
+            db.query(TenantMembership)
+            .filter(
+                TenantMembership.user_id == user_id,
+                TenantMembership.tenant_id == ctx.tenant_id,
+            )
+            .first()
+        )
+        if not membership:
+            raise HTTPException(status_code=403, detail="Sin permiso para modificar este usuario")
+
+    if payload.email is not None:
+        email = payload.email.strip().lower()
+        if email != user.email:
+            existing = db.query(User).filter(User.email == email).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="El correo ya está registrado por otra cuenta")
+            user.email = email
+
+    if payload.nombre is not None:
+        user.nombre = payload.nombre.strip()
+
+    if payload.password is not None and payload.password.strip():
+        user.password_hash = hash_password(payload.password)
+
+    if payload.is_active is not None:
+        if user_id == ctx.user.id and not payload.is_active:
+            raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta")
+        user.is_active = payload.is_active
+
+    log_audit_event(
+        db,
+        action="admin.user_updated",
+        actor_id=ctx.user.id,
+        tenant_id=ctx.tenant_id,
+        resource_type="user",
+        resource_id=str(user_id),
+        ip_address=request.client.host if request.client else None,
+        details={
+            "updated_fields": [
+                k for k, v in payload.model_dump(exclude_unset=True).items() if k != "password"
+            ]
+        },
+    )
+    db.commit()
+    db.refresh(user)
+    return _user_with_memberships(
+        db, 
+        user, 
+        scope_tenant_id=None if is_effective_platform_admin(ctx, db) else ctx.tenant_id
+    )
+
+
 @router.post("/users/{user_id}/memberships", response_model=AdminUserWithMembershipsRead)
 def add_user_membership(
     user_id: UUID,
@@ -622,6 +689,7 @@ def create_tenant_user(
         email=email,
         nombre=payload.nombre.strip(),
         password_hash=hash_password(payload.password),
+        is_active=True,
     )
     db.add(user)
     db.flush()

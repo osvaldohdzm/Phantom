@@ -22,7 +22,10 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Share2,
+  Download,
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { classifyTargetScope } from '@/lib/classify-target-scope';
 import { ProjectDetailsFullView } from '@/components/phantom/services/ProjectDetailsFullView';
 import { Button } from '@/components/ui/button';
@@ -37,9 +40,12 @@ import {
   listEngagements,
   listFindings,
   updateEngagement,
+  createSharedMission,
+  listResponsableUsers,
   type Engagement,
   type EngagementCreateBody,
   type Finding,
+  type ResponsableUser,
 } from '@/lib/secops-api';
 import {
   HERRAMIENTAS,
@@ -216,9 +222,251 @@ export function EngagementsManager({
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [rawScopeInput, setRawScopeInput] = useState('');
+  const [responsables, setResponsables] = useState<ResponsableUser[]>([]);
 
   // Full Results View State
   const [activeFullResultsEngagement, setActiveFullResultsEngagement] = useState<Engagement | null>(null);
+
+  // Share Mission State
+  const [sharedMission, setSharedMission] = useState<{ share_hash: string; access_code: string; share_url: string } | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const handleShareMission = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await createSharedMission(id);
+      setSharedMission(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al compartir la misión');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDownloadSOW = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const eg = await getEngagement(id);
+
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'letter',
+      });
+
+      const startX = 20;
+      const col1Width = 55;
+      const col2Width = 120.9;
+      let pageCount = 1;
+      let y = 40;
+
+      const projName = eg.nombre_proyecto || eg.cliente || 'Misión Secreta';
+
+      const drawPageHeader = (pageNumber: number) => {
+        // Logo Area Placeholder box
+        doc.setDrawColor(180);
+        doc.setLineWidth(0.2);
+        doc.rect(startX, 15, 35, 12, 'D');
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        doc.text('PHANTOM SECURITY', startX + 17.5, 21.5, { align: 'center', baseline: 'middle' });
+
+        // Title & Project
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(30, 41, 59);
+        doc.text('REPORTE EJECUTIVO DE SERVICIO', startX + 45, 20);
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Proyecto: ${projName}`, startX + 45, 25);
+
+        // Export Date on the right
+        const dateStr = new Date().toLocaleDateString('es-ES', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+        doc.text(`Fecha: ${dateStr}`, 195.9, 25, { align: 'right' });
+
+        // Header Divider Line
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.line(startX, 32, 195.9, 32);
+      };
+
+      const drawPageFooter = (pageNumber: number) => {
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.line(startX, 260, 195.9, 260);
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text('CONFIDENCIAL - REPORTES DE SEGURIDAD', startX, 265);
+        doc.text(`Página ${pageNumber}`, 195.9, 265, { align: 'right' });
+      };
+
+      const drawSectionHeader = (title: string, yPos: number) => {
+        doc.setFillColor(241, 245, 249);
+        doc.rect(startX, yPos, 175.9, 8, 'F');
+        doc.setDrawColor(203, 213, 225);
+        doc.rect(startX, yPos, 175.9, 8, 'D');
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(30, 41, 59);
+        doc.text(title.toUpperCase(), startX + 3, yPos + 4.5, { baseline: 'middle' });
+      };
+
+      const checkPageSpace = (heightNeeded: number) => {
+        if (y + heightNeeded > 255) {
+          drawPageFooter(pageCount);
+          doc.addPage();
+          pageCount++;
+          drawPageHeader(pageCount);
+          y = 40;
+        }
+      };
+
+      const drawCenteredCellText = (
+        text: string,
+        cellX: number,
+        cellY: number,
+        cellWidth: number,
+        cellHeight: number,
+        isBold: boolean = false
+      ) => {
+        if (isBold) {
+          doc.setFont('Helvetica', 'bold');
+          doc.setTextColor(71, 85, 105);
+        } else {
+          doc.setFont('Helvetica', 'normal');
+          doc.setTextColor(15, 23, 42);
+        }
+        doc.setFontSize(8.5);
+
+        const padding = 6;
+        const wrapped = doc.splitTextToSize(text, cellWidth - padding);
+        const N = wrapped.length;
+        const lh = 4.2;
+
+        for (let i = 0; i < N; i++) {
+          const lineY = cellY + (cellHeight / 2) - ((N - 1) * lh) / 2 + i * lh;
+          doc.text(wrapped[i], cellX + (cellWidth / 2), lineY, { align: 'center', baseline: 'middle' });
+        }
+      };
+
+      // Draw page 1 header
+      drawPageHeader(1);
+
+      // Build key-value rows
+      const dataRows: [string, string][] = [];
+      dataRows.push(['ID Engagement', eg.id.toUpperCase()]); // Renamed ID de Misión -> ID Engagement
+      dataRows.push(['Cliente / Organización', eg.cliente]);
+      if (eg.nombre_proyecto) dataRows.push(['Proyecto', eg.nombre_proyecto]);
+      if (eg.estado) dataRows.push(['Estado de Servicio', eg.estado]);
+      if (eg.responsable) dataRows.push(['Responsable', eg.responsable]);
+      if (eg.tipo_servicio) dataRows.push(['Tipo de Servicio', eg.tipo_servicio]);
+      if (eg.fecha_inicio) dataRows.push(['Fecha Inicio', eg.fecha_inicio]);
+      if (eg.fecha_fin) dataRows.push(['Fecha Fin', eg.fecha_fin]);
+      if (eg.tipo) dataRows.push(['Tipo de Proyecto', eg.tipo]);
+
+      const p = eg.profile;
+      if (p) {
+        if (p.alcance && (p.alcance.ips || p.alcance.dominios || p.alcance.urls)) {
+          dataRows.push(['[SECCIÓN]', 'PARÁMETROS DE ALCANCE (SCOPE)']);
+          if (p.alcance.ips) dataRows.push(['IPs Objetivo', p.alcance.ips]);
+          if (p.alcance.dominios) dataRows.push(['Dominios', p.alcance.dominios]);
+          if (p.alcance.urls) dataRows.push(['URLs', p.alcance.urls]);
+          if (p.alcance.ambientes) dataRows.push(['Ambientes', p.alcance.ambientes]);
+          if (p.alcance.activos_incluidos) dataRows.push(['Activos Incluidos', p.alcance.activos_incluidos]);
+          if (p.alcance.activos_excluidos) dataRows.push(['Activos Excluidos', p.alcance.activos_excluidos]);
+        }
+
+        if (p.tipo_analisis && (p.tipo_analisis.metodo || p.tipo_analisis.alcance_red)) {
+          dataRows.push(['[SECCIÓN]', 'CONFIGURACIÓN DEL ANÁLISIS']);
+          if (p.tipo_analisis.metodo) dataRows.push(['Método de Análisis', p.tipo_analisis.metodo]);
+          if (p.tipo_analisis.alcance_red) dataRows.push(['Alcance de Red', p.tipo_analisis.alcance_red]);
+          if (p.tipo_analisis.intrusivo) dataRows.push(['Intrusividad', p.tipo_analisis.intrusivo]);
+        }
+
+        if (p.accesos) {
+          dataRows.push(['[SECCIÓN]', 'REQUISITOS DE ACCESO']);
+          dataRows.push(['Credenciales Entregadas', p.accesos.credenciales_entregadas ? 'Sí' : 'No']);
+          if (p.accesos.credenciales_notas) dataRows.push(['Notas de Credenciales', p.accesos.credenciales_notas]);
+          dataRows.push(['VPN Requerida', p.accesos.vpn_requerida ? 'Sí' : 'No']);
+          if (p.accesos.vpn_notas) dataRows.push(['Notas de VPN', p.accesos.vpn_notas]);
+          dataRows.push(['Usuarios de Prueba', p.accesos.usuarios_prueba ? 'Sí' : 'No']);
+          if (p.accesos.usuarios_prueba_notas) dataRows.push(['Notas de Usuarios', p.accesos.usuarios_prueba_notas]);
+          dataRows.push(['Código Fuente Entregado', p.accesos.codigo_fuente_entregado ? 'Sí' : 'No']);
+          if (p.accesos.codigo_fuente_notas) dataRows.push(['Notas de Código Fuente', p.accesos.codigo_fuente_notas]);
+          dataRows.push(['Documentación Entregada', p.accesos.documentacion_entregada ? 'Sí' : 'No']);
+          if (p.accesos.documentacion_notas) dataRows.push(['Notas de Documentación', p.accesos.documentacion_notas]);
+        }
+
+        if (p.reglas) {
+          dataRows.push(['[SECCIÓN]', 'REGLAS DE COMPROMISO']);
+          if (p.reglas.horarios_permitidos) dataRows.push(['Horarios Permitidos', p.reglas.horarios_permitidos]);
+          dataRows.push(['DoS Permitido', p.reglas.dos_permitido ? 'Sí' : 'No']);
+          dataRows.push(['Explotación Permitida', p.reglas.explotacion_permitida ? 'Sí' : 'No']);
+          dataRows.push(['Ingeniería Social Permitida', p.reglas.ingenieria_social_permitida ? 'Sí' : 'No']);
+          if (p.reglas.contacto_emergencia) dataRows.push(['Contacto Emergencia', p.reglas.contacto_emergencia]);
+        }
+      }
+
+      // Draw main executive details section header
+      drawSectionHeader('INFORMACIÓN GENERAL DEL SERVICIO', y);
+      y += 10;
+
+      for (const [label, val] of dataRows) {
+        if (label === '[SECCIÓN]') {
+          const rowHeight = 8;
+          checkPageSpace(rowHeight + 4);
+          drawSectionHeader(val, y);
+          y += rowHeight + 2;
+          continue;
+        }
+
+        const cleanVal = val === null || val === undefined ? '-' : String(val);
+        const wrappedVal = doc.splitTextToSize(cleanVal, col2Width - 6);
+        const rowHeight = Math.max(8, wrappedVal.length * 5 + 4);
+
+        checkPageSpace(rowHeight);
+
+        // Label column box
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.2);
+        doc.rect(startX, y, col1Width, rowHeight, 'FD');
+
+        // Value column box
+        doc.setFillColor(255, 255, 255);
+        doc.rect(startX + col1Width, y, col2Width, rowHeight, 'FD');
+
+        // Draw centered text
+        drawCenteredCellText(label, startX, y, col1Width, rowHeight, true);
+        drawCenteredCellText(cleanVal, startX + col1Width, y, col2Width, rowHeight, false);
+
+        y += rowHeight;
+      }
+
+      // Draw page footer
+      drawPageFooter(pageCount);
+
+      doc.save(`Reporte_Ejecutivo_${projName.replace(/\s+/g, '_')}.pdf`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al descargar el SOW');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openResultsModal = (eg: Engagement) => {
     setActiveFullResultsEngagement(eg);
@@ -270,6 +518,18 @@ export function EngagementsManager({
       setLoading(false);
     }
   }, [selectedId, onSelect]);
+
+  useEffect(() => {
+    const fetchResponsables = async () => {
+      try {
+        const list = await listResponsableUsers();
+        setResponsables(list);
+      } catch (err) {
+        console.error('Error fetching responsable users:', err);
+      }
+    };
+    void fetchResponsables();
+  }, []);
 
   useEffect(() => {
     void load();
@@ -522,6 +782,32 @@ export function EngagementsManager({
                               variant="outline"
                               size="sm"
                               className="h-8 text-xs font-semibold flex items-center gap-1 border-border/80 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all cursor-pointer"
+                              onClick={() => void handleShareMission(eg.id)}
+                              disabled={busy}
+                              title="Generar enlace seguro para compartir los detalles del servicio"
+                            >
+                              <Share2 className="size-3.5 text-violet-400" />
+                              <span>Share mission</span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs font-semibold flex items-center gap-1 border-border/80 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all cursor-pointer"
+                              onClick={() => void handleDownloadSOW(eg.id)}
+                              disabled={busy}
+                              title="Descargar los detalles del servicio en formato PDF (SOW)"
+                            >
+                              <Download className="size-3.5 text-violet-400" />
+                              <span>Descargar SOW</span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs font-semibold flex items-center gap-1 border-border/80 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all cursor-pointer"
                               onClick={() => void loadIntoForm(eg.id)}
                               disabled={busy}
                               title="Ver y editar alcance, targets y fechas del servicio"
@@ -657,12 +943,23 @@ export function EngagementsManager({
               </div>
               <div className="space-y-1">
                 <FieldLabel>{t('engFieldOwner')}</FieldLabel>
-                <Input
-                  placeholder={t('engFieldOwnerPh')}
+                <select
                   value={form.responsable}
                   onChange={(e) => setForm((f) => ({ ...f, responsable: e.target.value }))}
-                  className="text-sm bg-background"
-                />
+                  className={selectClass}
+                >
+                  <option value="">{t('engSelectOption')}</option>
+                  {responsables.map((u) => (
+                    <option key={u.id} value={u.nombre}>
+                      {u.nombre} ({u.email})
+                    </option>
+                  ))}
+                  {form.responsable && !responsables.some((u) => u.nombre === form.responsable) && (
+                    <option value={form.responsable}>
+                      {form.responsable}
+                    </option>
+                  )}
+                </select>
               </div>
               <div className="space-y-1">
                 <FieldLabel required>{t('engFieldStartDate')}</FieldLabel>
@@ -1274,6 +1571,102 @@ export function EngagementsManager({
           </>
         )}
       </CardContent>
+
+      {sharedMission && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-violet-500/20 bg-background p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 text-left">
+            <button
+              onClick={() => setSharedMission(null)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="rounded-full bg-violet-500/10 p-3 text-violet-400">
+                <Share2 className="size-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Mission Shared</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Se ha creado una instantánea segura del servicio. Comparte este enlace y clave de acceso con el destinatario.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 mt-6">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  URL de la Misión
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={typeof window !== 'undefined' ? `${window.location.origin}${sharedMission.share_url}` : ''}
+                    className="flex-1 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs font-mono text-foreground focus:outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(`${window.location.origin}${sharedMission.share_url}`);
+                        setCopiedUrl(true);
+                        setTimeout(() => setCopiedUrl(false), 2000);
+                      }
+                    }}
+                    className="h-9 px-3 flex items-center gap-1 hover:border-violet-500/50 hover:bg-violet-500/10"
+                  >
+                    {copiedUrl ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                    <span>{copiedUrl ? 'Copied' : 'Copy'}</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Clave de Acceso (Access Code)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={sharedMission.access_code}
+                    className="flex-1 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-mono font-bold tracking-widest text-violet-400 focus:outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(sharedMission.access_code);
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2000);
+                      }
+                    }}
+                    className="h-9 px-3 flex items-center gap-1 hover:border-violet-500/50 hover:bg-violet-500/10"
+                  >
+                    {copiedCode ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                    <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setSharedMission(null)}
+                className="bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs py-2 px-4 rounded-lg shadow-sm"
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

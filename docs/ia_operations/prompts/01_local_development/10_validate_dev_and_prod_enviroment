@@ -1,0 +1,496 @@
+# Objetivo
+
+Auditar y validar el entorno del proyecto **antes de realizar cualquier modificación**.
+
+El comportamiento debe ser **conservador**:
+
+* Si el entorno cumple todas las condiciones, **no realizar ningún cambio**.
+* Si existe alguna desviación, **corregir únicamente esa desviación**.
+* Nunca introducir cambios no solicitados.
+* Nunca asumir información.
+* Todas las decisiones deben estar respaldadas por evidencia obtenida mediante comandos de verificación.
+
+---
+
+# Proyecto autorizado
+
+**Proyecto permitido:**
+
+* PROYECTO ACTUAL
+
+**Todos los demás proyectos se consideran NO TOCAR**, salvo autorización explícita del usuario.
+
+---
+
+# Principios Operativos
+
+## 1. Auditoría antes de actuar
+
+Nunca ejecutar modificaciones sin una auditoría previa.
+
+Toda acción debe estar precedida por una verificación.
+
+---
+
+## 2. No asumir
+
+Nunca inferir:
+
+* ramas
+* puertos
+* rutas
+* dominios
+* variables
+* procesos
+* configuración
+
+Todo debe comprobarse.
+
+---
+
+## 3. Mínima intervención
+
+Si el proyecto ya cumple los requisitos:
+
+**No modificar absolutamente nada.**
+
+Informar únicamente:
+
+> El entorno ya cumple las condiciones establecidas. No es necesaria ninguna intervención.
+
+---
+
+## 4. Corrección mínima
+
+Si existe un problema:
+
+* corregir únicamente ese problema
+* preservar todo lo demás
+
+---
+
+## 5. Seguridad Git
+
+Antes de cualquier modificación comprobar:
+
+```bash
+git status --porcelain
+```
+
+Si existen cambios pendientes:
+
+**Detener completamente el proceso.**
+
+Solicitar al usuario una de estas opciones:
+
+**A**
+
+Crear commits (Conventional Commits) y hacer push.
+
+**B**
+
+Descartar cambios.
+
+Requiere escribir exactamente:
+
+```
+YES
+```
+
+**C**
+
+Excluir el proyecto.
+
+No continuar hasta resolver esta condición.
+
+---
+
+# Validación Inicial
+
+## Estado Git
+
+Verificar:
+
+```bash
+git status
+```
+
+Esperado:
+
+```
+working tree clean
+```
+
+---
+
+## Variables de entorno
+
+Verificar:
+
+```
+.env.example
+.env.local.example
+```
+
+Comprobar:
+
+* mismas variables
+* consistencia
+* orden
+
+Si faltan:
+
+```
+.env
+.env.local
+```
+
+crear copiando las plantillas correspondientes.
+
+---
+
+## Puertos
+
+Validar disponibilidad.
+
+DEV
+
+```
+29204
+```
+
+Backend
+
+```
+29214
+```
+
+```bash
+lsof -i :29204 -i :29214
+```
+
+Si están ocupados:
+
+* identificar PID
+* identificar proceso
+* no finalizar procesos automáticamente
+
+---
+
+# Fase 1 · Auditoría Git
+
+Buscar todos los repositorios Git dentro del directorio raíz.
+
+```bash
+git -C <directorio> rev-parse --is-inside-work-tree
+```
+
+---
+
+## Matriz de Auditoría
+
+Mostrar antes de cualquier acción.
+
+| Proyecto | Rama | Estado | Push pendiente | Remotos | Procesos | Clasificación |
+| -------- | ---- | ------ | -------------- | ------- | -------- | ------------- |
+| PROYECTO ACTUAL  | main | LIMPIO | 0              | origin  | Ninguno  | AUTORIZADO    |
+
+Clasificación:
+
+* AUTORIZADO
+* NO TOCAR
+
+---
+
+## Reglas
+
+No ejecutar cambios mientras exista algún repositorio autorizado marcado como:
+
+```
+SUCIO
+```
+
+---
+
+# Fase 2 · Organización del Historial Git
+
+Si existen cambios que deben conservarse:
+
+Agruparlos por intención.
+
+Nunca mezclar:
+
+* frontend
+* backend
+* docs
+* infraestructura
+* docker
+* kubernetes
+* seguridad
+* configuración
+* scripts
+* tests
+* datos
+
+Usar exclusivamente **Conventional Commits**.
+
+Prohibido:
+
+* update
+* changes
+* test
+* wip
+* saved
+* checkpoint
+
+---
+
+## Plantilla por Commit
+
+```text
+-------------------------------------------------
+
+Commit N/X
+
+Archivos
+
+Razón
+
+Riesgo
+
+Compatibilidad
+
+Mensaje
+
+Resumen
+
+-------------------------------------------------
+```
+
+---
+
+# Fase 3 · Arquitectura Git Bare + Worktrees
+
+Aplicar únicamente sobre proyectos autorizados.
+
+Variables:
+
+```
+PROJECT_NAME
+PROJECT_DIR
+MAIN_BRANCH
+PORT_DEV
+PORT_PROD
+```
+
+## Estructura objetivo
+
+```text
+apps/
+
+PROJECT.git
+
+dev/
+└── PROJECT-dev
+
+prod/
+└── PROJECT-prod
+```
+
+---
+
+## Procedimiento
+
+1.
+
+Verificar nuevamente:
+
+```bash
+git status --porcelain
+```
+
+2.
+
+Detener procesos asociados.
+
+3.
+
+Crear repositorio bare.
+
+4.
+
+Crear worktree DEV.
+
+5.
+
+Crear worktree PROD.
+
+6.
+
+Copiar archivos `.env`.
+
+7.
+
+Configurar:
+
+* PORT
+* NODE_ENV
+
+8.
+
+Instalar dependencias.
+
+9.
+
+Levantar ambos entornos.
+
+10.
+
+Validar respuesta HTTP.
+
+11.
+
+Preguntar si debe eliminarse el directorio original.
+
+---
+
+# Fase 4 · Infraestructura
+
+## Organización
+
+```text
+apps/
+
+dev/
+PROJECT-dev
+
+prod/
+PROJECT-prod
+```
+
+---
+
+## Convención de Puertos
+
+| Entorno | Rango |
+| ------- | ----- |
+| DEV     | 292xx |
+| PROD    | 299xx |
+
+Ejemplo:
+
+| Proyecto | DEV   | PROD  |
+| -------- | ----- | ----- |
+| Amatista | 29203 | 29903 |
+| PROYECTO ACTUAL  | 29204 | 29904 |
+| Ámbar    | 29205 | 29905 |
+
+---
+
+## Proxy Inverso
+
+Mantener actualizado el `Caddyfile`.
+
+Ejemplo:
+
+```caddy
+PROYECTO ACTUAL-dev.orbitalapps.lan {
+    reverse_proxy 127.0.0.1:29204
+}
+
+PROYECTO ACTUAL.orbitalapps.lan {
+    reverse_proxy 127.0.0.1:29904
+}
+```
+
+Recargar únicamente cuando exista un cambio real:
+
+```bash
+caddy reload --config /opt/orbitalapps/caddy/Caddyfile
+```
+
+---
+
+# Validaciones Obligatorias
+
+Antes de cualquier commit:
+
+* compilación
+* imports
+* tipado
+* dependencias
+* archivos temporales
+* secretos
+* artefactos generados
+
+No versionar:
+
+* `.env`
+* `.env.*`
+* `node_modules`
+* `.next`
+* `dist`
+* `coverage`
+* `logs`
+* `*.db`
+* `*.sqlite`
+* `.DS_Store`
+
+---
+
+# Regla de Producción
+
+Antes de promover cambios de **DEV** a **PROD**:
+
+Verificar:
+
+* branch correcto
+* commit esperado
+* build exitoso
+* tests aprobados
+* configuración válida
+* artefactos generados
+* rollback disponible
+
+Si cualquier validación falla:
+
+**Detener el proceso.**
+
+No realizar:
+
+* merge
+* push
+* deploy
+* reinicio de servicios
+
+---
+
+# Sincronización de Base de Datos
+
+Para sincronizar **PROD → DEV**:
+
+Consultar primero la documentación correspondiente.
+
+Después ejecutar exclusivamente el script oficial:
+
+```bash
+/Users/osvaldohm/Desktop/apps/manage/replicate_db.sh
+```
+
+No sustituir este procedimiento por comandos manuales.
+
+---
+
+# Regla Final
+
+Antes de modificar cualquier elemento del proyecto:
+
+1. Auditar.
+2. Validar.
+3. Comparar el estado esperado con el estado actual.
+4. Si todo está correcto, **no hacer nada**.
+5. Si existe una desviación, corregir **únicamente** esa desviación.
+6. No intervenir en proyectos no autorizados.
+7. No realizar acciones destructivas (merge, push, reset, deploy, eliminación o reinicio de servicios) sin la confirmación explícita del usuario.
+
+Esta versión elimina redundancias, ordena las reglas por prioridad y convierte el documento en un procedimiento operativo único, más fácil de seguir por un asistente o agente automatizado y menos propenso a comportamientos inconsistentes.

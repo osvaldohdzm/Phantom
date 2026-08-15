@@ -12,7 +12,7 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   
   const isEditor = searchParams.get('editor') === 'true';
-  const isAdminOrSOC = role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst';
+  const isAdminOrSOC = role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst' || role === 'lead';
 
   const [portalEnabled, setPortalEnabled] = useState(true);
 

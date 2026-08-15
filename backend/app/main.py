@@ -10,7 +10,7 @@ from app.db_startup import worker_startup
 from app.routers import (
     assets, findings, ingest, vault, scope, ttp, execution, evidence,
     compliance, retest, reports, docx_templates, workspaces, engagements, auth, admin,
-    asset_groups, branding,
+    asset_groups, branding, shared_missions,
 )
 
 
@@ -121,6 +121,7 @@ app.include_router(docx_templates.router, prefix="/api/v1")
 app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(engagements.router, prefix="/api/v1")
 app.include_router(asset_groups.router, prefix="/api/v1")
+app.include_router(shared_missions.router, prefix="/api/v1")
 
 
 @app.get("/health")

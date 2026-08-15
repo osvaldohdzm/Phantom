@@ -982,6 +982,7 @@ class UserRoleEnum(str, Enum):
     analyst = "analyst"
     client_viewer = "client_viewer"
     platform_admin = "platform_admin"
+    lead = "lead"
 
 
 class AdminUserRead(BaseModel):
@@ -1120,4 +1121,20 @@ class AdminDeploymentEnvRead(BaseModel):
     profile_id: str
     env_content: str
     filename: str
+
+
+class SharedMissionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    share_hash: str
+    access_code: str
+    share_url: str
+
+
+class SharedMissionUnlockBody(BaseModel):
+    access_code: str
+
+
+class SharedMissionUnlockResponse(BaseModel):
+    snapshot: dict
+
 
