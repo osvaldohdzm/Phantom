@@ -26,9 +26,10 @@ import { cn } from '@/lib/utils';
 import type { Engagement, Finding, FindingStatus } from '@/lib/secops-api';
 import { listFindings, createFinding, uploadEvidence, updateFindingStatus } from '@/lib/secops-api';
 import { SecurityTestsActivePage } from '@/app/(secops)/pruebas-seguridad/page';
-import { QuillEditor } from '@/components/QuillEditor';
+import { TiptapRichTextEditor } from '@/components/TiptapRichTextEditor';
 import { listUsersWithMemberships } from '@/lib/auth-api';
 import { VulIngestPanel } from '@/components/vul-ingest-panel';
+import { tiptapContentToPlainText } from '@/lib/tiptap-content';
 
 interface ProjectDetailsFullViewProps {
   engagement: Engagement;
@@ -986,17 +987,17 @@ ${pocText || 'Sin texto de PoC ingresado.'}
 
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono uppercase font-bold text-muted-foreground">Description</span>
-                    <p className="text-muted-foreground leading-relaxed">{selectedFinding.descripcion || 'Sin descripción ingresada.'}</p>
+                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{tiptapContentToPlainText(selectedFinding.descripcion) || 'Sin descripción ingresada.'}</p>
                   </div>
 
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono uppercase font-bold text-muted-foreground">Impact</span>
-                    <p className="text-muted-foreground leading-relaxed">{selectedFinding.explicacion_tecnica || 'Posible compromiso de confidencialidad e integridad de datos.'}</p>
+                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{tiptapContentToPlainText(selectedFinding.explicacion_tecnica) || 'Posible compromiso de confidencialidad e integridad de datos.'}</p>
                   </div>
 
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono uppercase font-bold text-muted-foreground">Solution</span>
-                    <p className="text-muted-foreground leading-relaxed">{selectedFinding.propuesta_remediacion || 'Implementar validación rigurosa en servidor.'}</p>
+                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{tiptapContentToPlainText(selectedFinding.propuesta_remediacion) || 'Implementar validación rigurosa en servidor.'}</p>
                   </div>
                 </div>
               ) : (
@@ -1356,29 +1357,29 @@ ${pocText || 'Sin texto de PoC ingresado.'}
                   </button>
                 </div>
 
-                {/* Visually toggle blocks using css hidden/block so that Quill maintains mount states & draft states */}
+                {/* Keep all editors mounted so each tab retains its Tiptap JSON draft independently */}
                 <div className={cn(activeFormTab === 'description' ? 'block' : 'hidden', "space-y-1")}>
-                  <QuillEditor
+                  <TiptapRichTextEditor
                     value={newVulnDesc}
                     onChange={setNewVulnDesc}
                     placeholder="Detalles de la vulnerabilidad encontrada, comportamiento observado..."
-                    height="120px"
+                    minHeight="120px"
                   />
                 </div>
                 <div className={cn(activeFormTab === 'impact' ? 'block' : 'hidden', "space-y-1")}>
-                  <QuillEditor
+                  <TiptapRichTextEditor
                     value={newVulnImpact}
                     onChange={setNewVulnImpact}
                     placeholder="Describe el impacto potencial en el negocio y sistemas..."
-                    height="85px"
+                    minHeight="85px"
                   />
                 </div>
                 <div className={cn(activeFormTab === 'remediation' ? 'block' : 'hidden', "space-y-1")}>
-                  <QuillEditor
+                  <TiptapRichTextEditor
                     value={newVulnRemediation}
                     onChange={setNewVulnRemediation}
                     placeholder="Describe las acciones necesarias para mitigar o solucionar..."
-                    height="85px"
+                    minHeight="85px"
                   />
                 </div>
               </div>
