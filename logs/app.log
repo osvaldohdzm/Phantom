@@ -5082,3 +5082,24 @@ Route (app)
     https://192.168.0.175:29904
     https://100.107.190.11:29904
 INFO:     100.83.47.33:0 - "GET /api/v1/auth/me HTTP/1.1" 401 Unauthorized
+INFO:     100.83.47.33:0 - "POST /api/v1/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     100.83.47.33:0 - "POST /api/v1/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     100.83.47.33:0 - "POST /api/v1/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     100.83.47.33:0 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/branding/assets/96f8a280-692c-42a6-a2c0-b198815c1859/logo.jpg HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/findings/stats/platform HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/findings?limit=500 HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/admin/users HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/findings?engagement_id=5ba1b20f-0b6d-40b5-ace8-3a1e00f62ed2&limit=500 HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/admin/users HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/findings?engagement_id=5ba1b20f-0b6d-40b5-ace8-3a1e00f62ed2&limit=500 HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
+INFO:     100.83.47.33:0 - "GET /api/v1/engagements HTTP/1.1" 200 OK
