@@ -45,21 +45,12 @@ const nextConfig: NextConfig = {
       { source: "/vul-mgmt", destination: "/vul-mgmt/dashboard", permanent: false },
     ];
   },
-  async rewrites() {
-    const backendUrl = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-    return [
-      {
-        source: "/api/secops-health",
-        destination: `${backendUrl}/health`,
-      },
-      // Ingest multipart va a app/api/secops/ingest/[...path]/route.ts (sin límite 10 MB).
-      // El resto de /api/secops/* usa app/api/secops/[...path]/route.ts (proxy en runtime).
-      {
-        source: "/api/secops/:path((?!ingest(?:/|$)).*)",
-        destination: `${backendUrl}/api/v1/:path*`,
-      },
-    ];
-  },
+  // No uses rewrites afterFiles hacia API_PROXY_URL aquí:
+  // se hornean en build (p.ej. :8000) y en Next ganan a /api/secops/[...path],
+  // rompiendo el login en prod (404 HTML). El proxy runtime vive en:
+  //   src/app/api/secops/[...path]/route.ts
+  //   src/app/api/secops-health/route.ts
+  //   src/app/api/secops/ingest/[...path]/route.ts
 };
 
 export default nextConfig;
