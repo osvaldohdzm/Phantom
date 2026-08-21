@@ -47,6 +47,18 @@ import {
 import { SeverityBadge } from '@/components/severity-badge';
 import { useAuth } from '@/contexts/auth-context';
 import { pickLogoUrl } from '@/lib/tenant-branding';
+import {
+  BAXTER_HUB_CATALOG,
+  advanceCertificationStage,
+  buildCertificationTicket,
+  createDummyBaxterHubTickets,
+  getCertificationProgress,
+  isBaxterHubCertificationService,
+  mergeBaxterHubCatalog,
+  resolveWorkflowId,
+  type CertificationStageInstance,
+  type TicketUpdate,
+} from '@/lib/portal/baxter-hub-certification';
 
 interface ClientTicket {
   id: string;
@@ -56,6 +68,11 @@ interface ClientTicket {
   status: 'PENDIENTE' | 'EN PROGRESO' | 'APROBADO' | 'COMPLETADO';
   createdAt: string;
   description: string;
+  /** Baxter HUB multi-stage certification (ServiceNow-style) */
+  workflowId?: string;
+  currentStageKey?: string | null;
+  stages?: CertificationStageInstance[];
+  updates?: TicketUpdate[];
 }
 
 interface ServiceCatalogItem {
@@ -307,51 +324,55 @@ export default function PortalPage() {
   const [loadingLogs, setLoadingLogs] = useState(false);
 
 
-  // Service Catalog state (editable by SOC/Admin)
-  const [services, setServices] = useState<ServiceCatalogItem[]>([
-    {
-      id: 'baxter_pki_certificate_request',
-      name: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
-      desc: 'Solicita y genera un certificado SSL/TLS firmado por la CA corporativa mediante certreq en el PKI Worker.',
-      defaultUrgency: 'High',
-    },
-    {
-      id: '1',
-      name: 'Escaneo de Puertos Abiertos (Nmap)',
-      desc: 'Descubrimiento ultrarrápido de puertos TCP abiertos mediante escaneo SYN ligero de Nmap.',
-      defaultUrgency: 'Medium',
-    },
-    {
-      id: '2',
-      name: 'Escaneo de Puertos y Servicios (Nmap)',
-      desc: 'Puertos abiertos con detección ligera de versiones de servicios (sV + version-light).',
-      defaultUrgency: 'Medium',
-    },
-    {
-      id: '3',
-      name: 'Escaneo Básico de Vulnerabilidades Comunes (Nmap NSE)',
-      desc: 'Detección de puertos y servicios con scripts NSE predeterminados y seguros.',
-      defaultUrgency: 'High',
-    },
-    {
-      id: '4',
-      name: 'DNS Security Audit (DNSRecon / Sublist3r)',
-      desc: 'Subdomain enumeration and DNS configuration security audit.',
-      defaultUrgency: 'Medium',
-    },
-    {
-      id: 'dns_flamethrower_assessment',
-      name: 'DNS Functional & Performance Assessment (Flamethrower)',
-      desc: 'Analyze DNS functionality, latency, protocol support, throughput and resilience using Flamethrower (DNS-OARC).',
-      defaultUrgency: 'Medium',
-    },
-    {
-      id: '5',
-      name: 'DDoS Stress Simulation (Flamethrower)',
-      desc: 'Controlled denial-of-service simulation to validate WAF mitigation and DNS resilience with Flamethrower (DNS-OARC).',
-      defaultUrgency: 'High',
-    },
-  ]);
+  // Service Catalog state (editable by SOC/Admin) — Baxter HUB Checks first-class
+  const [services, setServices] = useState<ServiceCatalogItem[]>(() =>
+    mergeBaxterHubCatalog([
+      {
+        id: 'baxter_pki_certificate_request',
+        name: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
+        desc: 'Solicita y genera un certificado SSL/TLS firmado por la CA corporativa mediante certreq en el PKI Worker.',
+        defaultUrgency: 'High',
+      },
+      ...BAXTER_HUB_CATALOG,
+      {
+        id: '1',
+        name: 'Escaneo de Puertos Abiertos (Nmap)',
+        desc: 'Descubrimiento ultrarrápido de puertos TCP abiertos mediante escaneo SYN ligero de Nmap.',
+        defaultUrgency: 'Medium',
+      },
+      {
+        id: '2',
+        name: 'Escaneo de Puertos y Servicios (Nmap)',
+        desc: 'Puertos abiertos con detección ligera de versiones de servicios (sV + version-light).',
+        defaultUrgency: 'Medium',
+      },
+      {
+        id: '3',
+        name: 'Escaneo Básico de Vulnerabilidades Comunes (Nmap NSE)',
+        desc: 'Detección de puertos y servicios con scripts NSE predeterminados y seguros.',
+        defaultUrgency: 'High',
+      },
+      {
+        id: '4',
+        name: 'DNS Security Audit (DNSRecon / Sublist3r)',
+        desc: 'Subdomain enumeration and DNS configuration security audit.',
+        defaultUrgency: 'Medium',
+      },
+      {
+        id: 'dns_flamethrower_assessment',
+        name: 'DNS Functional & Performance Assessment (Flamethrower)',
+        desc: 'Analyze DNS functionality, latency, protocol support, throughput and resilience using Flamethrower (DNS-OARC).',
+        defaultUrgency: 'Medium',
+      },
+      {
+        id: '5',
+        name: 'DDoS Stress Simulation (Flamethrower)',
+        desc: 'Controlled denial-of-service simulation to validate WAF mitigation and DNS resilience with Flamethrower (DNS-OARC).',
+        defaultUrgency: 'High',
+      },
+    ]),
+  );
+  const [stageAdvanceNote, setStageAdvanceNote] = useState('');
   const [newServiceName, setNewServiceName] = useState('');
   const [newServiceDesc, setNewServiceDesc] = useState('');
   const [newServiceUrgency, setNewServiceUrgency] = useState<'Low' | 'Medium' | 'High'>('Medium');
@@ -486,7 +507,9 @@ export default function PortalPage() {
         }
       } else {
         // Initialize with default fallback tickets if no history exists yet
+        const hubDummies = createDummyBaxterHubTickets();
         setTickets([
+          ...hubDummies,
           {
             id: 'TK-9281',
             type: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
@@ -681,6 +704,42 @@ export default function PortalPage() {
 
     setTargetError(null);
     const ticketId = `TK-${Math.floor(1000 + Math.random() * 9000)}`;
+    const createdAt = new Date().toISOString().split('T')[0];
+    const isHubCertification = isBaxterHubCertificationService(ticketType);
+    const selectedService = services.find((s) => s.name === ticketType);
+
+    if (isHubCertification) {
+      const workflowId =
+        resolveWorkflowId(selectedService?.id || ticketType) ||
+        resolveWorkflowId(ticketType);
+      if (!workflowId) {
+        setTargetError('No se encontró la plantilla de certificación Baxter HUB para este servicio.');
+        return;
+      }
+
+      const certTicket = buildCertificationTicket({
+        id: ticketId,
+        serviceId: workflowId,
+        serviceName: ticketType,
+        target: targetIpOrHost,
+        urgency: ticketUrgency,
+        description: ticketDesc.trim() || 'Certificación Baxter Innovation HUB — solicitud de cliente.',
+        createdAt,
+        actor: user?.email || 'client',
+      });
+
+      setTickets((prev) => [certTicket, ...prev]);
+      setTicketTarget('');
+      setTicketDesc('');
+      setExpandedTicketId(ticketId);
+      setClientScanLogs([
+        `[+] Baxter HUB certification ticket ${ticketId} created`,
+        `[+] Workflow: ${ticketType}`,
+        `[+] Target: ${targetIpOrHost}`,
+        `[+] Stage 1 in progress — awaiting SOC / automation advance`,
+      ]);
+      return;
+    }
 
     const newTicket: ClientTicket = {
       id: ticketId,
@@ -688,7 +747,7 @@ export default function PortalPage() {
       target: targetIpOrHost,
       urgency: ticketUrgency,
       status: isAutomatedExecution ? 'EN PROGRESO' : 'PENDIENTE',
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt,
       description: ticketDesc.trim() || 'No additional details provided.',
     };
 
@@ -1296,6 +1355,35 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
     setTickets(tickets.map((t) => (t.id === ticketId ? { ...t, status } : t)));
   };
 
+  const handleAdvanceCertificationStage = (ticketId: string) => {
+    setTickets((prev) =>
+      prev.map((t) => {
+        if (t.id !== ticketId || !t.stages?.length || !t.workflowId) return t;
+        const advanced = advanceCertificationStage(
+          {
+            id: t.id,
+            type: t.type,
+            target: t.target,
+            urgency: t.urgency,
+            status: t.status,
+            createdAt: t.createdAt,
+            description: t.description,
+            workflowId: t.workflowId,
+            currentStageKey: t.currentStageKey ?? null,
+            stages: t.stages,
+            updates: t.updates ?? [],
+          },
+          {
+            note: stageAdvanceNote.trim() || 'Avance de etapa registrado por SOC',
+            actor: user?.email || 'soc-editor',
+          },
+        );
+        return { ...t, ...advanced };
+      }),
+    );
+    setStageAdvanceNote('');
+  };
+
   // Editor: Delete ticket
   const handleDeleteTicket = (ticketId: string) => {
     if (confirm('¿Deseas eliminar este ticket?')) {
@@ -1791,7 +1879,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
               Client Security Portal
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Submit service requests, monitor status, and access your security scan reports — all in one place.
+              Solicita servicios, sigue certificaciones Baxter HUB por etapas (tipo ServiceNow) y descarga reportes — todo en un solo lugar.
             </p>
           </div>
 
@@ -1832,6 +1920,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           <p className="text-[10px] text-muted-foreground leading-snug">{svc.desc}</p>
                         ) : null;
                       })()}
+                      {isBaxterHubCertificationService(ticketType) && (
+                        <p className="text-[10px] text-sky-700 dark:text-sky-300 leading-snug border border-sky-500/20 bg-sky-500/5 rounded-md px-2 py-1.5">
+                          Flujo multi-etapa tipo ServiceNow: verás el progreso (intake → puertos → rutas → DAST → pentest → sign-off) en tu historial.
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -2295,6 +2388,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                     tickets.map((t) => {
                       const result = ticketResults[t.id];
                       const isExpanded = expandedTicketId === t.id;
+                      const isCert = Boolean(t.stages?.length && t.workflowId);
+                      const progress = isCert ? getCertificationProgress({ stages: t.stages! }) : null;
                       return (
                         <div key={t.id} className="rounded-xl border border-border bg-background/60 shadow-sm hover:shadow-md hover:border-primary/20 transition-all overflow-hidden">
                           {/* Row header */}
@@ -2306,6 +2401,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-mono text-xs font-bold text-cyan-500">{t.id}</span>
                                 <span className="font-semibold text-sm text-foreground">{t.type}</span>
+                                {isCert && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-300 font-bold">
+                                    <Layers className="size-2.5" /> HUB CERT
+                                  </span>
+                                )}
                                 {result?.pdfUrl && (
                                   <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-500 dark:text-cyan-400 font-bold">
                                     <FileText className="size-2.5" /> PDF READY
@@ -2316,7 +2416,25 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground font-mono">Target: <span className="text-foreground font-medium">{t.target}</span></p>
-                              <span className="text-[10px] text-zinc-500">Submitted: {t.createdAt}{t.description ? ` · ${t.description.slice(0, 40)}${t.description.length > 40 ? '…' : ''}` : ''}</span>
+                              {progress ? (
+                                <div className="pt-1 space-y-1 max-w-md">
+                                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                    <span>{progress.currentLabel}</span>
+                                    <span className="font-mono font-bold text-foreground">{progress.percent}%</span>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-sky-500 transition-all"
+                                      style={{ width: `${progress.percent}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-zinc-500">
+                                    Etapas {progress.completed}/{progress.total} · Submitted: {t.createdAt}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-zinc-500">Submitted: {t.createdAt}{t.description ? ` · ${t.description.slice(0, 40)}${t.description.length > 40 ? '…' : ''}` : ''}</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
@@ -2329,11 +2447,89 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 : t.status === 'EN PROGRESO' ? 'border-violet-500/20 bg-violet-500/10 text-violet-400'
                                 : 'border-yellow-500/20 bg-yellow-500/10 text-yellow-500'
                               }`}>
-                                {t.status === 'COMPLETADO' ? 'COMPLETED' : t.status === 'EN PROGRESO' ? 'SCANNING' : 'PENDING'}
+                                {t.status === 'COMPLETADO' ? 'COMPLETED' : t.status === 'EN PROGRESO' ? (isCert ? 'IN PROGRESS' : 'SCANNING') : 'PENDING'}
                               </span>
                               <ChevronRight className={`size-3.5 text-muted-foreground transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
                             </div>
                           </div>
+
+                          {isExpanded && isCert && t.stages && (
+                            <div className="border-t border-border/60 bg-sky-50/40 dark:bg-sky-950/20 px-4 py-4 space-y-4 animate-fade-in">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
+                                    BAXTER INNOVATION HUB
+                                  </span>
+                                  <span className="text-xs font-bold text-foreground">Certification pipeline</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-sky-700 dark:text-sky-300">
+                                  {progress?.completed}/{progress?.total} stages · {progress?.percent}%
+                                </span>
+                              </div>
+
+                              <ol className="space-y-2">
+                                {t.stages.map((stage, idx) => (
+                                  <li
+                                    key={stage.key}
+                                    className={`rounded-lg border px-3 py-2.5 text-left ${
+                                      stage.status === 'completed'
+                                        ? 'border-emerald-500/25 bg-emerald-500/5'
+                                        : stage.status === 'in_progress'
+                                          ? 'border-sky-500/40 bg-sky-500/10'
+                                          : 'border-border/60 bg-background/50'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0 space-y-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-[10px] font-mono text-muted-foreground">{String(idx + 1).padStart(2, '0')}</span>
+                                          <span className="text-xs font-semibold text-foreground">{stage.label}</span>
+                                          <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground">
+                                            {stage.mode}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground leading-snug">{stage.description}</p>
+                                        {stage.standardRef ? (
+                                          <p className="text-[9px] font-mono text-sky-700/80 dark:text-sky-400/80">{stage.standardRef}</p>
+                                        ) : null}
+                                        {stage.note ? (
+                                          <p className="text-[10px] text-foreground/80 pt-1">Nota: {stage.note}</p>
+                                        ) : null}
+                                      </div>
+                                      <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                                        stage.status === 'completed'
+                                          ? 'border-emerald-500/30 text-emerald-600'
+                                          : stage.status === 'in_progress'
+                                            ? 'border-sky-500/30 text-sky-600'
+                                            : 'border-border text-muted-foreground'
+                                      }`}>
+                                        {stage.status === 'in_progress' ? 'current' : stage.status}
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+
+                              {t.updates && t.updates.length > 0 && (
+                                <div className="rounded-lg border border-border/70 bg-background/70 p-3 space-y-2">
+                                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                                    <Clock className="size-3" /> Activity feed
+                                  </div>
+                                  <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                                    {[...t.updates].slice(-8).reverse().map((u) => (
+                                      <li key={u.id} className="text-[10px] text-muted-foreground">
+                                        <span className="font-mono text-foreground/80">{u.at}</span>
+                                        {' · '}
+                                        <span className="font-semibold text-foreground">{u.actor}</span>
+                                        {' — '}
+                                        {u.message}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* Expanded: scan output + PDF download */}
                           {isExpanded && result && (
@@ -2507,14 +2703,14 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             </div>
                           )}
 
-                          {isExpanded && !result && t.status === 'PENDIENTE' && (
+                          {isExpanded && !result && t.status === 'PENDIENTE' && !t.stages?.length && (
                             <div className="border-t border-border/50 px-4 py-4 bg-amber-50 dark:bg-amber-950/10">
                               <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">
                                 Queued for manual review by our security team. A PDF report will be delivered once the assessment is complete.
                               </p>
                             </div>
                           )}
-                          {isExpanded && !result && t.status === 'EN PROGRESO' && (
+                          {isExpanded && !result && t.status === 'EN PROGRESO' && !t.stages?.length && (
                             <div className="border-t border-border/50 px-4 py-4 bg-violet-50 dark:bg-violet-950/10 flex items-center gap-2">
                               <Loader2 className="size-3.5 text-violet-600 dark:text-violet-400 animate-spin" />
                               <p className="text-xs text-violet-700 dark:text-violet-300">Scan running — results and PDF report will appear here on completion.</p>
@@ -2770,20 +2966,46 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
           {activeEditorTab === 'tickets' && (
             <Card className="border-border/60 bg-card/60">
               <CardHeader>
-                <CardTitle className="text-base flex items-center justify-between">
+                <CardTitle className="text-base flex items-center justify-between gap-3 flex-wrap">
                   <span>Administración de Solicitudes de Clientes</span>
                   <span className="text-xs font-normal text-muted-foreground">
-                    Modifica el estado de los tickets para notificar a los clientes.
+                    Actualiza estados y avanza etapas de certificación Baxter HUB (estilo ServiceNow).
                   </span>
                 </CardTitle>
+                <div className="pt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <Input
+                    value={stageAdvanceNote}
+                    onChange={(e) => setStageAdvanceNote(e.target.value)}
+                    placeholder="Nota de avance de etapa (opcional) — visible en el activity feed del cliente"
+                    className="text-xs h-9"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 h-9 text-xs"
+                    onClick={() => {
+                      const dummies = createDummyBaxterHubTickets();
+                      setTickets((prev) => {
+                        const withoutHubDemo = prev.filter(
+                          (t) => t.id !== 'TK-HUB-2401' && t.id !== 'TK-HUB-2402',
+                        );
+                        return [...dummies, ...withoutHubDemo];
+                      });
+                    }}
+                  >
+                    Cargar demos Baxter HUB
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse min-w-[700px]">
+                <table className="w-full text-sm border-collapse min-w-[860px]">
                   <thead>
                     <tr className="border-b border-border/80 text-left text-xs text-muted-foreground">
                       <th className="py-2.5 pr-3 font-semibold">ID</th>
                       <th className="py-2.5 pr-3 font-semibold">Servicio Solicitado</th>
                       <th className="py-2.5 pr-3 font-semibold">Alcance/Target</th>
+                      <th className="py-2.5 pr-3 font-semibold">Progreso</th>
                       <th className="py-2.5 pr-3 font-semibold">Urgencia</th>
                       <th className="py-2.5 pr-3 font-semibold">Estado Actual</th>
                       <th className="py-2.5 font-semibold text-right">Acciones</th>
@@ -2792,12 +3014,16 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   <tbody>
                     {tickets.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-muted-foreground text-xs italic">
+                        <td colSpan={7} className="py-6 text-center text-muted-foreground text-xs italic">
                           Sin tickets en el sistema.
                         </td>
                       </tr>
                     ) : (
-                      tickets.map((t) => (
+                      tickets.map((t) => {
+                        const progress = t.stages?.length
+                          ? getCertificationProgress({ stages: t.stages })
+                          : null;
+                        return (
                         <tr key={t.id} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                           <td className="py-3 pr-3 font-mono font-bold text-cyan-500">{t.id}</td>
                           <td className="py-3 pr-3">
@@ -2805,6 +3031,21 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             <span className="text-[10px] text-zinc-500 block">{t.description}</span>
                           </td>
                           <td className="py-3 pr-3 font-mono text-xs text-muted-foreground">{t.target}</td>
+                          <td className="py-3 pr-3 min-w-[140px]">
+                            {progress ? (
+                              <div className="space-y-1">
+                                <div className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                                  {progress.currentLabel}
+                                </div>
+                                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                  <div className="h-full bg-sky-500" style={{ width: `${progress.percent}%` }} />
+                                </div>
+                                <div className="text-[10px] font-mono">{progress.percent}%</div>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="py-3 pr-3">
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
                               t.urgency === 'High' ? 'border-rose-500/20 bg-rose-500/10 text-rose-500' : 'border-slate-500/20 bg-slate-500/10 text-zinc-400'
@@ -2825,17 +3066,30 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             </select>
                           </td>
                           <td className="py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTicket(t.id)}
-                              className="text-rose-500 hover:bg-rose-500/10 p-1.5 rounded transition-colors"
-                              title="Eliminar ticket"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
+                            <div className="inline-flex items-center gap-1.5">
+                              {t.stages?.length && t.status !== 'COMPLETADO' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdvanceCertificationStage(t.id)}
+                                  className="text-sky-600 hover:bg-sky-500/10 px-2 py-1.5 rounded transition-colors text-[10px] font-bold border border-sky-500/30"
+                                  title="Avanzar etapa de certificación"
+                                >
+                                  Avanzar etapa
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTicket(t.id)}
+                                className="text-rose-500 hover:bg-rose-500/10 p-1.5 rounded transition-colors"
+                                title="Eliminar ticket"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
