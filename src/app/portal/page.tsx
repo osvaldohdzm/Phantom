@@ -71,6 +71,14 @@ import {
   buildPkiVerifyJumpHostScript,
   resolvePkiWorkerConfig,
 } from '@/lib/portal/baxter-hub-pki-script';
+import {
+  buildPkiElapsedHeartbeat,
+  buildPkiWaitStageLine,
+  detectPortalLiveJobKind,
+  portalLiveJobCopy,
+  sanitizePkiRemoteLogLines,
+  type PortalLiveJobKind,
+} from '@/lib/portal/portal-live-job';
 
 interface ClientTicket {
   id: string;
@@ -199,6 +207,8 @@ export default function PortalPage() {
   const [clientScanLogs, setClientScanLogs] = useState<string[]>([]);
   const [isScanningLive, setIsScanningLive] = useState(false);
   const [scanProgress, setScanProgress] = useState(0); // 0-100 for progress bar
+  const [liveJobKind, setLiveJobKind] = useState<PortalLiveJobKind | null>(null);
+  const [scanElapsedSec, setScanElapsedSec] = useState(0);
   // Per-ticket scan results (ticketId -> { output, logs, pdfUrl, zipBase64 })
   const [ticketResults, setTicketResults] = useState<Record<string, { output: string; logs: string[]; pdfUrl?: string; zipBase64?: string }>>({});
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
@@ -676,6 +686,7 @@ export default function PortalPage() {
   const effectiveDefaultAgent = activeSshAgents.find((a) => a.id === defaultAgentId)
     ?? (activeSshAgents.length > 0 ? activeSshAgents[0] : null);
   const isAutomatedExecution = effectiveDefaultAgent !== null;
+  const liveCopy = portalLiveJobCopy(liveJobKind ?? detectPortalLiveJobKind(ticketType));
 
   // Form submission handler for tickets
   const handleSubmitTicket = async (e: React.FormEvent) => {
@@ -768,18 +779,24 @@ export default function PortalPage() {
     // Trigger live execution using the SOC-configured default agent
     if (isAutomatedExecution && effectiveDefaultAgent) {
       const agent = effectiveDefaultAgent;
+      const jobKind = isPkiRequest ? 'pki' : isFlameServiceType(ticketType) ? 'flame' : detectPortalLiveJobKind(ticketType);
+      setLiveJobKind(jobKind);
       setIsScanningLive(true);
       setScanProgress(0);
+      setScanElapsedSec(0);
 
       const dynamicPassword = isPkiRequest ? generateBaxterPassword() : '';
       const serverName = targetIpOrHost.split('.')[0] || 'valuepack';
 
       const initLogs = isPkiRequest ? [
-        `[+] Automated PKI request initiated — Ticket ${ticketId}`,
-        `[+] Target FQDN: ${targetIpOrHost}`,
-        `[+] Contraseña temporal del PFX asignada: ${dynamicPassword}`,
-        `[+] Routing via agent: ${agent.name} (${agent.host}:${agent.port})`,
-        `[+] Opening SSH session...`,
+        `[+] Solicitud PKI (TLS/SSL) iniciada — Ticket ${ticketId}`,
+        `[+] CN/FQDN: ${targetIpOrHost}`,
+        `[+] SAN IP: ${pkiIp.trim() || '(ninguna)'}`,
+        `[+] Plantilla ADCS: ${pkiTemplate}`,
+        `[+] Contraseña temporal del PFX: ${dynamicPassword}`,
+        `[+] Ruta: Portal → SSH ${agent.name} (${agent.host}:${agent.port}) → WinRM PKI Worker → Generate-BaxterHubCertificate.ps1`,
+        `[+] Esto NO es Nmap; el texto de abajo son pasos esperados mientras SSH espera a que ADCS termine.`,
+        `[+] Abriendo sesión SSH...`,
       ] : [
         `[+] Automated Nmap scan initiated — Ticket ${ticketId}`,
         `[+] Target: ${targetIpOrHost}`,
@@ -788,12 +805,37 @@ export default function PortalPage() {
       ];
       setClientScanLogs(initLogs);
 
-      // Animated progress bar simulation
+      // Progress bar is estimated: ssh-run only returns when the remote command finishes.
       let prog = 0;
+      let nextPkiStage = 0;
+      let lastPkiHeartbeatSec = 0;
+      const startedAt = Date.now();
+      const pkiStageCtx = {
+        fqdn: targetIpOrHost,
+        ip: pkiIp,
+        template: pkiTemplate,
+        jumpHost: `${agent.host}:${agent.port}`,
+        winHost: resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')).host,
+      };
       const progressInterval = setInterval(() => {
-        prog = Math.min(prog + Math.random() * 8, 88);
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        setScanElapsedSec(elapsed);
+        const cap = isPkiRequest ? 92 : 88;
+        const step = isPkiRequest ? 2.2 : 8;
+        prog = Math.min(prog + Math.random() * step, cap);
         setScanProgress(Math.floor(prog));
-      }, 600);
+        if (!isPkiRequest) return;
+        const stage = buildPkiWaitStageLine(nextPkiStage, pkiStageCtx);
+        if (stage) {
+          nextPkiStage += 1;
+          setClientScanLogs((prev) => [...prev, stage]);
+          return;
+        }
+        if (elapsed - lastPkiHeartbeatSec >= 12) {
+          lastPkiHeartbeatSec = elapsed;
+          setClientScanLogs((prev) => [...prev, buildPkiElapsedHeartbeat(elapsed)]);
+        }
+      }, isPkiRequest ? 3500 : 600);
 
       // Determine command based on selected service type
       let nmapCmd = `nmap -F -sV --max-rtt-timeout 350ms --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
@@ -816,7 +858,7 @@ export default function PortalPage() {
         nmapCmd = cmd;
          } else if (isPkiRequest) {
         const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')); 
-        runTimeout = 180;
+        runTimeout = 300;
 
         const psScript = buildPkiIssueJumpHostScript({
           winHost: pkiConfig.host,
@@ -863,19 +905,15 @@ export default function PortalPage() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Execution failed');
 
-        const completedLogs = isPkiRequest ? [
-          ...initLogs,
-          `[+] SSH authenticated. Dispatching Generate-BaxterHubCertificate.ps1...`,
-          `[+] Processing response from Windows PKI Worker...`,
-          `[+] Certificate package extracted and formatted.`,
-          `[+] Contraseña del PFX: ${dynamicPassword}`,
-        ] : [
+        const nmapCompletedLogs = [
           ...initLogs,
           `[+] SSH authenticated. Dispatching: ${nmapCmd}`,
           `[+] Parsing assessment stdout...`,
           `[+] Assessment complete. Generating report.`,
         ];
-        setClientScanLogs(completedLogs);
+        if (!isPkiRequest) {
+          setClientScanLogs(nmapCompletedLogs);
+        }
 
         let stdout = '';
         let zipBase64 = '';
@@ -984,6 +1022,19 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         clearInterval(progressInterval);
         setScanProgress(100);
 
+        const pkiRemoteLines = isPkiRequest ? sanitizePkiRemoteLogLines(stdout.split('\n')) : [];
+        const completedLogs = isPkiRequest
+          ? [
+              ...initLogs,
+              `[+] SSH autenticado. Salida real del jump host / PKI Worker:`,
+              ...pkiRemoteLines.slice(0, 160),
+              zipBase64
+                ? `[OK] Package ZIP recibido. Contraseña PFX: ${dynamicPassword}`
+                : `[!] No se recibió Package_*.zip (ZIP_BASE64). Revisa el error de Generate-BaxterHubCertificate.ps1 arriba.`,
+            ]
+          : nmapCompletedLogs;
+        setClientScanLogs(completedLogs);
+
         // Persist scan result keyed by ticket ID so client can revisit
         if (isPkiRequest && zipBase64) {
           setTicketResults((prev) => ({
@@ -998,7 +1049,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         }
 
         setTickets((prev) =>
-          prev.map((t) => (t.id === ticketId ? { ...t, status: 'COMPLETADO' } : t))
+          prev.map((t) => (t.id === ticketId ? { ...t, status: zipBase64 || !isPkiRequest ? 'COMPLETADO' : 'PENDIENTE' } : t))
         );
 
         if (selectedId && !isPkiRequest) {
@@ -1017,9 +1068,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         clearInterval(progressInterval);
         setScanProgress(0);
         const errLogs = [
-          ...clientScanLogs,
+          ...initLogs,
           `[!] ERROR: ${err.message}`,
-          `[!] Scan halted. Ticket marked as pending for manual processing.`,
+          isPkiRequest
+            ? `[!] Emisión PKI interrumpida (SSH/WinRM/ADCS). El ticket queda pendiente.`
+            : `[!] Scan halted. Ticket marked as pending for manual processing.`,
         ];
         setClientScanLogs(errLogs);
         setTicketResults((prev) => ({
@@ -1031,6 +1084,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         );
       } finally {
         setIsScanningLive(false);
+        setLiveJobKind(null);
       }
     }
   };
@@ -2090,7 +2144,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       disabled={isScanningLive}
                     >
                       {isScanningLive ? (
-                        <><Loader2 className="size-4 mr-2 animate-spin" />Simulation in progress...</>
+                        <><Loader2 className="size-4 mr-2 animate-spin" />{liveCopy.submitBusy}</>
                       ) : (
                         <><Play className="size-4 mr-2" />{isAutomatedExecution ? (isPkiServiceType(ticketType) ? 'Submit & Generate Certificate' : isFlameServiceType(ticketType) ? 'Submit & Run Flamethrower Stress Test' : 'Submit & Run Nmap Scan') : 'Submit Request'}</>
                       )}
@@ -2109,15 +2163,17 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-violet-900 dark:text-violet-300 flex items-center gap-2">
                       <Loader2 className="size-4 text-violet-600 dark:text-violet-400 animate-spin" />
-                      Nmap Scan Running
+                      {liveCopy.title}
                     </CardTitle>
-                    <CardDescription className="text-xs text-violet-700/80 dark:text-muted-foreground">Executing delegated command on SSH agent host — please wait.</CardDescription>
+                    <CardDescription className="text-xs text-violet-700/80 dark:text-muted-foreground">{liveCopy.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[10px] text-violet-800 dark:text-muted-foreground">
-                        <span>Progress</span>
-                        <span className="font-mono text-violet-900 dark:text-violet-300 font-bold">{scanProgress}%</span>
+                        <span>{liveJobKind === 'pki' ? 'Progreso estimado (ADCS no reporta %)' : 'Progress'}</span>
+                        <span className="font-mono text-violet-900 dark:text-violet-300 font-bold">
+                          {scanProgress}%{scanElapsedSec > 0 ? ` · ${scanElapsedSec}s` : ''}
+                        </span>
                       </div>
                       <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                         <div
@@ -2126,11 +2182,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         />
                       </div>
                     </div>
-                    <div className="font-mono text-[10px] leading-relaxed bg-zinc-950 p-3 rounded-lg border border-zinc-850 dark:border-violet-900/30 max-h-32 overflow-y-auto space-y-0.5">
+                    <div className="font-mono text-[10px] leading-relaxed bg-zinc-950 p-3 rounded-lg border border-zinc-850 dark:border-violet-900/30 max-h-64 overflow-y-auto space-y-0.5">
                       {clientScanLogs.map((log, i) => (
-                        <div key={i} className={log.startsWith('[!]') ? 'text-rose-400' : 'text-emerald-400'}>{log}</div>
+                        <div key={i} className={log.startsWith('[!]') ? 'text-rose-400' : log.startsWith('[~]') ? 'text-amber-300' : 'text-emerald-400'}>{log}</div>
                       ))}
-                      <div className="text-amber-300 animate-pulse">[+] Awaiting Nmap stdout...</div>
+                      <div className="text-amber-300 animate-pulse">{liveCopy.awaiting}</div>
                     </div>
                   </CardContent>
                 </Card>
