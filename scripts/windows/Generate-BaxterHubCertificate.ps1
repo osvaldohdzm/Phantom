@@ -15,7 +15,9 @@
 
     Default CA is the local issuing CA on this worker (USDFHUBCAI), NOT ca01.
     ca01.hub.baxter.com\HUB-ISSUING-CA returns RPC 0x800706ba from this host.
-    The enrollment-policy GUI name "Hub Issuing CA (Kerberos)" is NOT a valid -config string.
+    The local CA common name is "Hub Issuing CA" (certreq -config). The enrollment-policy
+    GUI suffix "(Kerberos)" is stripped and must not be sent to certreq.
+    HUB-ISSUING-CA is ca01's CA name and returns 0x80070057 on this host.
 
 .PARAMETER SubjectName
     The full Subject Distinguished Name (DN) string. Example: "CN=baxterhub.local, OU=IT, O=BaxterHub, L=City, S=State, C=US".
@@ -116,13 +118,98 @@ Param(
     [switch]$KeepInStore,
 
     [Parameter(Mandatory=$false, HelpMessage="CA config for certreq -config (ComputerName\\CAName). Not the GUI enrollment-policy display name.")]
-    [string]$CAServer = "USDFHUBCAI.hub.baxter.com\HUB-ISSUING-CA",
+    [string]$CAServer = "USDFHUBCAI.hub.baxter.com\Hub Issuing CA",
 
     [Parameter(Mandatory=$false, HelpMessage="Requester Name/Department")]
     [string]$Requester = "Horacio Arellano / Nathan F. Walker (Digital Health)"
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-SanitizedCaCommonName {
+    Param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $null }
+    # GUI enrollment-policy suffixes: "Hub Issuing CA (Kerberos)" -> "Hub Issuing CA"
+    $clean = $Name.Trim() -replace '\s*\([^)]*\)\s*$', ''
+    $clean = $clean.Trim()
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+    return $clean
+}
+
+function Get-CaNameFromConfig {
+    Param([string]$Config)
+    if ([string]::IsNullOrWhiteSpace($Config)) { return $null }
+    $idx = $Config.LastIndexOf('\')
+    if ($idx -ge 0 -and $idx -lt ($Config.Length - 1)) {
+        return $Config.Substring($idx + 1)
+    }
+    return $Config
+}
+
+function Test-IsRemoteCa01Config {
+    Param([string]$Config)
+    return ($Config -match '(?i)^ca01[\.\\]')
+}
+
+function Test-IsCa01CommonName {
+    Param([string]$Name)
+    # ca01's CA common name — invalid on USDFHUBCAI (0x80070057)
+    return ($Name -match '(?i)^HUB-ISSUING-CA$')
+}
+
+function Get-LocalAdcsCaCommonNames {
+    $names = New-Object 'System.Collections.Generic.List[string]'
+
+    function Add-CaName([string]$Name) {
+        $clean = Get-SanitizedCaCommonName $Name
+        if ([string]::IsNullOrWhiteSpace($clean)) { return }
+        if (Test-IsCa01CommonName $clean) { return }
+        if (-not $names.Contains($clean)) {
+            [void]$names.Add($clean)
+        }
+    }
+
+    $cfgPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+    if (Test-Path $cfgPath) {
+        try {
+            $key = Get-Item -Path $cfgPath -ErrorAction Stop
+            Add-CaName ([string]$key.GetValue('Active'))
+            Add-CaName ([string]$key.GetValue(''))
+        } catch {}
+        Get-ChildItem -Path $cfgPath -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-CaName $_.PSChildName
+            try {
+                Add-CaName ([string](Get-ItemProperty -Path $_.PSPath -ErrorAction Stop).CommonName)
+            } catch {}
+        }
+    }
+
+    Add-CaName 'Hub Issuing CA'
+    return $names
+}
+
+function Get-LocalCaHosts {
+    $hosts = New-Object 'System.Collections.Generic.List[string]'
+
+    function Add-HostName([string]$HostName) {
+        if ([string]::IsNullOrWhiteSpace($HostName)) { return }
+        if (-not $hosts.Contains($HostName)) {
+            [void]$hosts.Add($HostName)
+        }
+    }
+
+    try {
+        Add-HostName ([System.Net.Dns]::GetHostEntry($env:COMPUTERNAME).HostName)
+    } catch {}
+    Add-HostName $env:COMPUTERNAME
+    if (-not [string]::IsNullOrWhiteSpace($env:USERDNSDOMAIN)) {
+        Add-HostName "$($env:COMPUTERNAME).$($env:USERDNSDOMAIN)"
+    }
+    Add-HostName 'USDFHUBCAI.hub.baxter.com'
+    Add-HostName 'USDFHUBCAI'
+    Add-HostName '.'
+    return $hosts
+}
 
 function Get-CaConfigCandidates {
     Param(
@@ -134,32 +221,68 @@ function Get-CaConfigCandidates {
 
     function Add-CaConfig([string]$Config) {
         if ([string]::IsNullOrWhiteSpace($Config)) { return }
-        # GUI enrollment-policy names like "Hub Issuing CA (Kerberos)" are invalid for certreq -config
-        if ($Config -match '[()]') { return }
-        if (-not $list.Contains($Config)) {
-            [void]$list.Add($Config)
+        if (Test-IsRemoteCa01Config $Config) { return }
+        $caName = Get-SanitizedCaCommonName (Get-CaNameFromConfig $Config)
+        if ([string]::IsNullOrWhiteSpace($caName)) { return }
+        if (Test-IsCa01CommonName $caName) { return }
+        # Parentheses mean a GUI display name leaked through — not a valid -config
+        if ($caName -match '[()]') { return }
+        $hostPart = $null
+        $slash = $Config.LastIndexOf('\')
+        if ($slash -gt 0) {
+            $hostPart = $Config.Substring(0, $slash)
+        }
+        if ([string]::IsNullOrWhiteSpace($hostPart)) {
+            $hostPart = $env:COMPUTERNAME
+        }
+        $normalized = "$hostPart\$caName"
+        if (-not $list.Contains($normalized)) {
+            [void]$list.Add($normalized)
         }
     }
 
-    # Prefer the local issuing CA on this worker. ca01 is RPC-unreachable here
-    # (0x800706ba) and would stall 30–60s if tried first.
-    $requestedIsRemoteCa01 = $Requested -match '(?i)^ca01[\.\\]'
+    $discovered = Get-LocalAdcsCaCommonNames
+    Write-Host "Local ADCS CA common name(s): $($discovered -join ', ')" -ForegroundColor Gray
 
-    if (-not $requestedIsRemoteCa01) {
-        Add-CaConfig $Requested
+    $caNames = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($n in $discovered) {
+        if (-not $caNames.Contains($n)) { [void]$caNames.Add($n) }
     }
-    Add-CaConfig 'USDFHUBCAI.hub.baxter.com\HUB-ISSUING-CA'
-    Add-CaConfig "$env:COMPUTERNAME\HUB-ISSUING-CA"
-    if (-not [string]::IsNullOrWhiteSpace($env:USERDNSDOMAIN)) {
-        Add-CaConfig "$($env:COMPUTERNAME).$($env:USERDNSDOMAIN)\HUB-ISSUING-CA"
+    $requestedCaName = Get-SanitizedCaCommonName (Get-CaNameFromConfig $Requested)
+    if ($requestedCaName -and -not (Test-IsCa01CommonName $requestedCaName) -and -not $caNames.Contains($requestedCaName)) {
+        [void]$caNames.Insert(0, $requestedCaName)
     }
-    Add-CaConfig 'USDFHUBCAI\HUB-ISSUING-CA'
-    Add-CaConfig '.\HUB-ISSUING-CA'
-    if ($requestedIsRemoteCa01) {
-        Add-CaConfig $Requested
+
+    foreach ($caName in $caNames) {
+        foreach ($h in Get-LocalCaHosts) {
+            Add-CaConfig "$h\$caName"
+        }
     }
+
+    # Keep a sanitized form of the caller-supplied config (spaces OK, no GUI suffix)
+    Add-CaConfig $Requested
 
     return $list
+}
+
+function Invoke-CertreqSubmit {
+    Param(
+        [Parameter(Mandatory=$true)]
+        [string]$Config,
+        [Parameter(Mandatory=$false)]
+        [string]$Attrib,
+        [Parameter(Mandatory=$true)]
+        [string]$CsrPath,
+        [Parameter(Mandatory=$true)]
+        [string]$CerPath
+    )
+
+    $certreqArgs = @('-submit', '-q', '-config', $Config)
+    if (-not [string]::IsNullOrWhiteSpace($Attrib)) {
+        $certreqArgs += @('-attrib', $Attrib)
+    }
+    $certreqArgs += @($CsrPath, $CerPath)
+    & certreq.exe @certreqArgs 2>&1
 }
 
 function Export-CertificateAssets {
@@ -530,17 +653,25 @@ HOW TO IMPORT THE SIGNED CERTIFICATE:
                 Write-Host "Trying certreq -submit -q -config `"$cfg`" ..." -ForegroundColor Gray
 
                 try {
-                    if ($attribString) {
-                        $submitOutput = & certreq.exe -submit -q -config $cfg -attrib $attribString $csrPath $cerPath 2>&1
-                    } else {
-                        $submitOutput = & certreq.exe -submit -q -config $cfg $csrPath $cerPath 2>&1
-                    }
+                    $submitOutput = Invoke-CertreqSubmit -Config $cfg -Attrib $attribString -CsrPath $csrPath -CerPath $cerPath
                 } catch {
                     $submitOutput = $_
                 }
 
                 $submitText = ($submitOutput | Out-String).Trim()
                 [void]$submitLog.Add("[$cfg] $submitText")
+
+                if ((-not (Test-Path $cerPath)) -and $attribString -and ($submitText -match '0x80070057|ERROR_INVALID_PARAMETER')) {
+                    Write-Host "Retrying `"$cfg`" without -attrib (template already in INF)..." -ForegroundColor Gray
+                    if (Test-Path $cerPath) { Remove-Item $cerPath -Force }
+                    try {
+                        $submitOutput = Invoke-CertreqSubmit -Config $cfg -Attrib '' -CsrPath $csrPath -CerPath $cerPath
+                    } catch {
+                        $submitOutput = $_
+                    }
+                    $submitText = ($submitOutput | Out-String).Trim()
+                    [void]$submitLog.Add("[$cfg no-attrib] $submitText")
+                }
 
                 if (Test-Path $cerPath) {
                     Write-Host "[OK] Certificate issued by $cfg and saved: $cerPath" -ForegroundColor Green
