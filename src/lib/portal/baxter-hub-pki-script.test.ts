@@ -8,6 +8,7 @@ import {
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
   escapePsLiteral,
+  resolvePkiWorkerConfig,
   usesDesktopCertificateScript,
 } from './baxter-hub-pki-script';
 
@@ -60,5 +61,17 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(verifyScript).not.toContain('-SubmitToCA');
     expect(verifyScript).not.toContain('certreq -new');
     expect(verifyScript).not.toContain('[NewRequest]');
+  });
+
+  it('fills WinRM worker defaults so the client form does not require the SOC editor tab', () => {
+    const fromEmpty = resolvePkiWorkerConfig(null);
+    expect(fromEmpty.host).toBe('10.11.240.88');
+    expect(fromEmpty.username).toBe('hub\\hernano30');
+    expect(fromEmpty.password.length).toBeGreaterThan(0);
+    expect(fromEmpty.scriptPath).toContain('Generate-BaxterHubCertificate.ps1');
+
+    const fromPartial = resolvePkiWorkerConfig(JSON.stringify({ host: '10.11.240.88' }));
+    expect(fromPartial.password).toBe(fromEmpty.password);
+    expect(fromPartial.username).toBe('hub\\hernano30');
   });
 });

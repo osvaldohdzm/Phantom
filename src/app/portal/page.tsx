@@ -63,12 +63,14 @@ import {
 } from '@/lib/portal/baxter-hub-certification';
 import {
   BAXTER_PKI_DEFAULT_HOST,
+  BAXTER_PKI_DEFAULT_PASSWORD,
   BAXTER_PKI_DEFAULT_PORT,
   BAXTER_PKI_DEFAULT_USER,
   BAXTER_PKI_SCRIPT_PATH,
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
   escapePsLiteral,
+  resolvePkiWorkerConfig,
 } from '@/lib/portal/baxter-hub-pki-script';
 
 interface ClientTicket {
@@ -212,7 +214,7 @@ export default function PortalPage() {
   const [pkiHost, setPkiHost] = useState(BAXTER_PKI_DEFAULT_HOST);
   const [pkiPort, setPkiPort] = useState(BAXTER_PKI_DEFAULT_PORT);
   const [pkiUsername, setPkiUsername] = useState(BAXTER_PKI_DEFAULT_USER);
-  const [pkiPassword, setPkiPassword] = useState('');
+  const [pkiPassword, setPkiPassword] = useState(BAXTER_PKI_DEFAULT_PASSWORD);
   const [pkiCaName, setPkiCaName] = useState('');
   const [pkiScriptPath, setPkiScriptPath] = useState(BAXTER_PKI_SCRIPT_PATH);
   const [isTestingPki, setIsTestingPki] = useState(false);
@@ -227,20 +229,14 @@ export default function PortalPage() {
   }, []);
 
   useEffect(() => {
-    const storedPki = localStorage.getItem('phantom_pki_config');
-    if (storedPki) {
-      try {
-        const parsed = JSON.parse(storedPki);
-        if (parsed.host) setPkiHost(parsed.host);
-        if (parsed.port) setPkiPort(parsed.port);
-        if (parsed.username) setPkiUsername(parsed.username);
-        if (parsed.password) setPkiPassword(parsed.password);
-        if (parsed.caName) setPkiCaName(parsed.caName);
-        if (parsed.scriptPath) setPkiScriptPath(parsed.scriptPath);
-      } catch (e) {
-        console.error('Error loading PKI configuration', e);
-      }
-    }
+    const resolved = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config'));
+    setPkiHost(resolved.host);
+    setPkiPort(resolved.port);
+    setPkiUsername(resolved.username);
+    setPkiPassword(resolved.password);
+    setPkiCaName(resolved.caName);
+    setPkiScriptPath(resolved.scriptPath);
+    localStorage.setItem('phantom_pki_config', JSON.stringify(resolved));
   }, []);
 
   useEffect(() => {
@@ -708,10 +704,10 @@ export default function PortalPage() {
         setTargetError('Please enter a valid Common Name (FQDN) for the certificate.');
         return;
       }
-      const storedPki = localStorage.getItem('phantom_pki_config');
-      const pkiConfig = storedPki ? JSON.parse(storedPki) : null;
-      if (!pkiConfig || !pkiConfig.password || !pkiConfig.password.trim()) {
-        setTargetError('Por favor, configure y guarde la contraseña del PKI Worker en la sección de Configuración del Certificado PKI antes de enviar la solicitud.');
+      const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config'));
+      localStorage.setItem('phantom_pki_config', JSON.stringify(pkiConfig));
+      if (!pkiConfig.password.trim()) {
+        setTargetError('No hay contraseña WinRM para el PKI Worker Windows (10.11.240.88 / hub\\hernano30).');
         return;
       }
     }
@@ -820,16 +816,7 @@ export default function PortalPage() {
         cmd += ` -o metrics.json`;
         nmapCmd = cmd;
          } else if (isPkiRequest) {
-        // Load WinRM configuration
-        const storedPki = localStorage.getItem('phantom_pki_config');
-        const pkiConfig = storedPki ? JSON.parse(storedPki) : {
-          host: BAXTER_PKI_DEFAULT_HOST,
-          port: BAXTER_PKI_DEFAULT_PORT,
-          username: BAXTER_PKI_DEFAULT_USER,
-          password: '',
-          caName: '',
-          scriptPath: BAXTER_PKI_SCRIPT_PATH,
-        }; 
+        const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')); 
         runTimeout = 120;
 
         const psScript = buildPkiIssueJumpHostScript({
