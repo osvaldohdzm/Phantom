@@ -3356,7 +3356,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">
-                        Si se deja vacío, se usa USDFHUBCAI.hub.baxter.com\Hub Issuing CA (Kerberos) (sin selector GUI).
+                        Si se deja vacío, se usa ca01.hub.baxter.com\HUB-ISSUING-CA (certreq -config, sin selector GUI).
                       </span>
                     </div>
 

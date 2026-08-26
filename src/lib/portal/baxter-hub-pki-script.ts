@@ -12,8 +12,9 @@ export const BAXTER_PKI_SCRIPT_DIR =
   'C:\\Users\\hernano30\\Desktop\\Certificates Requests';
 export const BAXTER_PKI_SCRIPT_NAME = 'Generate-BaxterHubCertificate.ps1';
 export const BAXTER_PKI_SCRIPT_PATH = `${BAXTER_PKI_SCRIPT_DIR}\\${BAXTER_PKI_SCRIPT_NAME}`;
-export const BAXTER_PKI_DEFAULT_CA = 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)';
-export const BAXTER_PKI_STALE_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
+export const BAXTER_PKI_DEFAULT_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
+/** GUI enrollment-policy display name — not a valid certreq -config string. */
+export const BAXTER_PKI_STALE_CA = 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)';
 export const BAXTER_PKI_DEFAULT_TEMPLATE = 'Hub_WebServer';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
@@ -268,7 +269,7 @@ $quietScript = Join-Path $env:TEMP ("pki_quiet_" + [guid]::NewGuid().ToString() 
 $raw = [System.IO.File]::ReadAllText($scriptPath)
 if ($raw -notmatch 'certreq\.exe -submit -q') {
   $raw = $raw.Replace('& certreq.exe -new "$infPath" "$csrPath"', '& certreq.exe -new -q -f "$infPath" "$csrPath"')
-  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib $attribString "$csrPath" "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib "$attribString" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q "$cerPath"')
 }
