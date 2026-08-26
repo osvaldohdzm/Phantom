@@ -236,12 +236,41 @@ export function buildPortalThemeStructuralCss(themeId: PortalThemeId): string {
   min-height: 100%;
 }
 [data-portal-root] .portal-theme-header {
-  background: var(--portal-header-bg);
-  color: var(--portal-header-fg);
+  background: var(--portal-header-bg) !important;
+  color: var(--portal-header-fg) !important;
   border-bottom: 0;
 }
-[data-portal-root] .portal-theme-header a {
+/* AppTopbar uses bg-card/60 + blur, which washes navy into sickly gray. Keep it solid. */
+[data-portal-root] .portal-theme-header > div {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom-color: rgba(255, 255, 255, 0.14) !important;
+  color: var(--portal-header-fg) !important;
+}
+[data-portal-root] .portal-theme-header a:not([role="menuitem"]) {
   color: var(--portal-header-fg);
+}
+[data-portal-root] .portal-theme-header .text-muted-foreground,
+[data-portal-root] .portal-theme-header .text-foreground {
+  color: var(--portal-header-fg) !important;
+}
+[data-portal-root] .portal-theme-header button:not([role="menuitem"]),
+[data-portal-root] .portal-theme-header select {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: var(--portal-header-fg) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+}
+[data-portal-root] .portal-theme-header [role="menu"] {
+  background: var(--portal-card-bg) !important;
+  color: var(--portal-text) !important;
+  border-color: var(--portal-card-border) !important;
+}
+[data-portal-root] .portal-theme-header [role="menu"] .text-muted-foreground,
+[data-portal-root] .portal-theme-header [role="menu"] .text-foreground,
+[data-portal-root] .portal-theme-header [role="menu"] a,
+[data-portal-root] .portal-theme-header [role="menu"] p {
+  color: inherit !important;
 }
 [data-portal-root] .portal-theme-subheader {
   background: #ffffff;
@@ -273,21 +302,30 @@ export function buildPortalThemeStructuralCss(themeId: PortalThemeId): string {
   border-color: transparent !important;
   border-radius: var(--portal-radius);
 }
-[data-portal-root] input:not([type="checkbox"]):not([type="radio"]),
-[data-portal-root] select,
-[data-portal-root] textarea,
-[data-portal-root] [data-slot="input"],
-[data-portal-root] [data-slot="textarea"] {
+[data-portal-root] .portal-theme-btn-primary:hover,
+[data-portal-root] [data-slot="button"][data-variant="default"]:hover {
+  filter: brightness(1.08);
+}
+[data-portal-root] .portal-theme-auto-banner {
+  border-color: color-mix(in srgb, var(--portal-header-bg) 28%, white) !important;
+  background: color-mix(in srgb, var(--portal-header-bg) 8%, white) !important;
+  color: var(--portal-header-bg);
+}
+[data-portal-root] main input:not([type="checkbox"]):not([type="radio"]),
+[data-portal-root] main select,
+[data-portal-root] main textarea,
+[data-portal-root] main [data-slot="input"],
+[data-portal-root] main [data-slot="textarea"] {
   background-color: var(--portal-input-bg) !important;
   border-color: var(--portal-input-border) !important;
   border-radius: var(--portal-radius);
   color: var(--portal-text);
 }
-[data-portal-root] input:focus,
-[data-portal-root] select:focus,
-[data-portal-root] textarea:focus,
-[data-portal-root] [data-slot="input"]:focus-visible,
-[data-portal-root] [data-slot="textarea"]:focus-visible {
+[data-portal-root] main input:focus,
+[data-portal-root] main select:focus,
+[data-portal-root] main textarea:focus,
+[data-portal-root] main [data-slot="input"]:focus-visible,
+[data-portal-root] main [data-slot="textarea"]:focus-visible {
   outline: 2px solid var(--portal-ring);
   outline-offset: 1px;
   border-color: var(--portal-ring) !important;
@@ -308,7 +346,7 @@ export function buildPortalThemeStructuralCss(themeId: PortalThemeId): string {
 }
 [data-portal-root] a.text-primary,
 [data-portal-root] .text-primary {
-  color: var(--portal-accent);
+  color: var(--portal-action-bg);
 }
 `;
 
@@ -319,11 +357,15 @@ export function buildPortalThemeStructuralCss(themeId: PortalThemeId): string {
 [data-portal-root][data-portal-theme="baxter-servicenow"] .portal-theme-header {
   min-height: 3.25rem;
 }
-[data-portal-root][data-portal-theme="baxter-servicenow"] .portal-theme-header .portal-brand-title {
+[data-portal-root][data-portal-theme="baxter-servicenow"] .portal-theme-subheader .portal-brand-title {
   font-style: italic;
   font-weight: 700;
   letter-spacing: 0.02em;
   font-size: 1.35rem;
+  color: var(--portal-header-bg);
+}
+[data-portal-root][data-portal-theme="baxter-servicenow"] h2.text-foreground {
+  color: var(--portal-header-bg);
 }
 [data-portal-root][data-portal-theme="baxter-servicenow"] main {
   max-width: 72rem;
