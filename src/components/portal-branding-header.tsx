@@ -13,7 +13,7 @@ export function PortalBrandingHeader() {
         <BrandingLogo branding={branding} size="sm" />
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-widest text-muted-foreground truncate">{productName}</p>
-          <h1 className="text-lg font-semibold truncate">{workspaceName}</h1>
+          <h1 className="portal-brand-title text-lg font-semibold truncate">{workspaceName}</h1>
         </div>
       </div>
       <Link href="/" className="text-sm text-primary hover:underline underline-offset-2 shrink-0">
