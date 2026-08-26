@@ -7,9 +7,9 @@
  *
  *   C:\Users\hernano30\Desktop\Certificates Requests\Generate-BaxterHubCertificate.ps1
  *
- * That .ps1 accepts -CAServer (default ca01.hub.baxter.com\HUB-ISSUING-CA) but the
- * stock file never passes it to certreq -submit, so Windows shows the CA picker.
- * First run patches those certreq lines in place (keeps .bak):
+ * That .ps1 accepts -CAServer. Default is the local CA on the worker
+ * (USDFHUBCAI.hub.baxter.com\HUB-ISSUING-CA). ca01.hub.baxter.com is RPC-unreachable
+ * from this host (0x800706ba). First run still patches certreq to stay unattended:
  *   certreq -new -q -f
  *   certreq -submit -q -config "$CAServer" -attrib "$attribString"
  *   certreq -accept -q
@@ -19,9 +19,11 @@ export const BAXTER_PKI_SCRIPT_DIR =
   'C:\\Users\\hernano30\\Desktop\\Certificates Requests';
 export const BAXTER_PKI_SCRIPT_NAME = 'Generate-BaxterHubCertificate.ps1';
 export const BAXTER_PKI_SCRIPT_PATH = `${BAXTER_PKI_SCRIPT_DIR}\\${BAXTER_PKI_SCRIPT_NAME}`;
-export const BAXTER_PKI_DEFAULT_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
+export const BAXTER_PKI_DEFAULT_CA = 'USDFHUBCAI.hub.baxter.com\\HUB-ISSUING-CA';
 /** GUI enrollment-policy display name — not a valid certreq -config string. */
 export const BAXTER_PKI_STALE_CA = 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)';
+/** Reachable from other sites; this worker gets RPC 0x800706ba against ca01. */
+export const BAXTER_PKI_UNREACHABLE_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
 export const BAXTER_PKI_DEFAULT_TEMPLATE = 'Hub_WebServer';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
@@ -69,7 +71,9 @@ export function resolvePkiWorkerConfig(raw: string | null | undefined): PkiWorke
       username: parsed.username || defaults.username,
       password: (parsed.password && String(parsed.password).trim()) || defaults.password,
       caName:
-        !parsed.caName || parsed.caName === BAXTER_PKI_STALE_CA
+        !parsed.caName ||
+        parsed.caName === BAXTER_PKI_STALE_CA ||
+        parsed.caName === BAXTER_PKI_UNREACHABLE_CA
           ? defaults.caName
           : parsed.caName,
       scriptPath: parsed.scriptPath || defaults.scriptPath,
