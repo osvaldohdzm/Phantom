@@ -50,6 +50,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('NurseCall');
     expect(issueScript).toContain('ri-vnc01.hub.baxter.com');
     expect(issueScript).toContain('pywinrm');
+    expect(issueScript).toContain('--break-system-packages');
     expect(issueScript).toContain('python3');
     expect(issueScript).not.toContain('Invoke-Command -ComputerName');
     expect(issueScript).not.toContain('certreq -new');
