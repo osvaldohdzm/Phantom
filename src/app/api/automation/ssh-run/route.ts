@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { host, port = 22, username, password = '', authType = 'password', privateKey = '', command, timeout = 30 } = body;
+    const timeoutSec = Math.min(Math.max(Number(timeout) || 30, 5), 900);
 
     if (!host || !command) {
       return NextResponse.json(
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
 
     // Expect script that logs stdout or outputs detailed SSH authentication errors
     const expectScript = `
-      set timeout ${timeout}
+      set timeout ${timeoutSec}
       spawn ${sshCmdBase} ${username}@${host} "${escapedCommand}"
       expect {
         "Are you sure you want to continue connecting" {
@@ -155,8 +156,11 @@ export async function POST(request: Request) {
           send_user "\\n\\[!\\] ssh: connection failed: connection timed out. Check network routing.\\n"
           exit 4
         }
+        -re ".+" {
+          exp_continue
+        }
         timeout {
-          send_user "\\n\\[!\\] ssh: connection timed out after ${timeout} seconds.\\n"
+          send_user "\\n\\[!\\] ssh: el comando remoto no terminó en ${timeoutSec} segundos (WinRM/ADCS sigue en silencio; no es caída de red).\\n"
           exit 5
         }
         eof {
@@ -175,7 +179,7 @@ export async function POST(request: Request) {
       fs.writeFileSync(tempExpectPath, expectScript, { encoding: 'utf8' });
 
       // Set child process timeout as well to kill any hanging child shells
-      const { stdout, stderr } = await execAsync(`expect "${tempExpectPath}"`, { timeout: (timeout + 2) * 1000 });
+      const { stdout, stderr } = await execAsync(`expect "${tempExpectPath}"`, { timeout: (timeoutSec + 2) * 1000 });
       
       // Parse output
       const outputLines = (stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -214,7 +218,7 @@ export async function POST(request: Request) {
     } catch (err: any) {
       if (err.killed || err.signal === 'SIGTERM') {
         return NextResponse.json(
-          { error: `ssh: connection timed out (process killed after ${timeout} seconds to prevent hang).` },
+          { error: `ssh: el comando remoto no terminó (proceso cortado a los ${timeoutSec} segundos).` },
           { status: 400 }
         );
       }

@@ -67,6 +67,7 @@ import {
   BAXTER_PKI_DEFAULT_PORT,
   BAXTER_PKI_DEFAULT_USER,
   BAXTER_PKI_SCRIPT_PATH,
+  BAXTER_PKI_SSH_TIMEOUT_SEC,
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
   resolvePkiWorkerConfig,
@@ -858,7 +859,7 @@ export default function PortalPage() {
         nmapCmd = cmd;
          } else if (isPkiRequest) {
         const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')); 
-        runTimeout = 300;
+        runTimeout = BAXTER_PKI_SSH_TIMEOUT_SEC;
 
         const psScript = buildPkiIssueJumpHostScript({
           winHost: pkiConfig.host,

@@ -23,7 +23,7 @@ export function portalLiveJobCopy(kind: PortalLiveJobKind) {
       description:
         'No es Nmap. Portal → SSH jump host Linux → WinRM al PKI Worker Windows → Generate-BaxterHubCertificate.ps1 (ADCS).',
       awaiting:
-        '[~] Esperando WinRM + ADCS. El portal no hace streaming: el log real llega cuando SSH termina (1–5 min).',
+        '[~] Esperando WinRM + ADCS. El portal no hace streaming: el log real llega cuando SSH termina (hasta ~10 min).',
       submitBusy: 'Generando certificado…',
     };
   }
@@ -68,7 +68,7 @@ export function buildPkiWaitStageLine(index: number, ctx: PkiWaitStageContext): 
 }
 
 export function buildPkiElapsedHeartbeat(elapsedSec: number): string {
-  return `[~] ${elapsedSec}s transcurridos — el worker Windows sigue en CSR/ADCS. El log real aparece cuando SSH termina (hasta ~5 min).`;
+  return `[~] ${elapsedSec}s transcurridos — el worker Windows sigue en CSR/ADCS. El log real aparece cuando SSH termina (hasta ~10 min).`;
 }
 
 /** Drop the base64 payload, CLIXML dump, and the jump-host wrapper so the UI stays readable. */
