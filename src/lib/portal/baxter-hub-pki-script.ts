@@ -264,18 +264,23 @@ Write-Host ("[OK] Script de escritorio: " + $scriptPath)
 $outputDir = Split-Path -Parent $scriptPath
 if (-not $outputDir) { $outputDir = $scriptDir }
 
-Write-Host "[+] Copia temporal de Generate-BaxterHubCertificate.ps1 con certreq -q -f -config (sin ventanas GUI)..."
-$quietScript = Join-Path $env:TEMP ("pki_quiet_" + [guid]::NewGuid().ToString() + ".ps1")
+# The required desktop script must not open certreq GUI (WinRM is non-interactive).
+# Patch Generate-BaxterHubCertificate.ps1 in place once; keep a .bak.
 $raw = [System.IO.File]::ReadAllText($scriptPath)
-if ($raw -notmatch 'certreq\.exe -submit -q') {
+if ($raw -notmatch 'certreq\.exe -submit -q -config') {
+  $bak = $scriptPath + '.bak'
+  if (-not (Test-Path -LiteralPath $bak)) {
+    Copy-Item -LiteralPath $scriptPath -Destination $bak -Force
+    Write-Host ("[OK] Backup: " + $bak)
+  }
   $raw = $raw.Replace('& certreq.exe -new "$infPath" "$csrPath"', '& certreq.exe -new -q -f "$infPath" "$csrPath"')
   $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib "$attribString" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q "$cerPath"')
+  [System.IO.File]::WriteAllText($scriptPath, $raw, (New-Object System.Text.UTF8Encoding $false))
+  Write-Host "[OK] Generate-BaxterHubCertificate.ps1: certreq -q -config (sin ventana)."
 }
-[System.IO.File]::WriteAllText($quietScript, $raw, (New-Object System.Text.UTF8Encoding $false))
-$scriptPath = $quietScript
-Write-Host ("[OK] Script sin GUI: " + $scriptPath)
+
 $subject = "CN=$fqdn, O=BaxterHub, C=US"
 $sanList = [System.Collections.Generic.List[string]]::new()
 $sanList.Add($fqdn)
