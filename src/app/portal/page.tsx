@@ -2403,8 +2403,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                        </span>
                                        <span className="text-xs font-bold text-slate-200">Detalles del Certificado Generado</span>
                                      </div>
-                                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                                       ESTADO: EMITIDO
+                                     <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                                       result.zipBase64
+                                         ? 'text-emerald-400 bg-emerald-950 border-emerald-800'
+                                         : 'text-rose-400 bg-rose-950 border-rose-800'
+                                     }`}>
+                                       ESTADO: {result.zipBase64 ? 'EMITIDO' : 'ERROR'}
                                      </span>
                                    </div>
 

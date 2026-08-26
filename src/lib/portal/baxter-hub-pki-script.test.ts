@@ -44,7 +44,8 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
 
   it('issues certificates by invoking the desktop script, not inline certreq', () => {
     expect(usesDesktopCertificateScript(issueScript)).toBe(true);
-    expect(issueScript).toContain('-SubmitToCA');
+    expect(issueScript).toContain('SubmitToCA');
+    expect(issueScript).toContain('SubjectAlternativeNames');
     expect(issueScript).toContain('Package_*.zip');
     expect(issueScript).toContain('ZIP_BASE64_START');
     expect(issueScript).toContain('NurseCall');
@@ -52,6 +53,10 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('pywinrm');
     expect(issueScript).toContain('--break-system-packages');
     expect(issueScript).toContain('python3');
+    expect(issueScript).toContain('$params = @{');
+    expect(issueScript).toContain('& $scriptPath @params');
+    expect(issueScript).toContain('if (-not $?)');
+    expect(issueScript).not.toMatch(/-SubjectAlternativeNames[\s\S]*-SubjectAlternativeNames/);
     expect(issueScript).not.toContain('Invoke-Command -ComputerName');
     expect(issueScript).not.toContain('certreq -new');
     expect(issueScript).not.toContain('[NewRequest]');
@@ -62,7 +67,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(usesDesktopCertificateScript(verifyScript)).toBe(true);
     expect(verifyScript).toContain('SCRIPT_PKI_OK');
     expect(verifyScript).toContain('sin emitir certificado');
-    expect(verifyScript).not.toContain('-SubmitToCA');
+    expect(verifyScript).not.toContain('SubmitToCA');
     expect(verifyScript).not.toContain('certreq -new');
     expect(verifyScript).not.toContain('[NewRequest]');
   });
