@@ -32,10 +32,12 @@ import {
   GitFork,
   CheckCircle,
   Download,
+  Palette,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { PortalThemeEditorPanel } from '@/components/portal/PortalThemeEditorPanel';
 import {
   listEngagements,
   listFindings,
@@ -316,7 +318,9 @@ export default function PortalPage() {
   const [activeTab, setActiveTab] = useState<'project' | 'tickets'>('project');
 
   // Tabs inside Editor View
-  const [activeEditorTab, setActiveEditorTab] = useState<'catalog' | 'tickets' | 'flows' | 'url-config' | 'pki-config' | 'audit-logs'>('catalog');
+  const [activeEditorTab, setActiveEditorTab] = useState<
+    'catalog' | 'tickets' | 'flows' | 'url-config' | 'pki-config' | 'audit-logs' | 'themes'
+  >('catalog');
 
   // Audit Logs state variables
   const [auditLogs, setAuditLogs] = useState<string[]>([]);
@@ -2816,6 +2820,18 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                 <ShieldCheck className="size-3.5" />
                 Audit Logs
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveEditorTab('themes')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                  activeEditorTab === 'themes'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Palette className="size-3.5" />
+                Themes
+              </button>
             </div>
           </div>
 
@@ -3714,6 +3730,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   </CardContent>
                 </Card>
               </div>
+            </div>
+          )}
+
+          {activeEditorTab === 'themes' && (
+            <div className="animate-fade-in">
+              <PortalThemeEditorPanel />
             </div>
           )}
 

@@ -5,18 +5,19 @@ import { useAuth } from '@/contexts/auth-context';
 import { SecOpsShell } from '@/components/secops-shell';
 import { AppTopbar } from '@/components/app-topbar';
 import { PortalBrandingHeader } from '@/components/portal-branding-header';
+import { PortalThemeProvider } from '@/components/portal/PortalThemeProvider';
 import { useSearchParams } from 'next/navigation';
 
 function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   const { role } = useAuth();
   const searchParams = useSearchParams();
-  
+
   const isEditor = searchParams.get('editor') === 'true';
-  const isAdminOrSOC = role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst' || role === 'lead';
+  const isAdminOrSOC =
+    role === 'platform_admin' || role === 'tenant_admin' || role === 'analyst' || role === 'lead';
 
   const [portalEnabled, setPortalEnabled] = useState(true);
 
-  // Check if client portal is enabled in localStorage settings
   useEffect(() => {
     const val = localStorage.getItem('spectre_portal_enabled');
     if (val === 'false') {
@@ -24,7 +25,6 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Secure Block: If portal is deactivated and visitor is not an Admin/SOC, render a standard Next.js-looking 404
   if (!portalEnabled && !isAdminOrSOC) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black text-white font-sans select-none">
@@ -36,20 +36,33 @@ function PortalLayoutInner({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If the user is an admin/SOC and requested the editor mode, wrap in the full dashboard shell (with sidebar)
+  // Editor: provide theme context for Themes tab; do not restyle SecOps chrome
   if (isAdminOrSOC && isEditor) {
-    return <SecOpsShell>{children}</SecOpsShell>;
+    return (
+      <PortalThemeProvider applyChrome={false}>
+        <SecOpsShell>{children}</SecOpsShell>
+      </PortalThemeProvider>
+    );
   }
 
-  // Client view or preview mode: show the independent layout without the admin sidebar menu
+  // Client portal view only — themes scoped to [data-portal-root]
   return (
-    <div className="min-h-full flex flex-col bg-background text-foreground animate-fade-in">
-      <AppTopbar />
-      <div className="border-b border-border bg-card/40">
+    <PortalThemeProvider applyChrome>
+      <div className="portal-theme-header">
+        <AppTopbar />
+      </div>
+      <div className="portal-theme-subheader">
         <PortalBrandingHeader />
       </div>
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">{children}</main>
-    </div>
+      <footer className="portal-theme-footer mt-auto px-4 py-3 text-xs">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center gap-2 opacity-90">
+          <span>Contact Information</span>
+          <span aria-hidden>·</span>
+          <span>GSD Numbers (regional phone numbers)</span>
+        </div>
+      </footer>
+    </PortalThemeProvider>
   );
 }
 
