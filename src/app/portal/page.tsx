@@ -2066,7 +2066,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                     {/* Execution mode badge — SOC configured, client read-only */}
                     <div className={`flex items-center gap-2.5 p-3 rounded-xl border ${
                       isAutomatedExecution
-                        ? 'border-emerald-500/20 bg-emerald-50 dark:bg-emerald-950/5'
+                        ? 'portal-theme-auto-banner border-emerald-500/20 bg-emerald-50 dark:bg-emerald-950/5'
                         : 'border-amber-500/20 bg-amber-50 dark:bg-amber-950/5'
                     }`}>
                       <div className={`p-1.5 rounded-lg ${
@@ -2101,9 +2101,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                     <Button
                       type="submit"
-                      className={`w-full font-bold py-2.5 rounded-lg text-white ${
-                        isAutomatedExecution ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-primary hover:bg-primary/90'
-                      }`}
+                      className="portal-theme-btn-primary w-full font-bold py-2.5 rounded-lg text-white"
                       disabled={isScanningLive}
                     >
                       {isScanningLive ? (
