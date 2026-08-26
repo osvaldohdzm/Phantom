@@ -12,7 +12,9 @@ export const BAXTER_PKI_SCRIPT_DIR =
   'C:\\Users\\hernano30\\Desktop\\Certificates Requests';
 export const BAXTER_PKI_SCRIPT_NAME = 'Generate-BaxterHubCertificate.ps1';
 export const BAXTER_PKI_SCRIPT_PATH = `${BAXTER_PKI_SCRIPT_DIR}\\${BAXTER_PKI_SCRIPT_NAME}`;
-export const BAXTER_PKI_DEFAULT_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
+export const BAXTER_PKI_DEFAULT_CA = 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)';
+export const BAXTER_PKI_STALE_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
+export const BAXTER_PKI_DEFAULT_TEMPLATE = 'Hub_WebServer';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
 export const BAXTER_PKI_DEFAULT_PORT = '5985';
@@ -58,7 +60,10 @@ export function resolvePkiWorkerConfig(raw: string | null | undefined): PkiWorke
       port: parsed.port || defaults.port,
       username: parsed.username || defaults.username,
       password: (parsed.password && String(parsed.password).trim()) || defaults.password,
-      caName: parsed.caName || defaults.caName,
+      caName:
+        !parsed.caName || parsed.caName === BAXTER_PKI_STALE_CA
+          ? defaults.caName
+          : parsed.caName,
       scriptPath: parsed.scriptPath || defaults.scriptPath,
     };
   } catch {
@@ -255,9 +260,21 @@ if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
   throw "No se encontró Generate-BaxterHubCertificate.ps1 en el escritorio. Ruta esperada: $scriptDir"
 }
 Write-Host ("[OK] Script de escritorio: " + $scriptPath)
-
 $outputDir = Split-Path -Parent $scriptPath
 if (-not $outputDir) { $outputDir = $scriptDir }
+
+Write-Host "[+] Copia temporal de Generate-BaxterHubCertificate.ps1 con certreq -q -f -config (sin ventanas GUI)..."
+$quietScript = Join-Path $env:TEMP ("pki_quiet_" + [guid]::NewGuid().ToString() + ".ps1")
+$raw = [System.IO.File]::ReadAllText($scriptPath)
+if ($raw -notmatch 'certreq\.exe -submit -q') {
+  $raw = $raw.Replace('& certreq.exe -new "$infPath" "$csrPath"', '& certreq.exe -new -q -f "$infPath" "$csrPath"')
+  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -f -config $CAServer -attrib $attribString "$csrPath" "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -f -config $CAServer "$csrPath" "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q -f "$cerPath"')
+}
+[System.IO.File]::WriteAllText($quietScript, $raw, (New-Object System.Text.UTF8Encoding $false))
+$scriptPath = $quietScript
+Write-Host ("[OK] Script sin GUI: " + $scriptPath)
 $subject = "CN=$fqdn, O=BaxterHub, C=US"
 $sanList = [System.Collections.Generic.List[string]]::new()
 $sanList.Add($fqdn)

@@ -62,9 +62,11 @@ import {
   type TicketUpdate,
 } from '@/lib/portal/baxter-hub-certification';
 import {
+  BAXTER_PKI_DEFAULT_CA,
   BAXTER_PKI_DEFAULT_HOST,
   BAXTER_PKI_DEFAULT_PASSWORD,
   BAXTER_PKI_DEFAULT_PORT,
+  BAXTER_PKI_DEFAULT_TEMPLATE,
   BAXTER_PKI_DEFAULT_USER,
   BAXTER_PKI_SCRIPT_PATH,
   BAXTER_PKI_SSH_TIMEOUT_SEC,
@@ -218,7 +220,7 @@ export default function PortalPage() {
   // PKI request custom fields states
   const [pkiFqdn, setPkiFqdn] = useState('');
   const [pkiIp, setPkiIp] = useState('');
-  const [pkiTemplate, setPkiTemplate] = useState('WebServer');
+  const [pkiTemplate, setPkiTemplate] = useState(BAXTER_PKI_DEFAULT_TEMPLATE);
 
   // PKI Worker WinRM settings states
   const [pkiHost, setPkiHost] = useState(BAXTER_PKI_DEFAULT_HOST);
@@ -928,7 +930,7 @@ export default function PortalPage() {
 ======================================================================
 Target FQDN : ${targetIpOrHost}
 Target IP   : ${pkiIp || 'N/A'}
-CA Server   : ${pkiCaName || 'ca01.hub.baxter.com\\HUB-ISSUING-CA'}
+CA Server   : ${pkiCaName || BAXTER_PKI_DEFAULT_CA}
 Requester   : Horacio Arellano / Nathan F. Walker (Digital Health)
 
 DELIVERABLE ASSETS INCLUDED:
@@ -1828,7 +1830,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               type="text"
                               value={pkiTemplate}
                               onChange={(e) => setPkiTemplate(e.target.value)}
-                              placeholder="WebServer"
+                              placeholder="Hub_WebServer"
                               required
                               className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
                             />
@@ -2480,7 +2482,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                      </div>
                                      <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
                                        <div className="text-[9px] text-zinc-400 uppercase font-semibold">Plantilla (Template)</div>
-                                       <div className="text-xs font-bold text-amber-400 font-mono">{pkiTemplate || 'WebServer'}</div>
+                                       <div className="text-xs font-bold text-amber-400 font-mono">{pkiTemplate || BAXTER_PKI_DEFAULT_TEMPLATE}</div>
                                      </div>
                                    </div>
                                  </div>
@@ -3354,7 +3356,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">
-                        Si se deja vacío, Generate-BaxterHubCertificate.ps1 usa su CA por defecto (ca01.hub.baxter.com\HUB-ISSUING-CA).
+                        Si se deja vacío, se usa USDFHUBCAI.hub.baxter.com\Hub Issuing CA (Kerberos) (sin selector GUI).
                       </span>
                     </div>
 
