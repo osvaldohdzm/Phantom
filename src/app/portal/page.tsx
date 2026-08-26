@@ -63,12 +63,15 @@ import {
 } from '@/lib/portal/baxter-hub-certification';
 import {
   BAXTER_PKI_DEFAULT_CA,
+  BAXTER_PKI_DEFAULT_FQDN,
   BAXTER_PKI_DEFAULT_HOST,
   BAXTER_PKI_DEFAULT_PASSWORD,
   BAXTER_PKI_DEFAULT_PORT,
+  BAXTER_PKI_DEFAULT_SAN_IP,
   BAXTER_PKI_DEFAULT_TEMPLATE,
   BAXTER_PKI_DEFAULT_USER,
   BAXTER_PKI_SCRIPT_PATH,
+  BAXTER_PKI_SERVICE_NAME,
   BAXTER_PKI_SSH_TIMEOUT_SEC,
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
@@ -218,8 +221,8 @@ export default function PortalPage() {
   const [targetError, setTargetError] = useState<string | null>(null);
 
   // PKI request custom fields states
-  const [pkiFqdn, setPkiFqdn] = useState('');
-  const [pkiIp, setPkiIp] = useState('');
+  const [pkiFqdn, setPkiFqdn] = useState(BAXTER_PKI_DEFAULT_FQDN);
+  const [pkiIp, setPkiIp] = useState(BAXTER_PKI_DEFAULT_SAN_IP);
   const [pkiTemplate, setPkiTemplate] = useState(BAXTER_PKI_DEFAULT_TEMPLATE);
 
   // PKI Worker WinRM settings states
@@ -227,7 +230,7 @@ export default function PortalPage() {
   const [pkiPort, setPkiPort] = useState(BAXTER_PKI_DEFAULT_PORT);
   const [pkiUsername, setPkiUsername] = useState(BAXTER_PKI_DEFAULT_USER);
   const [pkiPassword, setPkiPassword] = useState(BAXTER_PKI_DEFAULT_PASSWORD);
-  const [pkiCaName, setPkiCaName] = useState('');
+  const [pkiCaName, setPkiCaName] = useState(BAXTER_PKI_DEFAULT_CA);
   const [pkiScriptPath, setPkiScriptPath] = useState(BAXTER_PKI_SCRIPT_PATH);
   const [isTestingPki, setIsTestingPki] = useState(false);
   const [pkiTestLogs, setPkiTestLogs] = useState<string[]>([]);
@@ -352,7 +355,7 @@ export default function PortalPage() {
     mergeBaxterHubCatalog([
       {
         id: 'baxter_pki_certificate_request',
-        name: 'Solicitud de Certificado PKI Baxter (TLS/SSL)',
+        name: BAXTER_PKI_SERVICE_NAME,
         desc: 'Solicita y genera un certificado SSL/TLS invocando Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker; el portal extrae y formatea el paquete ZIP.',
         defaultUrgency: 'High',
       },
@@ -488,8 +491,8 @@ export default function PortalPage() {
   // Tickets state (Shared between Client ticket form and Editor status controls)
   const [tickets, setTickets] = useState<ClientTicket[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [ticketType, setTicketType] = useState('Escaneo de Puertos Abiertos (Nmap)');
-  const [ticketTarget, setTicketTarget] = useState('');
+  const [ticketType, setTicketType] = useState(BAXTER_PKI_SERVICE_NAME);
+  const [ticketTarget, setTicketTarget] = useState(BAXTER_PKI_DEFAULT_FQDN);
   const [ticketUrgency, setTicketUrgency] = useState<'Low' | 'Medium' | 'High'>('Medium');
   const [ticketDesc, setTicketDesc] = useState('');
 
@@ -535,8 +538,8 @@ export default function PortalPage() {
           ...hubDummies,
           {
             id: 'TK-9281',
-            type: 'Solicitud de Certificado PKI Baxter (TLS/SSL)',
-            target: 'clientportal.spectre.local',
+            type: BAXTER_PKI_SERVICE_NAME,
+            target: BAXTER_PKI_DEFAULT_FQDN,
             urgency: 'High',
             status: 'COMPLETADO',
             createdAt: '2026-07-29',
@@ -584,12 +587,12 @@ export default function PortalPage() {
         parsedResults['TK-9281'] = {
           output: `[✓] Solicitud de certificado procesada con éxito.\n` +
                   `[+] Invocando Generate-BaxterHubCertificate.ps1 en C:\\Users\\hernano30\\Desktop\\Certificates Requests\n` +
-                  `[+] CN=clientportal.spectre.local (SAN IP=10.11.254.245) — CSR + SubmitToCA\n` +
+                  `[+] CN=${BAXTER_PKI_DEFAULT_FQDN} (SAN IP=${BAXTER_PKI_DEFAULT_SAN_IP}) — CSR + SubmitToCA\n` +
                   `[+] Extrayendo y formateando Package_*.zip desde el escritorio del PKI Worker\n` +
                   `[+] Paquete ZIP creado exitosamente. listo para descargar.`,
           logs: [
             `[+] Automated PKI request initiated — Ticket TK-9281`,
-            `[+] Target FQDN: clientportal.spectre.local`,
+            `[+] Target FQDN: ${BAXTER_PKI_DEFAULT_FQDN}`,
             `[+] Routing via agent: Baxter PKI SSH Agent (baxtersrv300) (10.11.254.245:22)`,
             `[+] Opening SSH session...`,
             `[+] Autenticación SSH real exitosa.`,
@@ -694,10 +697,9 @@ export default function PortalPage() {
   // Form submission handler for tickets
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetIpOrHost = ticketTarget.trim();
-    if (!targetIpOrHost) return;
-
     const isPkiRequest = isPkiServiceType(ticketType);
+    const targetIpOrHost = ticketTarget.trim() || (isPkiRequest ? BAXTER_PKI_DEFAULT_FQDN : '');
+    if (!targetIpOrHost) return;
 
     // FQDN (Domain name) and IP Address format validator
     const isValidTarget = (target: string): boolean => {
@@ -815,8 +817,8 @@ export default function PortalPage() {
       const startedAt = Date.now();
       const pkiStageCtx = {
         fqdn: targetIpOrHost,
-        ip: pkiIp,
-        template: pkiTemplate,
+        ip: pkiIp.trim(),
+        template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
         jumpHost: `${agent.host}:${agent.port}`,
         winHost: resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')).host,
       };
@@ -869,9 +871,9 @@ export default function PortalPage() {
           winUsername: pkiConfig.username || BAXTER_PKI_DEFAULT_USER,
           winPassword: pkiConfig.password || '',
           fqdn: targetIpOrHost,
-          ip: pkiIp,
-          template: pkiTemplate,
-          caName: pkiConfig.caName || '',
+          ip: pkiIp.trim(),
+          template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
+          caName: pkiConfig.caName || BAXTER_PKI_DEFAULT_CA,
           serverName,
           pfxPassword: dynamicPassword,
           scriptPath: pkiConfig.scriptPath || pkiScriptPath || BAXTER_PKI_SCRIPT_PATH,
@@ -1760,7 +1762,20 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Service</label>
                       <select
                         value={ticketType}
-                        onChange={(e) => setTicketType(e.target.value)}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          const wasPki = isPkiServiceType(ticketType);
+                          const nowPki = isPkiServiceType(next);
+                          setTicketType(next);
+                          if (nowPki && !wasPki) {
+                            const looksLikeIpv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ticketTarget.trim());
+                            if (!ticketTarget.trim() || looksLikeIpv4) {
+                              setTicketTarget(BAXTER_PKI_DEFAULT_FQDN);
+                            }
+                            if (!pkiIp.trim()) setPkiIp(BAXTER_PKI_DEFAULT_SAN_IP);
+                            if (!pkiTemplate.trim()) setPkiTemplate(BAXTER_PKI_DEFAULT_TEMPLATE);
+                          }
+                        }}
                         className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-primary focus:outline-none"
                       >
                         {services.map((item) => (
@@ -1789,7 +1804,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       </label>
                       <Input
                         type="text"
-                        placeholder={isPkiServiceType(ticketType) ? 'e.g. clientportal.spectre.local' : 'e.g. 192.168.0.1 or example.com'}
+                        placeholder={isPkiServiceType(ticketType) ? BAXTER_PKI_DEFAULT_FQDN : 'e.g. 192.168.0.1 or example.com'}
                         value={ticketTarget}
                         onChange={(e) => {
                           setTicketTarget(e.target.value);
@@ -1798,6 +1813,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         required
                         className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
                       />
+                      {isPkiServiceType(ticketType) && (
+                        <p className="text-[10px] text-emerald-700 dark:text-emerald-300 leading-snug">
+                          Happy path prellenado (CN={BAXTER_PKI_DEFAULT_FQDN}, SAN IP={BAXTER_PKI_DEFAULT_SAN_IP}, plantilla {BAXTER_PKI_DEFAULT_TEMPLATE}, CA Hub Issuing CA). Reescribe solo lo que quieras cambiar y envía.
+                        </p>
+                      )}
                       {targetError && (
                         <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
                       )}
@@ -1819,7 +1839,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               type="text"
                               value={pkiIp}
                               onChange={(e) => setPkiIp(e.target.value)}
-                              placeholder="Ej. 10.11.254.245"
+                              placeholder={BAXTER_PKI_DEFAULT_SAN_IP}
                               className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
                             />
                           </div>
@@ -1830,7 +1850,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               type="text"
                               value={pkiTemplate}
                               onChange={(e) => setPkiTemplate(e.target.value)}
-                              placeholder="Hub_WebServer"
+                              placeholder={BAXTER_PKI_DEFAULT_TEMPLATE}
                               required
                               className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
                             />
@@ -3352,7 +3372,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         type="text"
                         value={pkiCaName}
                         onChange={(e) => setPkiCaName(e.target.value)}
-                        placeholder="Ej. CA-SERVER\Baxter-CA"
+                        placeholder={BAXTER_PKI_DEFAULT_CA}
                         className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">

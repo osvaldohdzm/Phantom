@@ -28,6 +28,10 @@ export const BAXTER_PKI_UNREACHABLE_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
 /** ca01's CA common name; on USDFHUBCAI certreq returns 0x80070057. */
 export const BAXTER_PKI_WRONG_LOCAL_CA = 'USDFHUBCAI.hub.baxter.com\\HUB-ISSUING-CA';
 export const BAXTER_PKI_DEFAULT_TEMPLATE = 'Hub_WebServer';
+/** Proven unattended issue (2026-08-26): portal happy-path placeholders the user can overwrite. */
+export const BAXTER_PKI_DEFAULT_FQDN = 'clientportal.spectre.local';
+export const BAXTER_PKI_DEFAULT_SAN_IP = '1.1.1.1';
+export const BAXTER_PKI_SERVICE_NAME = 'Solicitud de Certificado PKI Baxter (TLS/SSL)';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
 export const BAXTER_PKI_DEFAULT_PORT = '5985';
