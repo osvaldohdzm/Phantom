@@ -44,8 +44,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(BAXTER_PKI_DEFAULT_USER).toBe('hub\\hernano30');
     expect(BAXTER_PKI_SSH_TIMEOUT_SEC).toBe(600);
     expect(BAXTER_PKI_PROVIDER_TYPE).toBe('CSP');
-    expect(BAXTER_PKI_DEFAULT_CA).toContain('Hub Issuing CA (Kerberos)');
-    expect(BAXTER_PKI_DEFAULT_CA).toContain('USDFHUBCAI');
+    expect(BAXTER_PKI_DEFAULT_CA).toBe('ca01.hub.baxter.com\\HUB-ISSUING-CA');
   });
 
   it('issues certificates by invoking the desktop script, not inline certreq', () => {
@@ -67,6 +66,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('if (-not $?)');
     expect(issueScript).toContain('ProviderType            = "CSP"');
     expect(issueScript).toContain('certreq.exe -submit -q -config "$CAServer"');
+    expect(issueScript).toContain('-attrib "$attribString"');
     expect(issueScript).not.toContain('CNG');
     expect(issueScript).not.toMatch(/-SubjectAlternativeNames[\s\S]*-SubjectAlternativeNames/);
     expect(issueScript).not.toContain('Invoke-Command -ComputerName');
@@ -92,7 +92,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(fromEmpty.scriptPath).toContain('Generate-BaxterHubCertificate.ps1');
 
     const fromStaleCa = resolvePkiWorkerConfig(
-      JSON.stringify({ host: '10.11.240.88', caName: 'ca01.hub.baxter.com\\HUB-ISSUING-CA' }),
+      JSON.stringify({ host: '10.11.240.88', caName: 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)' }),
     );
     expect(fromStaleCa.caName).toBe(BAXTER_PKI_DEFAULT_CA);
 
