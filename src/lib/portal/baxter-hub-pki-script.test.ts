@@ -61,6 +61,8 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('$params = @{');
     expect(issueScript).toContain('& $scriptPath @params');
     expect(issueScript).toContain('if (-not $?)');
+    expect(issueScript).not.toContain('ProviderType');
+    expect(issueScript).not.toContain('CNG');
     expect(issueScript).not.toMatch(/-SubjectAlternativeNames[\s\S]*-SubjectAlternativeNames/);
     expect(issueScript).not.toContain('Invoke-Command -ComputerName');
     expect(issueScript).not.toContain('certreq -new');

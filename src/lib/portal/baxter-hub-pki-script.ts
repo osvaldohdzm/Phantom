@@ -20,6 +20,11 @@ export const BAXTER_PKI_DEFAULT_PORT = '5985';
 export const BAXTER_PKI_DEFAULT_PASSWORD = 'Baxter1234567!';
 /** SSH/WinRM/ADCS wall clock. pywinrm is silent until the Windows script returns. */
 export const BAXTER_PKI_SSH_TIMEOUT_SEC = 600;
+/**
+ * Do not pass ProviderType=CNG. certreq INF + CNG yields
+ * NTE_PROV_TYPE_NOT_DEF (0x80090017) and a GUI popup that hangs WinRM.
+ * Omit the parameter so Generate-BaxterHubCertificate.ps1 uses its CSP default.
+ */
 
 export type PkiWorkerConfig = {
   host: string;
@@ -267,7 +272,6 @@ $params = @{
   OutputPath              = $outputDir
   SubmitToCA              = $true
   PrivateKeyPassword      = $pass
-  ProviderType            = "CNG"
   KeyLength               = 2048
 }
 if ($caName -and $caName.Trim() -ne "") {
