@@ -14,6 +14,47 @@ export const BAXTER_PKI_DEFAULT_CA = 'ca01.hub.baxter.com\\HUB-ISSUING-CA';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
 export const BAXTER_PKI_DEFAULT_PORT = '5985';
+/** WinRM password for the Windows PKI worker (desktop script host). */
+export const BAXTER_PKI_DEFAULT_PASSWORD = 'Baxter1234567!';
+
+export type PkiWorkerConfig = {
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  caName: string;
+  scriptPath: string;
+};
+
+export function defaultPkiWorkerConfig(): PkiWorkerConfig {
+  return {
+    host: BAXTER_PKI_DEFAULT_HOST,
+    port: BAXTER_PKI_DEFAULT_PORT,
+    username: BAXTER_PKI_DEFAULT_USER,
+    password: BAXTER_PKI_DEFAULT_PASSWORD,
+    caName: BAXTER_PKI_DEFAULT_CA,
+    scriptPath: BAXTER_PKI_SCRIPT_PATH,
+  };
+}
+
+/** Merge saved portal config with worker defaults so clients can submit without the SOC editor tab. */
+export function resolvePkiWorkerConfig(raw: string | null | undefined): PkiWorkerConfig {
+  const defaults = defaultPkiWorkerConfig();
+  if (!raw) return defaults;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PkiWorkerConfig>;
+    return {
+      host: parsed.host || defaults.host,
+      port: parsed.port || defaults.port,
+      username: parsed.username || defaults.username,
+      password: (parsed.password && String(parsed.password).trim()) || defaults.password,
+      caName: parsed.caName || defaults.caName,
+      scriptPath: parsed.scriptPath || defaults.scriptPath,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export type PkiJumpHostParams = {
   winHost: string;
