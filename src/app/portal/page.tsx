@@ -61,6 +61,15 @@ import {
   type CertificationStageInstance,
   type TicketUpdate,
 } from '@/lib/portal/baxter-hub-certification';
+import {
+  BAXTER_PKI_DEFAULT_HOST,
+  BAXTER_PKI_DEFAULT_PORT,
+  BAXTER_PKI_DEFAULT_USER,
+  BAXTER_PKI_SCRIPT_PATH,
+  buildPkiIssueJumpHostScript,
+  buildPkiVerifyJumpHostScript,
+  escapePsLiteral,
+} from '@/lib/portal/baxter-hub-pki-script';
 
 interface ClientTicket {
   id: string;
@@ -200,11 +209,12 @@ export default function PortalPage() {
   const [pkiTemplate, setPkiTemplate] = useState('WebServer');
 
   // PKI Worker WinRM settings states
-  const [pkiHost, setPkiHost] = useState('10.11.240.88');
-  const [pkiPort, setPkiPort] = useState('5985');
-  const [pkiUsername, setPkiUsername] = useState('hub\\hernano30');
+  const [pkiHost, setPkiHost] = useState(BAXTER_PKI_DEFAULT_HOST);
+  const [pkiPort, setPkiPort] = useState(BAXTER_PKI_DEFAULT_PORT);
+  const [pkiUsername, setPkiUsername] = useState(BAXTER_PKI_DEFAULT_USER);
   const [pkiPassword, setPkiPassword] = useState('');
   const [pkiCaName, setPkiCaName] = useState('');
+  const [pkiScriptPath, setPkiScriptPath] = useState(BAXTER_PKI_SCRIPT_PATH);
   const [isTestingPki, setIsTestingPki] = useState(false);
   const [pkiTestLogs, setPkiTestLogs] = useState<string[]>([]);
 
@@ -226,6 +236,7 @@ export default function PortalPage() {
         if (parsed.username) setPkiUsername(parsed.username);
         if (parsed.password) setPkiPassword(parsed.password);
         if (parsed.caName) setPkiCaName(parsed.caName);
+        if (parsed.scriptPath) setPkiScriptPath(parsed.scriptPath);
       } catch (e) {
         console.error('Error loading PKI configuration', e);
       }
@@ -333,8 +344,8 @@ export default function PortalPage() {
     mergeBaxterHubCatalog([
       {
         id: 'baxter_pki_certificate_request',
-        name: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
-        desc: 'Solicita y genera un certificado SSL/TLS firmado por la CA corporativa mediante certreq en el PKI Worker.',
+        name: 'Solicitud de Certificado PKI Baxter (TLS/SSL)',
+        desc: 'Solicita y genera un certificado SSL/TLS invocando Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker; el portal extrae y formatea el paquete ZIP.',
         defaultUrgency: 'High',
       },
       ...BAXTER_HUB_CATALOG,
@@ -516,7 +527,7 @@ export default function PortalPage() {
           ...hubDummies,
           {
             id: 'TK-9281',
-            type: 'Solicitud de Certificado PKI Baxter (certreq TLS/SSL)',
+            type: 'Solicitud de Certificado PKI Baxter (TLS/SSL)',
             target: 'clientportal.spectre.local',
             urgency: 'High',
             status: 'COMPLETADO',
@@ -564,10 +575,9 @@ export default function PortalPage() {
       if (!parsedResults['TK-9281']) {
         parsedResults['TK-9281'] = {
           output: `[✓] Solicitud de certificado procesada con éxito.\n` +
-                  `[+] Generando INF para CN=clientportal.spectre.local (SAN IP=10.11.254.245)\n` +
-                  `[+] Ejecutando certreq -new y certreq -submit en 10.11.240.88\n` +
-                  `[+] Certificado emitido por la CA corporativa usando plantilla: WebServer\n` +
-                  `[+] Exportando PFX y codificando archivos...\n` +
+                  `[+] Invocando Generate-BaxterHubCertificate.ps1 en C:\\Users\\hernano30\\Desktop\\Certificates Requests\n` +
+                  `[+] CN=clientportal.spectre.local (SAN IP=10.11.254.245) — CSR + SubmitToCA\n` +
+                  `[+] Extrayendo y formateando Package_*.zip desde el escritorio del PKI Worker\n` +
                   `[+] Paquete ZIP creado exitosamente. listo para descargar.`,
           logs: [
             `[+] Automated PKI request initiated — Ticket TK-9281`,
@@ -575,8 +585,8 @@ export default function PortalPage() {
             `[+] Routing via agent: Baxter PKI SSH Agent (baxtersrv300) (10.11.254.245:22)`,
             `[+] Opening SSH session...`,
             `[+] Autenticación SSH real exitosa.`,
-            `[+] SSH authenticated. Dispatching certreq commands...`,
-            `[+] Certreq executed successfully. Certificate package generated.`,
+            `[+] SSH authenticated. Dispatching Generate-BaxterHubCertificate.ps1...`,
+            `[+] Certificate package extracted and formatted.`,
           ],
           zipBase64: 'UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==' // Empty ZIP file base64
         };
@@ -813,228 +823,28 @@ export default function PortalPage() {
         // Load WinRM configuration
         const storedPki = localStorage.getItem('phantom_pki_config');
         const pkiConfig = storedPki ? JSON.parse(storedPki) : {
-          host: '10.11.240.88',
-          port: '5985',
-          username: 'hub\\hernano30',
+          host: BAXTER_PKI_DEFAULT_HOST,
+          port: BAXTER_PKI_DEFAULT_PORT,
+          username: BAXTER_PKI_DEFAULT_USER,
           password: '',
-          caName: ''
-        };
-        
-        const escWinPassword = (pkiConfig.password || '').replace(/["\\$`]/g, '\\$&');
-        const escFqdn = targetIpOrHost.replace(/["\\$`]/g, '\\$&');
-        const escIp = pkiIp.replace(/["\\$`]/g, '\\$&');
-        const escTemplate = pkiTemplate.replace(/["\\$`]/g, '\\$&');
-        const escCaName = (pkiConfig.caName || '').replace(/["\\$`]/g, '\\$&');
-        
-        runTimeout = 95;
+          caName: '',
+          scriptPath: BAXTER_PKI_SCRIPT_PATH,
+        }; 
+        runTimeout = 120;
 
-        const psScript = `
-          try {
-            Write-Host '[+] Inicializando orquestador local en el Jump Host...'
-            Write-Host '[+] Construyendo credenciales de dominio para ${pkiConfig.username}...'
-            \$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force
-            \$cred = New-Object System.Management.Automation.PSCredential ('${pkiConfig.username}', \$secpw)
-            
-            Write-Host '[+] Realizando diagnóstico preliminar en el Worker Windows...'
-            try {
-              \$winWhoami = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \$cred -ScriptBlock { whoami } -ErrorAction Stop
-              \$winHostname = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \$cred -ScriptBlock { hostname } -ErrorAction Stop
-              Write-Host ("  -> Diagnóstico exitoso. Usuario WinRM: " + \$winWhoami + ", Hostname: " + \$winHostname)
-            } catch {
-              Write-Warning ("[!] Diagnóstico fallido: " + \$_.Exception.Message + ". Intentando continuar...")
-            }
-
-            \$scriptBlock = {
-              param(\$fqdn, \$ip, \$template, \$caName, \$serverName, \$pass)
-              \$ErrorActionPreference = "Stop"
-              
-              # Estándares Baxter PKI Corporativos
-              \$FQDN       = \$fqdn
-              \$IP         = \$ip
-              \$Template   = \$template
-              \$CAConfig   = if (\$caName -and \$caName.Trim() -ne "") { \$caName } else { "ca01.hub.baxter.com\\\\HUB-ISSUING-CA" }
-              \$CAServer   = \$CAConfig.Split('\\\\')[0]
-              \$ServerName = \$serverName
-              \$Pass       = \$pass
-              
-              Write-Host "=== PROCESANDO GENERACIÓN Y EMISIÓN PKI EN UN SOLO PASO ==="
-              
-              # Configurar directorios de trabajo locales en el worker
-              \$tempDir = New-Item -ItemType Directory -Path "\\$env:TEMP\\\\cert_request_\$([Guid]::NewGuid().Guid)" -Force
-              Push-Location \$tempDir.FullName
-              
-              \$OutputDir   = Join-Path \$tempDir.FullName "CERT_WORKING_\$ServerName"
-              \$DeliveryDir = Join-Path \$tempDir.FullName "DELIVERY_\$ServerName"
-              
-              New-Item -ItemType Directory -Path \$OutputDir | Out-Null
-              New-Item -ItemType Directory -Path \$DeliveryDir | Out-Null
-              
-              try {
-                # 1. ARTEFACTOS BASE (INSTRUCTIONS.TXT & REQUEST.INF)
-                \$instructions = @"
-BAXTER ENTERPRISE PKI SERVICE - CERTIFICATE DELIVERY
-======================================================================
-Target FQDN : \$FQDN
-Target IP   : \$IP
-CA Server   : \$CAConfig
-Requester   : Horacio Arellano / Nathan F. Walker (Digital Health)
-
-DELIVERABLE ASSETS INCLUDED:
-1. \$ServerName.cer            -> Standalone Leaf Certificate (DER/Base64).
-2. \$ServerName_fullchain.pem  -> Complete Trust Chain (Leaf -> Intermediate -> Root).
-3. \$ServerName_private_key.key-> Matching RSA Private Key (PEM format).
-4. \$ServerName_backup.pfx     -> PKCS#12 Container (Password protected).
-======================================================================
-"@
-                Set-Content -Path (Join-Path \$DeliveryDir "INSTRUCTIONS.txt") -Value \$instructions -Encoding UTF8
-                
-                \$infPath = Join-Path \$OutputDir "request.inf"
-                
-                \$sanLine = '2.5.29.17 = "{text}dns=' + \$FQDN + '"'
-                if (\$ip -and \$ip.Trim() -ne "") {
-                  \$sanLine = '2.5.29.17 = "{text}dns=' + \$FQDN + '&ipaddress=' + \$ip + '"'
-                }
-                
-                \$infContent = @"
-[NewRequest]
-Subject = "CN=\$FQDN"
-Exportable = TRUE
-KeyLength = 2048
-KeySpec = 1
-MachineKeySet = TRUE
-ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
-ProviderType = 12
-RequestType = PKCS10
-HashAlgorithm = SHA256
-
-[EnhancedKeyUsageExtension]
-OID=1.3.6.1.5.5.7.3.1
-
-[Extensions]
-\$sanLine
-
-[RequestAttributes]
-CertificateTemplate = "\$Template"
-"@
-                Set-Content -Path \$infPath -Value \$infContent -Encoding ASCII
-                
-                # 2. GENERACIÓN DE CSR Y EMISIÓN CON AUTO-DISCOVERY FALLBACK
-                \$csrPath = Join-Path \$OutputDir "request.csr"
-                \$cerPath = Join-Path \$OutputDir "certificate.cer"
-                
-                \$certreqNewOut = certreq -new "\$infPath" "\$csrPath" 2>&1
-                if (\$LASTEXITCODE -ne 0) { throw "Error al generar CSR: \$certreqNewOut" }
-                
-                # Comprobar RPC puerto 135
-                \$rpcTest = Test-NetConnection -ComputerName \$CAServer -Port 135 -WarningAction SilentlyContinue
-                if (-not \$rpcTest.TcpTestSucceeded) {
-                  Write-Host "  [!] ALERTA: Puerto RPC 135 inaccesible hacia \$CAServer. Intentando Auto-Discovery..."
-                  \$certreqSubmitOut = certreq -submit -attrib "CertificateTemplate:\$Template" "\$csrPath" "\$cerPath" 2>&1
-                } else {
-                  Write-Host "  -> Enviando CSR a CA Central (\$CAConfig)..."
-                  \$certreqSubmitOut = certreq -submit -config "\$CAConfig" -attrib "CertificateTemplate:\$Template" "\$csrPath" "\$cerPath" 2>&1
-                }
-                
-                if (!(Test-Path \$cerPath) -or (Get-Item \$cerPath).Length -eq 0) {
-                  throw "Fallo crítico: La CA no emitió el certificado. Output: \$certreqSubmitOut"
-                }
-                
-                # 3. REPARACIÓN DE ALMACÉN LOCAL Y VINCULACIÓN DE CLAVE PRIVADA
-                certreq -accept "\$cerPath" | Out-Null
-                Start-Sleep -Seconds 2
-                \$tempCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(\$cerPath)
-                \$thumbprint = \$tempCert.Thumbprint
-                
-                certutil -repairstore My "\$thumbprint" | Out-Null
-                \$cert = Get-ChildItem -Path Cert:\\\\LocalMachine\\\\My | Where-Object { \$_.Thumbprint -eq \$thumbprint }
-                if (-not \$cert) { throw "No se pudo vincular la clave privada al certificado \$thumbprint." }
-                
-                # 4. EXPORTACIÓN DE ENTREGABLES (.CER, .PEM, .KEY, .PFX)
-                \$standaloneCerPath = Join-Path \$DeliveryDir "\$($ServerName).cer"
-                \$pemFullChainPath  = Join-Path \$DeliveryDir "\$($ServerName)_fullchain.pem"
-                \$pemPrivateKeyPath = Join-Path \$DeliveryDir "\$($ServerName)_private_key.key"
-                \$pfxBackupPath     = Join-Path \$DeliveryDir "\$($ServerName)_backup.pfx"
-                
-                [System.IO.File]::WriteAllBytes(\$standaloneCerPath, \$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-                
-                # Exportar Full Chain .pem
-                \$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-                \$chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
-                \$chain.Build(\$cert) | Out-Null
-                \$pemChainBuilder = New-Object System.Text.StringBuilder
-                foreach (\$element in \$chain.ChainElements) {
-                  \$b64 = [System.Convert]::ToBase64String(\$element.Certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), [System.Base64FormattingOptions]::InsertLineBreaks)
-                  [void]\$pemChainBuilder.AppendLine("-----BEGIN CERTIFICATE-----")
-                  [void]\$pemChainBuilder.AppendLine(\$b64.Trim())
-                  [void]\$pemChainBuilder.AppendLine("-----END CERTIFICATE-----")
-                }
-                Set-Content -Path \$pemFullChainPath -Value \$pemChainBuilder.ToString() -Encoding ASCII
-                
-                # Helper para exportar Private Key a PKCS#1 PEM
-                function Export-RsaPrivateKeyToPem (\$rsa) {
-                  \$param = \$rsa.ExportParameters(\$true)
-                  function Encode-Len ([int]\$len) {
-                    if (\$len -lt 0x80) { return [byte[]]@([byte]\$len) }
-                    \$tempList = New-Object System.Collections.Generic.List[byte]; \$temp = \$len
-                    while (\$temp -gt 0) { \$tempList.Add([byte](\$temp -band 0xFF)); \$temp = \$temp -shr 8 }
-                    \$arr = \$tempList.ToArray(); [Array]::Reverse(\$arr)
-                    \$res = New-Object System.Collections.Generic.List[byte]; \$res.Add([byte](0x80 -bor \$arr.Length))
-                    foreach (\$b in \$arr) { \$res.Add(\$b) }; return \$res.ToArray()
-                  }
-                  function Encode-Int ([byte[]]\$rawBytes) {
-                    \$idx = 0; while (\$idx -lt \$rawBytes.Length - 1 -and \$rawBytes[\$idx] -eq 0) { \$idx++ }
-                    \$raw = \$rawBytes[\$idx..(\$rawBytes.Length - 1)]
-                    \$msInt = New-Object System.IO.MemoryStream; \$msInt.WriteByte(0x02)
-                    if (\$raw[0] -ge 0x80) {
-                      \$lenBuf = Encode-Len (\$raw.Length + 1); \$msInt.Write(\$lenBuf, 0, \$lenBuf.Length); \$msInt.WriteByte(0x00)
-                    } else {
-                      \$lenBuf = Encode-Len \$raw.Length; \$msInt.Write(\$lenBuf, 0, \$lenBuf.Length)
-                    }
-                    \$msInt.Write(\$raw, 0, \$raw.Length); return \$msInt.ToArray()
-                  }
-                  \$msBody = New-Object System.IO.MemoryStream
-                  \$items = @((Encode-Int ([byte[]]@(0))), (Encode-Int ([byte[]]\$param.Modulus)), (Encode-Int ([byte[]]\$param.Exponent)), (Encode-Int ([byte[]]\$param.D)), (Encode-Int ([byte[]]\$param.P)), (Encode-Int ([byte[]]\$param.Q)), (Encode-Int ([byte[]]\$param.DP)), (Encode-Int ([byte[]]\$param.DQ)), (Encode-Int ([byte[]]\$param.InverseQ)))
-                  foreach (\$item in \$items) { \$msBody.Write(\$item, 0, \$item.Length) }
-                  \$bodyBytes = \$msBody.ToArray(); \$msFinal = New-Object System.IO.MemoryStream; \$msFinal.WriteByte(0x30)
-                  \$lenSeq = Encode-Len \$bodyBytes.Length; \$msFinal.Write(\$lenSeq, 0, \$lenSeq.Length); \$msFinal.Write(\$bodyBytes, 0, \$bodyBytes.Length)
-                  \$b64 = [Convert]::ToBase64String(\$msFinal.ToArray(), [System.Base64FormattingOptions]::InsertLineBreaks)
-                  return "-----BEGIN RSA PRIVATE KEY-----\\r\\n\$b64\\r\\n-----END RSA PRIVATE KEY-----\\r\\n"
-                }
-                
-                \$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(\$cert)
-                if (\$rsa) { Set-Content -Path \$pemPrivateKeyPath -Value (Export-RsaPrivateKeyToPem \$rsa) -Encoding ASCII }
-                
-                \$securePass = ConvertTo-SecureString -String \$Pass -Force -AsPlainText
-                Export-PfxCertificate -Cert \$cert.PSPath -FilePath \$pfxBackupPath -Password \$securePass -Force | Out-Null
-                
-                # 5. EMPAQUETADO ZIP FINAL
-                \$zipPath = Join-Path \$tempDir.FullName "Package_\$ServerName.zip"
-                Compress-Archive -Path "\$DeliveryDir\\\\*" -DestinationPath \$zipPath -Force
-                
-                # Limpieza del almacén local del worker para evitar acumulación
-                Remove-Item \$cert.PSPath -Force -ErrorAction SilentlyContinue
-                
-                # Retornar el archivo comprimido como base64
-                \$base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes(\$zipPath))
-                Write-Output "ZIP_BASE64_START"
-                Write-Output \$base64
-                Write-Output "ZIP_BASE64_END"
-              } catch {
-                Write-Error \$_
-              } finally {
-                Pop-Location
-                Remove-Item -Path \$tempDir.FullName -Recurse -Force
-              }
-            };
-            
-            Write-Host '[+] Conectando via WinRM al worker ${pkiConfig.host}...'
-            \$res = Invoke-Command -ComputerName ${pkiConfig.host} -Port ${pkiConfig.port} -Credential \$cred -ScriptBlock \$scriptBlock -ArgumentList '${escFqdn}', '${escIp}', '${escTemplate}', '${escCaName}', '${serverName}', '${dynamicPassword}' -ErrorAction Stop
-            Write-Host '[✓] Ejecución remota completada exitosamente.'
-            Write-Output \$res
-          } catch {
-            Write-Error ("[!] Error crítico en el Jump Host: " + \$_)
-          }
-        `;
+        const psScript = buildPkiIssueJumpHostScript({
+          winHost: pkiConfig.host,
+          winPort: String(pkiConfig.port || BAXTER_PKI_DEFAULT_PORT),
+          winUsername: escapePsLiteral(pkiConfig.username || BAXTER_PKI_DEFAULT_USER),
+          winPassword: escapePsLiteral(pkiConfig.password || ''),
+          fqdn: escapePsLiteral(targetIpOrHost),
+          ip: escapePsLiteral(pkiIp),
+          template: escapePsLiteral(pkiTemplate),
+          caName: escapePsLiteral(pkiConfig.caName || ''),
+          serverName: escapePsLiteral(serverName),
+          pfxPassword: escapePsLiteral(dynamicPassword),
+          scriptPath: escapePsLiteral(pkiConfig.scriptPath || pkiScriptPath || BAXTER_PKI_SCRIPT_PATH),
+        });
 
         const base64Script = safeBtoa(psScript);
 
@@ -1070,9 +880,9 @@ CertificateTemplate = "\$Template"
 
         const completedLogs = isPkiRequest ? [
           ...initLogs,
-          `[+] SSH authenticated. Dispatching certreq commands...`,
+          `[+] SSH authenticated. Dispatching Generate-BaxterHubCertificate.ps1...`,
           `[+] Processing response from Windows PKI Worker...`,
-          `[+] Certificate files generated successfully.`,
+          `[+] Certificate package extracted and formatted.`,
           `[+] Contraseña del PFX: ${dynamicPassword}`,
         ] : [
           ...initLogs,
@@ -1116,10 +926,10 @@ PFX PASSWORD: ${dynamicPassword}
             zipBase64 = zipContent;
             
             stdout = `[+] [MOCK] Solicitud de certificado procesada con éxito.\n` +
-                     `[+] Generando INF para CN=${targetIpOrHost} (SAN IP=${pkiIp || 'N/A'})\n` +
-                     `[+] Ejecutando certreq -new y certreq -submit en la CA corporativa\n` +
-                     `[+] Certificado emitido por la CA corporativa usando plantilla: ${pkiTemplate}\n` +
-                     `[+] Exportando PFX y codificando archivos...\n` +
+                     `[+] Invocando Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker\n` +
+                     `[+] CN=${targetIpOrHost} (SAN IP=${pkiIp || 'N/A'}) — CSR + SubmitToCA\n` +
+                     `[+] Plantilla ADCS: ${pkiTemplate}\n` +
+                     `[+] Extrayendo y formateando Package_*.zip\n` +
                      `[+] Contraseña temporal del PFX generada: ${dynamicPassword}\n` +
                      `[+] Paquete ZIP creado exitosamente. listo para descargar.`;
           } else {
@@ -2542,7 +2352,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
                                    <Terminal className="size-3.5" />
-                                   {isPkiServiceType(t.type) ? 'Certreq & WinRM execution logs' : isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
+                                   {isPkiServiceType(t.type) ? 'PKI Worker & Generate-BaxterHubCertificate.ps1 logs' : isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
                                  </div>
                                  {isPkiServiceType(t.type) ? (
                                    result.zipBase64 ? (
@@ -3438,7 +3248,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       Configuración de PKI Worker (Windows CA)
                     </CardTitle>
                     <CardDescription>
-                      Configura los detalles de conexión WinRM para el Worker PKI remoto que procesará las solicitudes de certificados.
+                      WinRM hacia el worker Windows. Las solicitudes TLS/SSL invocan Generate-BaxterHubCertificate.ps1 en el escritorio (no certreq inline); el portal extrae y formatea el ZIP.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -3500,7 +3310,21 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">
-                        Si se deja vacío, certreq auto-detectará la CA configurada en el dominio.
+                        Si se deja vacío, Generate-BaxterHubCertificate.ps1 usa su CA por defecto (ca01.hub.baxter.com\HUB-ISSUING-CA).
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground font-semibold">Ruta del script en el escritorio del Worker</label>
+                      <Input
+                        type="text"
+                        value={pkiScriptPath}
+                        onChange={(e) => setPkiScriptPath(e.target.value)}
+                        placeholder={BAXTER_PKI_SCRIPT_PATH}
+                        className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
+                      />
+                      <span className="text-[10px] text-zinc-500 block">
+                        C:\Users\hernano30\Desktop\Certificates Requests\Generate-BaxterHubCertificate.ps1
                       </span>
                     </div>
 
@@ -3514,6 +3338,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             username: pkiUsername,
                             password: pkiPassword,
                             caName: pkiCaName,
+                            scriptPath: pkiScriptPath,
                           };
                           localStorage.setItem('phantom_pki_config', JSON.stringify(config));
                           alert('Configuración de PKI Worker guardada con éxito.');
@@ -3529,9 +3354,10 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         onClick={async () => {
                           setIsTestingPki(true);
                           const startLogs = [
-                            `[+] [${new Date().toLocaleTimeString()}] Iniciando diagnóstico de conectividad WinRM...`,
+                            `[+] [${new Date().toLocaleTimeString()}] Verificando especificaciones PKI (sin emitir certificado)...`,
                             `[+] Destino: ${pkiHost}:${pkiPort}`,
                             `[+] Usuario WinRM: ${pkiUsername}`,
+                            `[+] Script esperado: ${pkiScriptPath || BAXTER_PKI_SCRIPT_PATH}`,
                           ];
                           setPkiTestLogs(startLogs);
 
@@ -3559,9 +3385,10 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 `[+] Autenticación SSH real con el agente simulada con éxito.`,
                                 `[+] Ejecutando prueba de puerto remota: nc -zv ${pkiHost} ${pkiPort}`,
                                 `[✓] Connection to ${pkiHost} ${pkiPort} port [tcp/*] succeeded!`,
-                                `[+] Ejecutando prueba de autenticación WinRM...`,
+                                `[+] Verificando especificaciones: Generate-BaxterHubCertificate.ps1 (sin emitir certificado)...`,
+                                `[✓] SCRIPT_PKI_OK=${pkiScriptPath || BAXTER_PKI_SCRIPT_PATH}`,
                                 `[✓] CONEXION_WINRM_EXITOSA: Autenticación con el dominio y usuario ${pkiUsername} completada correctamente.`,
-                                `[✓] Diagnóstico de PKI Worker exitoso. El canal está listo para emitir certificados.`
+                                `[✓] Especificaciones PKI verificadas. El worker usará el script de escritorio para emitir certificados.`,
                               ]);
                               setIsTestingPki(false);
                             }, 1500);
@@ -3569,8 +3396,14 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           }
 
                           try {
-                            const escWinPassword = pkiPassword.replace(/["\\$`]/g, '\\$&');
                             const portCheckCmd = `nc -zv ${pkiHost} ${pkiPort}`;
+                            const psTestScript = buildPkiVerifyJumpHostScript({
+                              winHost: pkiHost,
+                              winPort: pkiPort,
+                              winUsername: escapePsLiteral(pkiUsername),
+                              winPassword: escapePsLiteral(pkiPassword),
+                              scriptPath: escapePsLiteral(pkiScriptPath || BAXTER_PKI_SCRIPT_PATH),
+                            });
                             
                             const resPort = await fetch('/api/automation/ssh-run', {
                               method: 'POST',
@@ -3596,32 +3429,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               ...prev,
                               ...dataPort.logs.filter((l: string) => !l.startsWith('[+]') && !l.startsWith('[!]')),
                               `[✓] Conexión TCP al puerto ${pkiPort} exitosa.`,
-                              `[+] Comprobando credenciales y autenticación WinRM...`
+                              `[+] Verificando WinRM y Generate-BaxterHubCertificate.ps1 en el escritorio (sin emitir certificado)...`
                             ]);
-
-                            const psTestScript = `
-                              try {
-                                Write-Output '[+] Comprobando credenciales para ${pkiUsername}...'
-                                \$secpw = ConvertTo-SecureString '${escWinPassword}' -AsPlainText -Force
-                                \$cred = New-Object System.Management.Automation.PSCredential ('${pkiUsername}', \$secpw)
-                                
-                                Write-Output '[+] Realizando diagnóstico preliminar (whoami & hostname)...'
-                                \$winWhoami = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \$cred -ScriptBlock { whoami } -ErrorAction Stop
-                                \$winHostname = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \$cred -ScriptBlock { hostname } -ErrorAction Stop
-                                Write-Output ("  -> Usuario WinRM: " + \$winWhoami)
-                                Write-Output ("  -> Hostname WinRM: " + \$winHostname)
-                                
-                                Write-Output '[+] Realizando Invoke-Command de prueba en ${pkiHost}:${pkiPort}...'
-                                \$res = Invoke-Command -ComputerName ${pkiHost} -Port ${pkiPort} -Credential \$cred -ScriptBlock { Write-Output 'WINRM_AUTH_SUCCESS' } -ErrorAction Stop
-                                if (\$res -eq 'WINRM_AUTH_SUCCESS') {
-                                  Write-Output 'CONEXION_WINRM_EXITOSA'
-                                } else {
-                                  Write-Output ("ERROR: Respuesta inesperada del worker: " + \$res)
-                                }
-                              } catch {
-                                Write-Output ("ERROR_WINRM: " + \$_.Exception.Message)
-                              }
-                            `;
                             
                             const base64TestScript = safeBtoa(psTestScript);
                             
@@ -3657,13 +3466,17 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                             const authLogs = dataAuth.logs || [];
                             const hasSuccess = authLogs.some((l: string) => l.includes('CONEXION_WINRM_EXITOSA'));
+                            const scriptOk = authLogs.find((l: string) => l.includes('SCRIPT_PKI_OK='));
                             const errorLine = authLogs.find((l: string) => l.includes('ERROR_WINRM:'));
 
                             if (hasSuccess) {
                               setPkiTestLogs(prev => [
                                   ...prev,
                                   `[✓] CONEXION_WINRM_EXITOSA: Credenciales de ${pkiUsername} son válidas y el Worker respondió correctamente.`,
-                                  `[✓] El PKI Worker se encuentra en línea y listo para recibir solicitudes.`
+                                  scriptOk
+                                    ? `[✓] ${scriptOk.trim()}`
+                                    : `[✓] Generate-BaxterHubCertificate.ps1 localizado en el escritorio del worker.`,
+                                  `[✓] Especificaciones PKI verificadas. No se emitió certificado (worker es otra máquina).`
                                 ]);
                             } else if (errorLine) {
                               setPkiTestLogs(prev => [
@@ -3697,7 +3510,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         ) : (
                           <>
                             <Play className="size-3" />
-                            Probar Conexión WinRM
+                            Verificar script de escritorio
                           </>
                         )}
                       </Button>
@@ -3724,7 +3537,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           </div>
                         ))
                       ) : (
-                        <span className="text-zinc-500 italic">Listo para ejecutar pruebas de diagnóstico. Haz clic en 'Probar Conexión WinRM'.</span>
+                        <span className="text-zinc-500 italic">Listo para verificar especificaciones. Haz clic en 'Verificar script de escritorio' (no emite certificados).</span>
                       )}
                     </div>
                   </CardContent>
