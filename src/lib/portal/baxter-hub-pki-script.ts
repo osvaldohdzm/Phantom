@@ -235,32 +235,30 @@ Write-Host ("[OK] Script de escritorio: " + $scriptPath)
 $outputDir = Split-Path -Parent $scriptPath
 if (-not $outputDir) { $outputDir = $scriptDir }
 $subject = "CN=$fqdn, O=BaxterHub, C=US"
-
-$argList = @(
-  "-NoProfile",
-  "-ExecutionPolicy", "Bypass",
-  "-File", $scriptPath,
-  "-SubjectName", $subject,
-  "-CertType", "CSR",
-  "-TemplateName", $template,
-  "-OutputPath", $outputDir,
-  "-SubmitToCA",
-  "-PrivateKeyPassword", $pass,
-  "-ProviderType", "CNG",
-  "-KeyLength", "2048",
-  "-SubjectAlternativeNames", $fqdn
-)
-if ($ip -and $ip.Trim() -ne "") {
-  $argList += @("-SubjectAlternativeNames", $ip)
-}
-if ($caName -and $caName.Trim() -ne "") {
-  $argList += @("-CAServer", $caName)
-}
+$sanList = [System.Collections.Generic.List[string]]::new()
+$sanList.Add($fqdn)
+if ($ip -and $ip.Trim() -ne "") { $sanList.Add($ip) }
 
 Write-Host "[+] Ejecutando Generate-BaxterHubCertificate.ps1 (CSR + SubmitToCA). Extraer y formatear Package_*.zip..."
-& powershell.exe @argList
-if ($LASTEXITCODE -ne 0) {
-  throw "Generate-BaxterHubCertificate.ps1 terminó con código $LASTEXITCODE"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+$params = @{
+  SubjectName             = $subject
+  SubjectAlternativeNames = @($sanList.ToArray())
+  CertType                = "CSR"
+  TemplateName            = $template
+  OutputPath              = $outputDir
+  SubmitToCA              = $true
+  PrivateKeyPassword      = $pass
+  ProviderType            = "CNG"
+  KeyLength               = 2048
+}
+if ($caName -and $caName.Trim() -ne "") {
+  $params.CAServer = $caName
+}
+& $scriptPath @params
+# & script.ps1 does not set $LASTEXITCODE the way powershell.exe -File does.
+if (-not $?) {
+  throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
 }
 
 $zip = Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "Package_*.zip" -ErrorAction SilentlyContinue |
