@@ -98,11 +98,13 @@ def ensure_winrm():
         return winrm
     except ImportError:
         pass
-    print('[+] pywinrm no está en el jump host Linux. Instalando (pwsh/WSMan no existe aquí)...')
+    print('[+] pywinrm no está en el jump host Linux. Instalando (Ubuntu PEP 668: --break-system-packages)...')
     attempts = [
-        [sys.executable, '-m', 'pip', 'install', '--user', 'pywinrm'],
         [sys.executable, '-m', 'pip', 'install', '--user', '--break-system-packages', 'pywinrm'],
-        ['sudo', sys.executable, '-m', 'pip', 'install', 'pywinrm'],
+        ['pip3', 'install', '--user', '--break-system-packages', 'pywinrm'],
+        [sys.executable, '-m', 'pip', 'install', '--break-system-packages', 'pywinrm'],
+        ['sudo', sys.executable, '-m', 'pip', 'install', '--break-system-packages', 'pywinrm'],
+        ['sudo', 'apt-get', 'update'],
         ['sudo', 'apt-get', 'install', '-y', 'python3-winrm'],
     ]
     last = None
@@ -113,7 +115,12 @@ def ensure_winrm():
             return winrm
         except Exception as exc:
             last = exc
-    raise SystemExit('[!] No se pudo instalar pywinrm. En baxtersrv300 ejecuta: pip3 install --user pywinrm  (último error: %s)' % last)
+            try:
+                import winrm
+                return winrm
+            except ImportError:
+                pass
+    raise SystemExit('[!] No se pudo instalar pywinrm. En baxtersrv300 ejecuta: pip3 install --user --break-system-packages pywinrm  (último error: %s)' % last)
 
 def decode(blob):
     if blob is None:
