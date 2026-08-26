@@ -69,7 +69,6 @@ import {
   BAXTER_PKI_SCRIPT_PATH,
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
-  escapePsLiteral,
   resolvePkiWorkerConfig,
 } from '@/lib/portal/baxter-hub-pki-script';
 
@@ -817,29 +816,28 @@ export default function PortalPage() {
         nmapCmd = cmd;
          } else if (isPkiRequest) {
         const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')); 
-        runTimeout = 120;
+        runTimeout = 180;
 
         const psScript = buildPkiIssueJumpHostScript({
           winHost: pkiConfig.host,
           winPort: String(pkiConfig.port || BAXTER_PKI_DEFAULT_PORT),
-          winUsername: escapePsLiteral(pkiConfig.username || BAXTER_PKI_DEFAULT_USER),
-          winPassword: escapePsLiteral(pkiConfig.password || ''),
-          fqdn: escapePsLiteral(targetIpOrHost),
-          ip: escapePsLiteral(pkiIp),
-          template: escapePsLiteral(pkiTemplate),
-          caName: escapePsLiteral(pkiConfig.caName || ''),
-          serverName: escapePsLiteral(serverName),
-          pfxPassword: escapePsLiteral(dynamicPassword),
-          scriptPath: escapePsLiteral(pkiConfig.scriptPath || pkiScriptPath || BAXTER_PKI_SCRIPT_PATH),
+          winUsername: pkiConfig.username || BAXTER_PKI_DEFAULT_USER,
+          winPassword: pkiConfig.password || '',
+          fqdn: targetIpOrHost,
+          ip: pkiIp,
+          template: pkiTemplate,
+          caName: pkiConfig.caName || '',
+          serverName,
+          pfxPassword: dynamicPassword,
+          scriptPath: pkiConfig.scriptPath || pkiScriptPath || BAXTER_PKI_SCRIPT_PATH,
         });
 
         const base64Script = safeBtoa(psScript);
 
         nmapCmd = `
-          PWSH_BIN=\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi);
-          TMP_FILE="/tmp/pki_req_\$$.ps1";
+          TMP_FILE="/tmp/pki_req_\$$.sh";
           echo "${base64Script}" | base64 -d > "\$TMP_FILE";
-          \$PWSH_BIN -File "\$TMP_FILE";
+          bash "\$TMP_FILE";
           STATUS=\$?;
           rm -f "\$TMP_FILE";
           exit \$STATUS;
@@ -3385,9 +3383,9 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             const psTestScript = buildPkiVerifyJumpHostScript({
                               winHost: pkiHost,
                               winPort: pkiPort,
-                              winUsername: escapePsLiteral(pkiUsername),
-                              winPassword: escapePsLiteral(pkiPassword),
-                              scriptPath: escapePsLiteral(pkiScriptPath || BAXTER_PKI_SCRIPT_PATH),
+                              winUsername: pkiUsername,
+                              winPassword: pkiPassword,
+                              scriptPath: pkiScriptPath || BAXTER_PKI_SCRIPT_PATH,
                             });
                             
                             const resPort = await fetch('/api/automation/ssh-run', {
@@ -3420,10 +3418,9 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             const base64TestScript = safeBtoa(psTestScript);
                             
                             const testAuthCmd = `
-                              PWSH_BIN=\$(if command -v pwsh >/dev/null 2>&1; then command -v pwsh; elif [ -x /snap/bin/pwsh ]; then echo /snap/bin/pwsh; elif [ -x /usr/bin/pwsh ]; then echo /usr/bin/pwsh; else echo pwsh; fi);
-                              TMP_FILE="/tmp/pki_test_\$$.ps1";
+                              TMP_FILE="/tmp/pki_test_\$$.sh";
                               echo "${base64TestScript}" | base64 -d > "\$TMP_FILE";
-                              \$PWSH_BIN -File "\$TMP_FILE";
+                              bash "\$TMP_FILE";
                               STATUS=\$?;
                               rm -f "\$TMP_FILE";
                               exit \$STATUS;
