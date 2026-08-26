@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   BAXTER_PKI_DEFAULT_CA,
+  BAXTER_PKI_DEFAULT_FQDN,
   BAXTER_PKI_DEFAULT_HOST,
   BAXTER_PKI_DEFAULT_USER,
   BAXTER_PKI_SCRIPT_DIR,
   BAXTER_PKI_SCRIPT_PATH,
   BAXTER_PKI_SSH_TIMEOUT_SEC,
   BAXTER_PKI_PROVIDER_TYPE,
+  BAXTER_PKI_DEFAULT_SAN_IP,
+  BAXTER_PKI_DEFAULT_TEMPLATE,
+  BAXTER_PKI_SERVICE_NAME,
   buildPkiIssueJumpHostScript,
   buildPkiVerifyJumpHostScript,
   escapePsLiteral,
@@ -45,6 +49,10 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(BAXTER_PKI_SSH_TIMEOUT_SEC).toBe(600);
     expect(BAXTER_PKI_PROVIDER_TYPE).toBe('CSP');
     expect(BAXTER_PKI_DEFAULT_CA).toBe('USDFHUBCAI.hub.baxter.com\\Hub Issuing CA');
+    expect(BAXTER_PKI_DEFAULT_FQDN).toBe('clientportal.spectre.local');
+    expect(BAXTER_PKI_DEFAULT_SAN_IP).toBe('1.1.1.1');
+    expect(BAXTER_PKI_DEFAULT_TEMPLATE).toBe('Hub_WebServer');
+    expect(BAXTER_PKI_SERVICE_NAME).toContain('Certificado PKI');
   });
 
   it('issues certificates by invoking the desktop script, not inline certreq', () => {
