@@ -18,6 +18,8 @@ export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
 export const BAXTER_PKI_DEFAULT_PORT = '5985';
 /** WinRM password for the Windows PKI worker (desktop script host). */
 export const BAXTER_PKI_DEFAULT_PASSWORD = 'Baxter1234567!';
+/** SSH/WinRM/ADCS wall clock. pywinrm is silent until the Windows script returns. */
+export const BAXTER_PKI_SSH_TIMEOUT_SEC = 600;
 
 export type PkiWorkerConfig = {
   host: string;
@@ -90,7 +92,7 @@ export function escapeBashSingleQuoted(value: string): string {
   return String(value ?? '').replace(/'/g, `'\\''`);
 }
 
-const LINUX_WINRM_PYTHON = `import os, sys, subprocess
+const LINUX_WINRM_PYTHON = `import os, sys, subprocess, threading
 
 def ensure_winrm():
     try:
@@ -160,10 +162,25 @@ for transport in ('ntlm', 'basic'):
 if session is None:
     raise SystemExit('[!] Error crítico en el Jump Host: WinRM hacia %s:%s falló (%s)' % (host, port, last_err))
 
-print('[+] Invocando script remoto en el worker Windows...')
-result = session.run_ps(script)
+print('[+] Invocando Generate-BaxterHubCertificate.ps1 via WinRM. ADCS no imprime hasta terminar; esto puede tardar varios minutos.', flush=True)
+stop_beat = threading.Event()
+
+def beat():
+    n = 0
+    while not stop_beat.wait(15):
+        n += 15
+        print('[~] WinRM sigue esperando Generate-BaxterHubCertificate.ps1 / ADCS (%ss)...' % n, flush=True)
+
+t = threading.Thread(target=beat, daemon=True)
+t.start()
+try:
+    result = session.run_ps(script)
+finally:
+    stop_beat.set()
 sys.stdout.write(decode(result.std_out))
 sys.stderr.write(decode(result.std_err))
+sys.stdout.flush()
+sys.stderr.flush()
 if result.status_code:
     sys.exit(result.status_code)
 `;
@@ -194,7 +211,8 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "[!] python3 no está instalado en el jump host." >&2
   exit 1
 fi
-python3 - <<'PY'
+export PYTHONUNBUFFERED=1
+python3 -u - <<'PY'
 ${LINUX_WINRM_PYTHON}
 PY
 `;
