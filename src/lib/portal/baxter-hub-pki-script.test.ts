@@ -44,7 +44,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(BAXTER_PKI_DEFAULT_USER).toBe('hub\\hernano30');
     expect(BAXTER_PKI_SSH_TIMEOUT_SEC).toBe(600);
     expect(BAXTER_PKI_PROVIDER_TYPE).toBe('CSP');
-    expect(BAXTER_PKI_DEFAULT_CA).toBe('ca01.hub.baxter.com\\HUB-ISSUING-CA');
+    expect(BAXTER_PKI_DEFAULT_CA).toBe('USDFHUBCAI.hub.baxter.com\\HUB-ISSUING-CA');
   });
 
   it('issues certificates by invoking the desktop script, not inline certreq', () => {
@@ -97,6 +97,11 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
       JSON.stringify({ host: '10.11.240.88', caName: 'USDFHUBCAI.hub.baxter.com\\Hub Issuing CA (Kerberos)' }),
     );
     expect(fromStaleCa.caName).toBe(BAXTER_PKI_DEFAULT_CA);
+
+    const fromUnreachableCa = resolvePkiWorkerConfig(
+      JSON.stringify({ host: '10.11.240.88', caName: 'ca01.hub.baxter.com\\HUB-ISSUING-CA' }),
+    );
+    expect(fromUnreachableCa.caName).toBe(BAXTER_PKI_DEFAULT_CA);
 
     const fromPartial = resolvePkiWorkerConfig(JSON.stringify({ host: '10.11.240.88' }));
     expect(fromPartial.password).toBe(fromEmpty.password);
