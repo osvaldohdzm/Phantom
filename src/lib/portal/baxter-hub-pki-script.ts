@@ -6,6 +6,13 @@
  * remoting uses Python pywinrm. The desktop script still runs on Windows.
  *
  *   C:\Users\hernano30\Desktop\Certificates Requests\Generate-BaxterHubCertificate.ps1
+ *
+ * That .ps1 accepts -CAServer (default ca01.hub.baxter.com\HUB-ISSUING-CA) but the
+ * stock file never passes it to certreq -submit, so Windows shows the CA picker.
+ * First run patches those certreq lines in place (keeps .bak):
+ *   certreq -new -q -f
+ *   certreq -submit -q -config "$CAServer" -attrib "$attribString"
+ *   certreq -accept -q
  */
 
 export const BAXTER_PKI_SCRIPT_DIR =
