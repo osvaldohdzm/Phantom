@@ -268,9 +268,9 @@ $quietScript = Join-Path $env:TEMP ("pki_quiet_" + [guid]::NewGuid().ToString() 
 $raw = [System.IO.File]::ReadAllText($scriptPath)
 if ($raw -notmatch 'certreq\.exe -submit -q') {
   $raw = $raw.Replace('& certreq.exe -new "$infPath" "$csrPath"', '& certreq.exe -new -q -f "$infPath" "$csrPath"')
-  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -f -config $CAServer -attrib $attribString "$csrPath" "$cerPath"')
-  $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -f -config $CAServer "$csrPath" "$cerPath"')
-  $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q -f "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib $attribString "$csrPath" "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" "$csrPath" "$cerPath"')
+  $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q "$cerPath"')
 }
 [System.IO.File]::WriteAllText($quietScript, $raw, (New-Object System.Text.UTF8Encoding $false))
 $scriptPath = $quietScript
