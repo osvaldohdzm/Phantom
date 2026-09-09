@@ -224,6 +224,7 @@ export default function PortalPage() {
   const [pkiFqdn, setPkiFqdn] = useState(BAXTER_PKI_DEFAULT_FQDN);
   const [pkiIp, setPkiIp] = useState(BAXTER_PKI_DEFAULT_SAN_IP);
   const [pkiTemplate, setPkiTemplate] = useState(BAXTER_PKI_DEFAULT_TEMPLATE);
+  const [pkiFormMode, setPkiFormMode] = useState<'quick' | 'complete'>('quick');
 
   // PKI Worker WinRM settings states
   const [pkiHost, setPkiHost] = useState(BAXTER_PKI_DEFAULT_HOST);
@@ -356,7 +357,7 @@ export default function PortalPage() {
       {
         id: 'baxter_pki_certificate_request',
         name: BAXTER_PKI_SERVICE_NAME,
-        desc: 'Solicita y genera un certificado SSL/TLS invocando el Generate-BaxterHubCertificate.ps1 que ya existe en el escritorio del PKI Worker (no se genera ni se parchea); el portal extrae y formatea el paquete ZIP.',
+        desc: 'Certificado TLS/SSL interno de Baxter Hub. Formulario rápido: Common Name y SAN. El worker PKI existente emite el paquete ZIP.',
         defaultUrgency: 'High',
       },
       ...BAXTER_HUB_CATALOG,
@@ -1747,14 +1748,22 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
             {/* ── LEFT COLUMN: New Request Form ── */}
-            <div className="lg:col-span-2 space-y-4">
+            <div className={`${isPkiServiceType(ticketType) ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-4`}>
               <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="size-4 text-emerald-500" />
-                    New Service Request
+                    {isPkiServiceType(ticketType) ? (
+                      <ShieldCheck className="size-4 text-primary" />
+                    ) : (
+                      <Activity className="size-4 text-emerald-500" />
+                    )}
+                    {isPkiServiceType(ticketType) ? 'SSL/TLS Certificate Request' : 'New Service Request'}
                   </CardTitle>
-                  <CardDescription>Select a service and submit your request. Results will appear in your request history.</CardDescription>
+                  <CardDescription>
+                    {isPkiServiceType(ticketType)
+                      ? 'Certificados internos de Baxter Hub (no el catálogo externo). Asterisco indica campo requerido.'
+                      : 'Select a service and submit your request. Results will appear in your request history.'}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmitTicket} className="space-y-4">
@@ -1774,6 +1783,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             }
                             if (!pkiIp.trim()) setPkiIp(BAXTER_PKI_DEFAULT_SAN_IP);
                             if (!pkiTemplate.trim()) setPkiTemplate(BAXTER_PKI_DEFAULT_TEMPLATE);
+                            setPkiFormMode('quick');
                           }
                         }}
                         className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-primary focus:outline-none"
@@ -1798,13 +1808,14 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       )}
                     </div>
 
+                    {!isPkiServiceType(ticketType) && (
                     <div className="space-y-1.5">
                       <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-                        {isPkiServiceType(ticketType) ? 'Common Name (FQDN)' : 'Target Host / IP'}
+                        Target Host / IP
                       </label>
                       <Input
                         type="text"
-                        placeholder={isPkiServiceType(ticketType) ? BAXTER_PKI_DEFAULT_FQDN : 'e.g. 192.168.0.1 or example.com'}
+                        placeholder="e.g. 192.168.0.1 or example.com"
                         value={ticketTarget}
                         onChange={(e) => {
                           setTicketTarget(e.target.value);
@@ -1813,49 +1824,185 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         required
                         className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
                       />
-                      {isPkiServiceType(ticketType) && (
-                        <p className="text-[10px] text-emerald-700 dark:text-emerald-300 leading-snug">
-                          Happy path prellenado (CN={BAXTER_PKI_DEFAULT_FQDN}, SAN IP={BAXTER_PKI_DEFAULT_SAN_IP}, plantilla {BAXTER_PKI_DEFAULT_TEMPLATE}, CA Hub Issuing CA). Reescribe solo lo que quieras cambiar y envía.
-                        </p>
-                      )}
                       {targetError && (
                         <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
                       )}
                     </div>
+                    )}
 
                     {isPkiServiceType(ticketType) && (
-                      <div className="p-3.5 space-y-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/10 animate-fade-in">
-                        <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
-                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                            <Sliders className="size-3.5 text-emerald-400" />
-                            Configuración del Certificado PKI
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2.5">
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground font-semibold uppercase">Dirección IP (Subject Alternative Name - Opcional)</label>
-                            <Input
-                              type="text"
-                              value={pkiIp}
-                              onChange={(e) => setPkiIp(e.target.value)}
-                              placeholder={BAXTER_PKI_DEFAULT_SAN_IP}
-                              className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
-                            />
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 animate-fade-in">
+                        <div className="xl:col-span-2 space-y-4">
+                          <div className="rounded-lg border border-border/70 bg-background/80 px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Solicitante</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                              <div>
+                                <span className="text-[10px] text-muted-foreground">Requested for</span>
+                                <p className="font-medium truncate">{user?.nombre || '—'}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground">Email</span>
+                                <p className="font-medium truncate">{user?.email || '—'}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground">Alcance</span>
+                                <p className="font-medium">Internal Hub</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground">CA</span>
+                                <p className="font-mono text-xs truncate">Hub Issuing CA</p>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground font-semibold uppercase">Plantilla de Certificado (Certificate Template)</label>
-                            <Input
-                              type="text"
-                              value={pkiTemplate}
-                              onChange={(e) => setPkiTemplate(e.target.value)}
-                              placeholder={BAXTER_PKI_DEFAULT_TEMPLATE}
-                              required
-                              className="text-xs font-mono bg-white dark:bg-zinc-950 border-emerald-500/10 focus-visible:ring-emerald-500 text-foreground"
-                            />
+                          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPkiFormMode('quick');
+                                setPkiTemplate(BAXTER_PKI_DEFAULT_TEMPLATE);
+                              }}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                                pkiFormMode === 'quick'
+                                  ? 'bg-background text-foreground shadow-sm'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              Quick
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPkiFormMode('complete')}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                                pkiFormMode === 'complete'
+                                  ? 'bg-background text-foreground shadow-sm'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              Complete
+                            </button>
                           </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <label className="text-xs font-semibold text-foreground">
+                                Common Name <span className="text-rose-600">*</span>
+                              </label>
+                              <Input
+                                type="text"
+                                placeholder={BAXTER_PKI_DEFAULT_FQDN}
+                                value={ticketTarget}
+                                onChange={(e) => {
+                                  setTicketTarget(e.target.value);
+                                  if (targetError) setTargetError(null);
+                                }}
+                                required
+                                className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5' : ''}`}
+                              />
+                              {targetError && (
+                                <p className="text-[10px] text-rose-600 font-semibold">{targetError}</p>
+                              )}
+                            </div>
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <label className="text-xs font-semibold text-foreground">
+                                SAN / Host IP <span className="text-[10px] font-normal text-muted-foreground">opcional</span>
+                              </label>
+                              <Input
+                                type="text"
+                                value={pkiIp}
+                                onChange={(e) => setPkiIp(e.target.value)}
+                                placeholder={BAXTER_PKI_DEFAULT_SAN_IP}
+                                className="text-sm font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          {pkiFormMode === 'complete' && (
+                            <div className="space-y-3 rounded-lg border border-border/70 bg-background/60 p-3">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Detalle del certificado (Hub interno)
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold">Plantilla</label>
+                                  <select
+                                    value={pkiTemplate}
+                                    onChange={(e) => setPkiTemplate(e.target.value)}
+                                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm font-mono"
+                                  >
+                                    <option value="Hub_WebServer">Hub_WebServer</option>
+                                    <option value="NurseCall">NurseCall</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold">Urgency</label>
+                                  <select
+                                    value={ticketUrgency}
+                                    onChange={(e) => setTicketUrgency(e.target.value as 'Low' | 'Medium' | 'High')}
+                                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                  >
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold">Notes</label>
+                                <textarea
+                                  placeholder="Puertos, SANs extra o contexto del host interno..."
+                                  value={ticketDesc}
+                                  onChange={(e) => setTicketDesc(e.target.value)}
+                                  rows={3}
+                                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-1 focus:ring-primary focus:outline-none resize-none"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
+
+                        <aside className="space-y-3">
+                          <Button
+                            type="submit"
+                            className="portal-theme-btn-primary w-full font-bold py-2.5 rounded-lg text-white"
+                            disabled={isScanningLive}
+                          >
+                            {isScanningLive ? (
+                              <><Loader2 className="size-4 mr-2 animate-spin" />{liveCopy.submitBusy}</>
+                            ) : (
+                              <>Request</>
+                            )}
+                          </Button>
+                          <div className="rounded-lg border border-border/70 bg-background/80 p-3 space-y-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Required information</p>
+                            {!ticketTarget.trim() ? (
+                              <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-[#00464F] text-white">Common Name</span>
+                            ) : (
+                              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                                <CheckCircle className="size-3.5" /> Listo para enviar
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground leading-snug">
+                            Hub interno. No se piden CMDB, Vantive, adjuntos ni interno/externo.
+                          </p>
+                          <div className={`flex items-center gap-2 p-2.5 rounded-xl border ${
+                            isAutomatedExecution
+                              ? 'portal-theme-auto-banner border-emerald-500/20 bg-emerald-50 dark:bg-emerald-950/5'
+                              : 'border-amber-500/20 bg-amber-50 dark:bg-amber-950/5'
+                          }`}>
+                            <div className="flex-1 min-w-0">
+                              <span className="block text-[10px] font-bold">
+                                {isAutomatedExecution ? 'Automated Execution' : 'Manual Processing'}
+                              </span>
+                              <span className="block text-[10px] text-muted-foreground leading-snug">
+                                {isAutomatedExecution
+                                  ? `PKI Worker · ${effectiveDefaultAgent?.name ?? 'agente'}`
+                                  : 'El equipo procesará la solicitud.'}
+                              </span>
+                            </div>
+                          </div>
+                        </aside>
                       </div>
                     )}
 
@@ -2099,6 +2246,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       </div>
                     )}
 
+                    {!isPkiServiceType(ticketType) && (
+                    <>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1.5">
                         <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Urgency</label>
@@ -2169,16 +2318,18 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       {isScanningLive ? (
                         <><Loader2 className="size-4 mr-2 animate-spin" />{liveCopy.submitBusy}</>
                       ) : (
-                        <><Play className="size-4 mr-2" />{isAutomatedExecution ? (isPkiServiceType(ticketType) ? 'Submit & Generate Certificate' : isFlameServiceType(ticketType) ? 'Submit & Run Flamethrower Stress Test' : 'Submit & Run Nmap Scan') : 'Submit Request'}</>
+                        <><Play className="size-4 mr-2" />{isAutomatedExecution ? (isFlameServiceType(ticketType) ? 'Submit & Run Flamethrower Stress Test' : 'Submit & Run Nmap Scan') : 'Submit Request'}</>
                       )}
                     </Button>
+                    </>
+                    )}
                   </form>
                 </CardContent>
               </Card>
             </div>
 
             {/* ── RIGHT COLUMN: Live progress + all tickets/reports ── */}
-            <div className="lg:col-span-3 space-y-4">
+            <div className={`${isPkiServiceType(ticketType) ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-4`}>
 
               {/* Live scanning progress card */}
               {isScanningLive && (
