@@ -60,7 +60,7 @@ export function buildPkiWaitStageLine(index: number, ctx: PkiWaitStageContext): 
     `[+] Paso 2/${PKI_WAIT_STAGE_COUNT} — En Ubuntu: Python WinRM (pywinrm). pwsh/WSMan no existe en el jump host.`,
     `[+] Paso 3/${PKI_WAIT_STAGE_COUNT} — WinRM NTLM a ${ctx.winHost}:5985 como hub\\hernano30.`,
     `[+] Paso 4/${PKI_WAIT_STAGE_COUNT} — Localizar Generate-BaxterHubCertificate.ps1 en el escritorio del worker.`,
-    `[+] Paso 5/${PKI_WAIT_STAGE_COUNT} — CSR + SubmitToCA. CN=${ctx.fqdn}${ipNote} plantilla ${ctx.template}.`,
+    `[+] Paso 5/${PKI_WAIT_STAGE_COUNT} — Scheduled Task (logon batch de hub\\hernano30, como RDP) para que certreq tenga TGT. CN=${ctx.fqdn}${ipNote} plantilla ${ctx.template}.`,
     `[+] Paso 6/${PKI_WAIT_STAGE_COUNT} — ADCS (USDFHUBCAI Hub Issuing CA) emite el certificado. Puede tardar 1–3 minutos.`,
     `[+] Paso 7/${PKI_WAIT_STAGE_COUNT} — Extraer Package_*.zip y devolverlo al portal.`,
   ];
