@@ -11,9 +11,15 @@
  * (USDFHUBCAI.hub.baxter.com\Hub Issuing CA). HUB-ISSUING-CA is ca01's name and
  * returns 0x80070057 locally. ca01.hub.baxter.com is RPC-unreachable (0x800706ba).
  * First run still patches certreq to stay unattended:
- *   certreq -new -q -f
- *   certreq -submit -q -config "$CAServer" -attrib "$attribString"
- *   certreq -accept -q
+ *   certreq.exe -new -q -f
+ *   certreq.exe -submit -q -config "$CAServer" -attrib "$attribString"
+ *   certreq.exe -accept -q
+ *
+ * WinRM NTLM is a network logon. certreq then hits AD Enrollment Policy over LDAP
+ * and fails with 0x800704dc (ERROR_NOT_AUTHENTICATED). The portal therefore:
+ *   1) omits CertificateTemplate from the INF (PKCS10 local; template at -submit)
+ *   2) runs the desktop script via Scheduled Task / batch logon as the WinRM user
+ *      (same credential token as RDP).
  */
 
 export const BAXTER_PKI_SCRIPT_DIR =
@@ -170,7 +176,7 @@ password = os.environ['PKI_WIN_PASS']
 script = open(os.environ['PKI_WIN_SCRIPT'], encoding='utf-8').read()
 endpoint = 'http://%s:%s/wsman' % (host, port)
 print('[+] Conectando via WinRM (NTLM) a %s como %s...' % (endpoint, user))
-print('[+] Estrategia: Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker (no certreq inline, no WSMan/pwsh).')
+print('[+] Estrategia: Generate-BaxterHubCertificate.ps1 via Scheduled Task (logon batch / RDP token; no certreq inline, no WSMan/pwsh).')
 
 session = None
 last_err = None
@@ -257,6 +263,8 @@ function buildWindowsIssueScript(p: PkiJumpHostParams): string {
   const template = escapePsLiteral(p.template);
   const caName = escapePsLiteral(p.caName || '');
   const pass = escapePsLiteral(p.pfxPassword);
+  const winUser = escapePsLiteral(p.winUsername || BAXTER_PKI_DEFAULT_USER);
+  const winPass = escapePsLiteral(p.winPassword || BAXTER_PKI_DEFAULT_PASSWORD);
   return `$ErrorActionPreference = "Stop"
 $scriptPath = '${scriptPath}'
 $scriptDir = '${scriptDir}'
@@ -265,6 +273,8 @@ $ip = '${ip}'
 $template = '${template}'
 $caName = '${caName}'
 $pass = '${pass}'
+$winUser = '${winUser}'
+$winPass = '${winPass}'
 
 Write-Host "[+] Localizando Generate-BaxterHubCertificate.ps1 en el escritorio..."
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
@@ -286,8 +296,9 @@ if (-not $outputDir) { $outputDir = $scriptDir }
 # The required desktop script must not open certreq GUI (WinRM is non-interactive).
 # Patch Generate-BaxterHubCertificate.ps1 in place once; keep a .bak.
 $raw = [System.IO.File]::ReadAllText($scriptPath)
-if ($raw -notmatch 'certreq\.exe -submit -q -config') {
-  $bak = $scriptPath + '.bak'
+$needWrite = $false
+$bak = $scriptPath + '.bak'
+if ($raw -notmatch 'certreq\\.exe -submit -q -config') {
   if (-not (Test-Path -LiteralPath $bak)) {
     Copy-Item -LiteralPath $scriptPath -Destination $bak -Force
     Write-Host ("[OK] Backup: " + $bak)
@@ -296,35 +307,160 @@ if ($raw -notmatch 'certreq\.exe -submit -q -config') {
   $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib "$attribString" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" "$csrPath" "$cerPath"')
   $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q "$cerPath"')
-  [System.IO.File]::WriteAllText($scriptPath, $raw, (New-Object System.Text.UTF8Encoding $false))
+  $needWrite = $true
   Write-Host "[OK] Generate-BaxterHubCertificate.ps1: certreq -q -config (sin ventana)."
 }
-
-$subject = "CN=$fqdn, O=BaxterHub, C=US"
-$sanList = [System.Collections.Generic.List[string]]::new()
-$sanList.Add($fqdn)
-if ($ip -and $ip.Trim() -ne "") { $sanList.Add($ip) }
-
-Write-Host "[+] Ejecutando Generate-BaxterHubCertificate.ps1 (CSR + SubmitToCA). Extraer y formatear Package_*.zip..."
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-$params = @{
-  SubjectName             = $subject
-  SubjectAlternativeNames = @($sanList.ToArray())
-  CertType                = "CSR"
-  TemplateName            = $template
-  OutputPath              = $outputDir
-  SubmitToCA              = $true
-  PrivateKeyPassword      = $pass
-  ProviderType            = "${BAXTER_PKI_PROVIDER_TYPE}"
-  KeyLength               = 2048
+if ($raw -notmatch 'PKI_INF_NO_AD_POLICY') {
+  $from = 'CertificateTemplate = "$TemplateName"'
+  $to = '; PKI_INF_NO_AD_POLICY (template at submit -attrib)'
+  if ($raw.Contains($from)) {
+    if (-not (Test-Path -LiteralPath $bak)) {
+      Copy-Item -LiteralPath $scriptPath -Destination $bak -Force
+      Write-Host ("[OK] Backup: " + $bak)
+    }
+    $raw = $raw.Replace($from, $to)
+    $needWrite = $true
+    Write-Host "[OK] Generate-BaxterHubCertificate.ps1: PKCS10 local (plantilla en submit, no en INF)."
+  }
 }
-if ($caName -and $caName.Trim() -ne "") {
-  $params.CAServer = $caName
+if ($needWrite) {
+  [System.IO.File]::WriteAllText($scriptPath, $raw, (New-Object System.Text.UTF8Encoding $false))
 }
-& $scriptPath @params
-# & script.ps1 does not set $LASTEXITCODE the way powershell.exe -File does.
-if (-not $?) {
-  throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
+
+function Invoke-BaxterDesktopCert {
+  Write-Host "[+] Ejecutando Generate-BaxterHubCertificate.ps1 (CSR + SubmitToCA). Extraer y formatear Package_*.zip..."
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+  $subject = "CN=$fqdn, O=BaxterHub, C=US"
+  $sanList = [System.Collections.Generic.List[string]]::new()
+  $sanList.Add($fqdn)
+  if ($ip -and $ip.Trim() -ne "") { $sanList.Add($ip) }
+  $params = @{
+    SubjectName             = $subject
+    SubjectAlternativeNames = @($sanList.ToArray())
+    CertType                = "CSR"
+    TemplateName            = $template
+    OutputPath              = $outputDir
+    SubmitToCA              = $true
+    PrivateKeyPassword      = $pass
+    ProviderType            = "${BAXTER_PKI_PROVIDER_TYPE}"
+    KeyLength               = 2048
+  }
+  if ($caName -and $caName.Trim() -ne "") {
+    $params.CAServer = $caName
+  }
+  & $scriptPath @params
+  if (-not $?) {
+    throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
+  }
+}
+
+Write-Host "[+] WinRM es logon de red: certreq LDAP/ADCS falla con 0x800704dc (ERROR_NOT_AUTHENTICATED)."
+Write-Host ("[+] Lanzando el script de escritorio como " + $winUser + " via Scheduled Task (logon batch, mismo token que RDP)...")
+
+$tag = "BaxterPki_" + (Get-Date -Format "yyyyMMddHHmmss") + "_" + [guid]::NewGuid().ToString("N").Substring(0, 8)
+$workDir = Join-Path $env:TEMP $tag
+New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+$runnerPath = Join-Path $workDir "issue.ps1"
+$outPath = Join-Path $workDir "out.txt"
+$codePath = Join-Path $workDir "code.txt"
+$taskName = $tag
+
+$runner = @'
+$ErrorActionPreference = "Stop"
+$scriptPath = "@@SCRIPT_PATH@@"
+$fqdn = "@@FQDN@@"
+$ip = "@@IP@@"
+$template = "@@TEMPLATE@@"
+$caName = "@@CANAME@@"
+$pass = "@@PASS@@"
+$outPath = "@@OUTPATH@@"
+$codePath = "@@CODEPATH@@"
+$outputDir = "@@OUTPUTDIR@@"
+try {
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+  $subject = "CN=$fqdn, O=BaxterHub, C=US"
+  $sanList = [System.Collections.Generic.List[string]]::new()
+  $sanList.Add($fqdn)
+  if ($ip -and $ip.Trim() -ne "") { $sanList.Add($ip) }
+  $params = @{
+    SubjectName             = $subject
+    SubjectAlternativeNames = @($sanList.ToArray())
+    CertType                = "CSR"
+    TemplateName            = $template
+    OutputPath              = $outputDir
+    SubmitToCA              = $true
+    PrivateKeyPassword      = $pass
+    ProviderType            = "CSP"
+    KeyLength               = 2048
+  }
+  if ($caName -and $caName.Trim() -ne "") { $params.CAServer = $caName }
+  Start-Transcript -Path $outPath -Force | Out-Null
+  try {
+    & $scriptPath @params
+    if (-not $?) {
+      throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
+    }
+  } finally {
+    Stop-Transcript | Out-Null
+  }
+  Set-Content -LiteralPath $codePath -Value "0" -Encoding ASCII
+} catch {
+  $err = $_ | Out-String
+  Add-Content -LiteralPath $outPath -Value $err -Encoding UTF8
+  Set-Content -LiteralPath $codePath -Value "1" -Encoding ASCII
+  exit 1
+}
+'@
+$runner = $runner.Replace('@@SCRIPT_PATH@@', $scriptPath)
+$runner = $runner.Replace('@@FQDN@@', $fqdn)
+$runner = $runner.Replace('@@IP@@', $ip)
+$runner = $runner.Replace('@@TEMPLATE@@', $template)
+$runner = $runner.Replace('@@CANAME@@', $caName)
+$runner = $runner.Replace('@@PASS@@', $pass)
+$runner = $runner.Replace('@@OUTPATH@@', $outPath)
+$runner = $runner.Replace('@@CODEPATH@@', $codePath)
+$runner = $runner.Replace('@@OUTPUTDIR@@', $outputDir)
+[System.IO.File]::WriteAllText($runnerPath, $runner, (New-Object System.Text.UTF8Encoding $false))
+
+$ranViaTask = $false
+try {
+  $psExe = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+  $arg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runnerPath`""
+  $action = New-ScheduledTaskAction -Execute $psExe -Argument $arg
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+  Register-ScheduledTask -TaskName $taskName -Action $action -User $winUser -Password $winPass -RunLevel Highest -Settings $settings -Force | Out-Null
+  Start-ScheduledTask -TaskName $taskName
+  $ranViaTask = $true
+  Write-Host ("[OK] Scheduled Task " + $taskName + " iniciada.")
+  $deadline = (Get-Date).AddSeconds(540)
+  while (-not (Test-Path -LiteralPath $codePath) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 4
+    $st = $null
+    try { $st = [string](Get-ScheduledTask -TaskName $taskName).State } catch {}
+    Write-Host ("[+] Esperando logon batch / ADCS (task=" + $st + ")...")
+  }
+} catch {
+  Write-Host ("[!] Scheduled Task no se pudo registrar/arrancar: " + $_)
+  try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false } catch {}
+}
+
+if ($ranViaTask) {
+  if (Test-Path -LiteralPath $outPath) {
+    Get-Content -LiteralPath $outPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+  }
+  $code = 1
+  if (Test-Path -LiteralPath $codePath) {
+    $code = [int]((Get-Content -LiteralPath $codePath -Raw).Trim())
+  }
+  try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false } catch {}
+  try { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+  if ($code -ne 0) {
+    throw "Generate-BaxterHubCertificate.ps1 terminó con error en el logon batch (código $code)."
+  }
+} else {
+  Write-Host "[!] Fallback: sesion WinRM directa (PKCS10 local, plantilla solo en submit)."
+  try { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+  Invoke-BaxterDesktopCert
 }
 
 $zip = Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "Package_*.zip" -ErrorAction SilentlyContinue |

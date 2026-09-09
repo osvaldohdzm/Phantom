@@ -13,6 +13,10 @@
     Submit always uses -submit -q -config <CA>. Accept uses -accept -q.
     certreq is NEVER called without -q / -config (that pops the CA picker and hangs WinRM).
 
+    WinRM NTLM is a network logon without a Kerberos TGT. certreq.exe then fails LDAP
+    enrollment policy with 0x800704dc. The portal runs this script via Scheduled Task
+    (batch logon as hub\hernano30) so ADCS sees the same token as an RDP session.
+
     Default CA is the local issuing CA on this worker (USDFHUBCAI), NOT ca01.
     ca01.hub.baxter.com\HUB-ISSUING-CA returns RPC 0x800706ba from this host.
     The local CA common name is "Hub Issuing CA" (certreq -config). The enrollment-policy
@@ -583,15 +587,11 @@ OID=1.3.6.1.5.5.7.3.2 ; Client Authentication
 "@
         }
 
-        # Add Template if provided
-        if ($TemplateName) {
-            $infContent += @"
-
-
-[RequestAttributes]
-CertificateTemplate = "$TemplateName"
-"@
-        }
+        # PKI_INF_NO_AD_POLICY
+        # Do not embed CertificateTemplate in the INF. certreq.exe -new would then
+        # query Active Directory Enrollment Policy over LDAP. A WinRM network logon
+        # has no Kerberos TGT and fails with 0x800704dc (ERROR_NOT_AUTHENTICATED).
+        # Template is applied at SubmitToCA via -attrib CertificateTemplate:<name>.
 
         [System.IO.File]::WriteAllText($infPath, $infContent, [System.Text.Encoding]::ASCII)
 
@@ -599,6 +599,16 @@ CertificateTemplate = "$TemplateName"
         if (Test-Path $csrPath) { Remove-Item $csrPath -Force }
 
         $certreqOutput = & certreq.exe -new -q -f "$infPath" "$csrPath" 2>&1
+        if (-not (Test-Path $csrPath)) {
+            $text = ($certreqOutput | Out-String)
+            if ($text -match '0x800704dc|ERROR_NOT_AUTHENTICATED') {
+                Write-Host "[!] certreq.exe -new: AD Enrollment Policy LDAP 0x800704dc. Retry PKCS10 without [RequestAttributes]..." -ForegroundColor Yellow
+                $infRetry = [System.IO.File]::ReadAllText($infPath)
+                $infRetry = [regex]::Replace($infRetry, '(?ms)\[RequestAttributes\]\s*CertificateTemplate[^\r\n]*\s*', '')
+                [System.IO.File]::WriteAllText($infPath, $infRetry, [System.Text.Encoding]::ASCII)
+                $certreqOutput = & certreq.exe -new -q -f "$infPath" "$csrPath" 2>&1
+            }
+        }
         if (Test-Path $csrPath) {
             Write-Host "[OK] CSR successfully generated: $csrPath" -ForegroundColor Green
         } else {
