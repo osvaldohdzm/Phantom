@@ -1,25 +1,20 @@
 /**
- * Baxter HUB PKI worker — invoke the desktop Generate-BaxterHubCertificate.ps1
- * instead of rolling certreq INF/CSR logic inline in the client portal.
- *
- * Jump host is Linux (baxtersrv300). PowerShell Core there has no WSMan, so
- * remoting uses Python pywinrm. The desktop script still runs on Windows.
+ * Baxter HUB PKI worker — invoke the existing desktop
+ * Generate-BaxterHubCertificate.ps1. The portal does not generate, copy, or
+ * patch that file; it already lives on the PKI worker:
  *
  *   C:\Users\hernano30\Desktop\Certificates Requests\Generate-BaxterHubCertificate.ps1
  *
- * That .ps1 accepts -CAServer. Default is the local CA on the worker
- * (USDFHUBCAI.hub.baxter.com\Hub Issuing CA). HUB-ISSUING-CA is ca01's name and
- * returns 0x80070057 locally. ca01.hub.baxter.com is RPC-unreachable (0x800706ba).
- * First run still patches certreq to stay unattended:
- *   certreq.exe -new -q -f
- *   certreq.exe -submit -q -config "$CAServer" -attrib "$attribString"
- *   certreq.exe -accept -q
+ * Jump host is Linux (baxtersrv300). PowerShell Core there has no WSMan, so
+ * remoting uses Python pywinrm. WinRM NTLM is a network logon without a
+ * Kerberos TGT, so the proven RDP invocation is replayed via Scheduled Task
+ * (batch logon as hub\hernano30):
  *
- * WinRM NTLM is a network logon. certreq then hits AD Enrollment Policy over LDAP
- * and fails with 0x800704dc (ERROR_NOT_AUTHENTICATED). The portal therefore:
- *   1) omits CertificateTemplate from the INF (PKCS10 local; template at -submit)
- *   2) runs the desktop script via Scheduled Task / batch logon as the WinRM user
- *      (same credential token as RDP).
+ *   & $scriptPath @{
+ *     SubjectName, SubjectAlternativeNames, CertType=CSR,
+ *     TemplateName=Hub_WebServer, SubmitToCA, ProviderType=CSP,
+ *     CAServer=USDFHUBCAI.hub.baxter.com\Hub Issuing CA
+ *   }
  */
 
 export const BAXTER_PKI_SCRIPT_DIR =
@@ -176,7 +171,7 @@ password = os.environ['PKI_WIN_PASS']
 script = open(os.environ['PKI_WIN_SCRIPT'], encoding='utf-8').read()
 endpoint = 'http://%s:%s/wsman' % (host, port)
 print('[+] Conectando via WinRM (NTLM) a %s como %s...' % (endpoint, user))
-print('[+] Estrategia: Generate-BaxterHubCertificate.ps1 via Scheduled Task (logon batch / RDP token; no certreq inline, no WSMan/pwsh).')
+print('[+] Estrategia: invocar el Generate-BaxterHubCertificate.ps1 existente en el escritorio (no se genera ni se parchea).')
 
 session = None
 last_err = None
@@ -276,59 +271,20 @@ $pass = '${pass}'
 $winUser = '${winUser}'
 $winPass = '${winPass}'
 
-Write-Host "[+] Localizando Generate-BaxterHubCertificate.ps1 en el escritorio..."
+Write-Host "[+] El portal NO genera Generate-BaxterHubCertificate.ps1; se usa el que ya está en el escritorio."
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
   $candidate = Join-Path $scriptDir "Generate-BaxterHubCertificate.ps1"
-  if (Test-Path -LiteralPath $candidate) {
-    $scriptPath = $candidate
-  } else {
-    $found = Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found) { $scriptPath = $found.FullName }
-  }
+  if (Test-Path -LiteralPath $candidate) { $scriptPath = $candidate }
 }
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
   throw "No se encontró Generate-BaxterHubCertificate.ps1 en el escritorio. Ruta esperada: $scriptDir"
 }
-Write-Host ("[OK] Script de escritorio: " + $scriptPath)
+Write-Host ("[OK] Script existente (sin modificar): " + $scriptPath)
 $outputDir = Split-Path -Parent $scriptPath
 if (-not $outputDir) { $outputDir = $scriptDir }
 
-# The required desktop script must not open certreq GUI (WinRM is non-interactive).
-# Patch Generate-BaxterHubCertificate.ps1 in place once; keep a .bak.
-$raw = [System.IO.File]::ReadAllText($scriptPath)
-$needWrite = $false
-$bak = $scriptPath + '.bak'
-if ($raw -notmatch 'certreq\\.exe -submit -q -config') {
-  if (-not (Test-Path -LiteralPath $bak)) {
-    Copy-Item -LiteralPath $scriptPath -Destination $bak -Force
-    Write-Host ("[OK] Backup: " + $bak)
-  }
-  $raw = $raw.Replace('& certreq.exe -new "$infPath" "$csrPath"', '& certreq.exe -new -q -f "$infPath" "$csrPath"')
-  $raw = $raw.Replace('& certreq.exe -submit -attrib $attribString "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" -attrib "$attribString" "$csrPath" "$cerPath"')
-  $raw = $raw.Replace('& certreq.exe -submit "$csrPath" "$cerPath"', '& certreq.exe -submit -q -config "$CAServer" "$csrPath" "$cerPath"')
-  $raw = $raw.Replace('& certreq.exe -accept "$cerPath"', '& certreq.exe -accept -q "$cerPath"')
-  $needWrite = $true
-  Write-Host "[OK] Generate-BaxterHubCertificate.ps1: certreq -q -config (sin ventana)."
-}
-if ($raw -notmatch 'PKI_INF_NO_AD_POLICY') {
-  $from = 'CertificateTemplate = "$TemplateName"'
-  $to = '; PKI_INF_NO_AD_POLICY (template at submit -attrib)'
-  if ($raw.Contains($from)) {
-    if (-not (Test-Path -LiteralPath $bak)) {
-      Copy-Item -LiteralPath $scriptPath -Destination $bak -Force
-      Write-Host ("[OK] Backup: " + $bak)
-    }
-    $raw = $raw.Replace($from, $to)
-    $needWrite = $true
-    Write-Host "[OK] Generate-BaxterHubCertificate.ps1: PKCS10 local (plantilla en submit, no en INF)."
-  }
-}
-if ($needWrite) {
-  [System.IO.File]::WriteAllText($scriptPath, $raw, (New-Object System.Text.UTF8Encoding $false))
-}
-
 function Invoke-BaxterDesktopCert {
-  Write-Host "[+] Ejecutando Generate-BaxterHubCertificate.ps1 (CSR + SubmitToCA). Extraer y formatear Package_*.zip..."
+  Write-Host "[+] Ejecutando el script de escritorio existente (CSR + SubmitToCA)..."
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
   $subject = "CN=$fqdn, O=BaxterHub, C=US"
   $sanList = [System.Collections.Generic.List[string]]::new()
@@ -354,8 +310,7 @@ function Invoke-BaxterDesktopCert {
   }
 }
 
-Write-Host "[+] WinRM es logon de red: certreq LDAP/ADCS falla con 0x800704dc (ERROR_NOT_AUTHENTICATED)."
-Write-Host ("[+] Lanzando el script de escritorio como " + $winUser + " via Scheduled Task (logon batch, mismo token que RDP)...")
+Write-Host "[+] WinRM es logon de red (0x800704dc). Se relanza el .ps1 existente via Scheduled Task (mismo token que RDP)."
 
 $tag = "BaxterPki_" + (Get-Date -Format "yyyyMMddHHmmss") + "_" + [guid]::NewGuid().ToString("N").Substring(0, 8)
 $workDir = Join-Path $env:TEMP $tag
@@ -458,7 +413,7 @@ if ($ranViaTask) {
     throw "Generate-BaxterHubCertificate.ps1 terminó con error en el logon batch (código $code)."
   }
 } else {
-  Write-Host "[!] Fallback: sesion WinRM directa (PKCS10 local, plantilla solo en submit)."
+  Write-Host "[!] Fallback: sesion WinRM directa contra el .ps1 existente (sin modificarlo)."
   try { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
   Invoke-BaxterDesktopCert
 }
@@ -484,16 +439,11 @@ function buildWindowsVerifyScript(p: PkiVerifyParams): string {
   return `$ErrorActionPreference = "Stop"
 $scriptPath = '${scriptPath}'
 $scriptDir = '${scriptDir}'
-Write-Output "[+] Verificando especificaciones: Generate-BaxterHubCertificate.ps1 en el escritorio (sin emitir certificado)..."
+Write-Output "[+] Verificando el Generate-BaxterHubCertificate.ps1 existente en el escritorio (sin emitir certificado, sin generar, sin parchear)..."
 $resolved = $scriptPath
 if (-not $resolved -or -not (Test-Path -LiteralPath $resolved)) {
   $candidate = Join-Path $scriptDir "Generate-BaxterHubCertificate.ps1"
-  if (Test-Path -LiteralPath $candidate) {
-    $resolved = $candidate
-  } else {
-    $found = Get-ChildItem -LiteralPath $scriptDir -Filter "*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found) { $resolved = $found.FullName }
-  }
+  if (Test-Path -LiteralPath $candidate) { $resolved = $candidate }
 }
 if ($resolved -and (Test-Path -LiteralPath $resolved)) {
   $item = Get-Item -LiteralPath $resolved
