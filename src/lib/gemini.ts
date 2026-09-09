@@ -1,7 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
 
-const COOLDOWN_MS = 15 * 60 * 1000;
-const exhaustedUntil = new Map<string, number>();
+const COOLDOWN_QUOTA_MS = 20 * 60 * 1000;
+const COOLDOWN_RATE_MS = 45 * 1000;
+const COOLDOWN_INVALID_MS = 30 * 60 * 1000;
+
+type KeyState = { until: number; kind: string };
+const exhaustedUntil = new Map<string, KeyState>();
 
 function readKey(name: string): string {
   const raw = process.env[name]?.trim() ?? '';
@@ -27,35 +31,77 @@ function keyLabel(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
-function isRetryableGeminiError(err: unknown, status?: number): boolean {
+function keyRole(key: string): string {
+  const paid = readKey('GEMINI_API_KEY_PAID') || readKey('GEMINI_API_KEY');
+  const fallback = readKey('GEMINI_API_KEY_FALLBACK');
+  if (key === paid) return 'pago';
+  if (key === fallback) return 'respaldo';
+  return keyLabel(key);
+}
+
+function classifyGeminiError(
+  err: unknown,
+  status?: number
+): { kind: 'quota' | 'rate_limit' | 'invalid_key' | 'other'; failover: boolean; cooldownMs: number; reason: string } {
   const statusCode =
     status ??
     (typeof err === 'object' && err && 'status' in err
       ? Number((err as { status?: number }).status)
       : undefined);
 
-  if (statusCode === 429 || statusCode === 401 || statusCode === 403) return true;
-
   const msg = String(
     (typeof err === 'object' && err && 'message' in err
       ? (err as { message?: string }).message
       : err) ?? ''
-  );
-  return /quota|rate.?limit|resource.?exhausted|too many requests|exceeded|resource_exhausted|insufficient.?quota|billing/i.test(
-    msg
-  );
+  ).toLowerCase();
+
+  if (statusCode === 400 || statusCode === 404) {
+    return { kind: 'other', failover: false, cooldownMs: 0, reason: 'solicitud inválida (no es cuota)' };
+  }
+
+  const quotaHit =
+    /credits?.{0,40}deplet|prepayment|quota|resource.?exhausted|resource_exhausted|insufficient.?quota|billing|exceeded your current quota/.test(
+      msg
+    );
+  if (quotaHit) {
+    return {
+      kind: 'quota',
+      failover: true,
+      cooldownMs: COOLDOWN_QUOTA_MS,
+      reason: 'créditos/cuota agotados',
+    };
+  }
+  if (statusCode === 429 || /rate.?limit|too many requests/.test(msg)) {
+    return {
+      kind: 'rate_limit',
+      failover: true,
+      cooldownMs: COOLDOWN_RATE_MS,
+      reason: 'rate limit (reintento en ~45s)',
+    };
+  }
+  if (statusCode === 401 || statusCode === 403 || /api.?key|permission.?denied|unauthor/.test(msg)) {
+    return {
+      kind: 'invalid_key',
+      failover: true,
+      cooldownMs: COOLDOWN_INVALID_MS,
+      reason: 'clave inválida o sin permiso',
+    };
+  }
+  if (statusCode && statusCode >= 500) {
+    return { kind: 'other', failover: true, cooldownMs: 15_000, reason: `error ${statusCode} del API` };
+  }
+  return { kind: 'other', failover: false, cooldownMs: 0, reason: 'error no recuperable' };
 }
 
-function markExhausted(key: string) {
-  exhaustedUntil.set(key, Date.now() + COOLDOWN_MS);
-  console.warn(`[gemini] clave ${keyLabel(key)} agotada o rechazada; se intenta respaldo`);
+function markExhausted(key: string, kind: string, cooldownMs: number) {
+  exhaustedUntil.set(key, { until: Date.now() + cooldownMs, kind });
 }
 
 function orderedKeys(): string[] {
   const keys = getGeminiApiKeys();
   const now = Date.now();
-  const ready = keys.filter((k) => (exhaustedUntil.get(k) || 0) <= now);
-  const cooling = keys.filter((k) => (exhaustedUntil.get(k) || 0) > now);
+  const ready = keys.filter((k) => (exhaustedUntil.get(k)?.until || 0) <= now);
+  const cooling = keys.filter((k) => (exhaustedUntil.get(k)?.until || 0) > now);
   return [...ready, ...cooling];
 }
 
@@ -72,9 +118,13 @@ async function withGeminiKey<T>(fn: (apiKey: string) => Promise<T>): Promise<T> 
       return await fn(key);
     } catch (err) {
       lastError = err;
-      const canFailover = i < keys.length - 1 && isRetryableGeminiError(err);
+      const classified = classifyGeminiError(err);
+      const canFailover = i < keys.length - 1 && classified.failover;
       if (canFailover) {
-        markExhausted(key);
+        markExhausted(key, classified.kind, classified.cooldownMs);
+        console.warn(
+          `[gemini] ${keyRole(key)}: ${classified.reason} → cambio a ${keyRole(keys[i + 1])}`
+        );
         continue;
       }
       throw err;
