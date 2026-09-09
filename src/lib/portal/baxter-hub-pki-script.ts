@@ -425,7 +425,7 @@ $runner = $runner.Replace('@@OUTPUTDIR@@', $outputDir)
 $ranViaTask = $false
 try {
   $psExe = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'
-  $arg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runnerPath`""
+  $arg = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runnerPath + '"'
   $action = New-ScheduledTaskAction -Execute $psExe -Argument $arg
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
   Register-ScheduledTask -TaskName $taskName -Action $action -User $winUser -Password $winPass -RunLevel Highest -Settings $settings -Force | Out-Null
