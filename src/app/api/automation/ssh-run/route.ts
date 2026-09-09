@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
     if (!host || !command) {
       return NextResponse.json(
-        { error: 'Faltan parámetros requeridos (host, command)' },
+        { error: 'Missing required parameters (host, command)' },
         { status: 400 }
       );
     }
@@ -53,21 +53,21 @@ export async function POST(request: Request) {
 
     if (!username) {
       return NextResponse.json(
-        { error: 'Falta parámetro de credenciales: username' },
+        { error: 'Missing credentials parameter: username' },
         { status: 400 }
       );
     }
 
     const logs: string[] = [];
-    logs.push(`[+] [${new Date().toISOString()}] Inicializando conexión SSH hacia ${username}@${host}:${port}...`);
+    logs.push(`[+] [${new Date().toISOString()}] Opening SSH to ${username}@${host}:${port}...`);
 
     // Only mock if host is local loopback (development dummy)
     const isMock = host === '127.0.0.1' || host === 'localhost';
 
     if (isMock) {
-      logs.push(`[+] Autenticación exitosa (${authType === 'key' ? 'Llave Pública' : 'Password'}). Sesión de canal SSH establecida.`);
-      logs.push(`[+] Ejecutando comando remoto: ${command}`);
-      logs.push(`[+] --- INICIO SALIDA TERMINAL ---`);
+      logs.push(`[+] Authentication succeeded (${authType === 'key' ? 'public key' : 'password'}). SSH channel established.`);
+      logs.push(`[+] Running remote command: ${command}`);
+      logs.push(`[+] --- REMOTE OUTPUT START ---`);
       
       if (command.toLowerCase().includes('nmap')) {
         logs.push(`Starting Nmap 7.94 ( https://nmap.org ) at ${new Date().toLocaleDateString()}`);
@@ -82,8 +82,8 @@ export async function POST(request: Request) {
         logs.push(`Linux localhost-dummy-node 5.15.0-generic x86_64 GNU/Linux`);
         logs.push(`SUCCESS_AUTH`);
       }
-      logs.push(`[+] --- FIN SALIDA TERMINAL ---`);
-      logs.push(`[+] [${new Date().toISOString()}] Conexión SSH cerrada correctamente.`);
+      logs.push(`[+] --- REMOTE OUTPUT END ---`);
+      logs.push(`[+] [${new Date().toISOString()}] SSH connection closed.`);
       
       writeAuditLog({
         severity: 'INFO',
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
 
     if (authType === 'key') {
       if (!privateKey.trim()) {
-        return NextResponse.json({ error: 'La llave privada es requerida para el método Llave Pública.' }, { status: 400 });
+        return NextResponse.json({ error: 'Private key is required for public-key authentication.' }, { status: 400 });
       }
       // Create a secure temporary file within the workspace for the private key
       const tempDir = path.join(process.cwd(), 'src/app/api/automation/ssh-run');
@@ -160,7 +160,7 @@ export async function POST(request: Request) {
           exp_continue
         }
         timeout {
-          send_user "\\n\\[!\\] ssh: el comando remoto no terminó en ${timeoutSec} segundos (WinRM/ADCS sigue en silencio; no es caída de red).\\n"
+          send_user "\\n\\[!\\] ssh: remote command did not finish in ${timeoutSec} seconds (WinRM/ADCS is still silent; this is not a network drop).\\n"
           exit 5
         }
         eof {
@@ -190,8 +190,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: authErrorLine.replace('[!] ', '') }, { status: 400 });
       }
 
-      logs.push(`[+] Autenticación SSH real exitosa.`);
-      logs.push(`[+] --- INICIO SALIDA TERMINAL ---`);
+      logs.push(`[+] SSH authentication succeeded.`);
+      logs.push(`[+] --- REMOTE OUTPUT START ---`);
       outputLines.forEach((l) => {
         if (!l.includes('spawn ssh') && !l.includes('password:') && !l.includes('know_hosts')) {
           logs.push(l);
@@ -200,8 +200,8 @@ export async function POST(request: Request) {
       if (stderr) {
         logs.push(`[!] Stderr: ${stderr}`);
       }
-      logs.push(`[+] --- FIN SALIDA TERMINAL ---`);
-      logs.push(`[+] Conexión SSH real finalizada exitosamente.`);
+      logs.push(`[+] --- REMOTE OUTPUT END ---`);
+      logs.push(`[+] SSH session closed.`);
       
       writeAuditLog({
         severity: 'INFO',
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
     } catch (err: any) {
       if (err.killed || err.signal === 'SIGTERM') {
         return NextResponse.json(
-          { error: `ssh: el comando remoto no terminó (proceso cortado a los ${timeoutSec} segundos).` },
+          { error: `ssh: remote command did not finish (process killed after ${timeoutSec} seconds).` },
           { status: 400 }
         );
       }
@@ -252,7 +252,7 @@ export async function POST(request: Request) {
     }
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || 'Error en el servidor de automatización SSH' },
+      { error: error.message || 'SSH automation server error' },
       { status: 500 }
     );
   } finally {

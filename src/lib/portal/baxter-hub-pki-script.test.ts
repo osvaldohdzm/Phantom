@@ -52,7 +52,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(BAXTER_PKI_DEFAULT_FQDN).toBe('clientportal.spectre.local');
     expect(BAXTER_PKI_DEFAULT_SAN_IP).toBe('1.1.1.1');
     expect(BAXTER_PKI_DEFAULT_TEMPLATE).toBe('Hub_WebServer');
-    expect(BAXTER_PKI_SERVICE_NAME).toContain('Certificado PKI');
+    expect(BAXTER_PKI_SERVICE_NAME).toContain('PKI Certificate');
   });
 
   it('issues certificates by invoking the desktop script, not inline certreq', () => {
@@ -67,7 +67,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('--break-system-packages');
     expect(issueScript).toContain('python3 -u');
     expect(issueScript).toContain('PYTHONUNBUFFERED');
-    expect(issueScript).toContain('WinRM sigue esperando');
+    expect(issueScript).toContain('WinRM still waiting');
     expect(issueScript).toContain('threading');
     expect(issueScript).toContain('The command line is too long');
     expect(issueScript).toContain('copy_ps1_in_chunks');
@@ -82,7 +82,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('& $scriptPath @params');
     expect(issueScript).toContain('Register-ScheduledTask');
     expect(issueScript).toContain('0x800704dc');
-    expect(issueScript).toContain('sin modificar');
+    expect(issueScript).toContain('not modified');
     expect(issueScript).not.toContain("$scriptPath + '.bak'");
     expect(issueScript).not.toContain('PKI_INF_NO_AD_POLICY');
     expect(issueScript).not.toContain('pki_quiet');
@@ -97,7 +97,7 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
   it('verify specs check the desktop script exists and do not generate a certificate', () => {
     expect(usesDesktopCertificateScript(verifyScript)).toBe(true);
     expect(verifyScript).toContain('SCRIPT_PKI_OK');
-    expect(verifyScript).toContain('sin emitir certificado');
+    expect(verifyScript).toContain('no issue, no generate, no patch');
     expect(verifyScript).not.toContain('SubmitToCA');
     expect(verifyScript).not.toContain('certreq -new');
     expect(verifyScript).not.toContain('[NewRequest]');

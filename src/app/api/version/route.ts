@@ -12,7 +12,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    version: 'v0.4.2',
+    version: 'v0.4.3',
     name: 'Phantom SecOps',
     timestamp: new Date().toISOString(),
     commitId,

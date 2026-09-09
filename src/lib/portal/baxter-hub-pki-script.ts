@@ -36,7 +36,7 @@ export const BAXTER_PKI_DEFAULT_TEMPLATE = 'Hub_WebServer';
 /** Proven unattended issue (2026-08-26): portal happy-path placeholders the user can overwrite. */
 export const BAXTER_PKI_DEFAULT_FQDN = 'clientportal.spectre.local';
 export const BAXTER_PKI_DEFAULT_SAN_IP = '1.1.1.1';
-export const BAXTER_PKI_SERVICE_NAME = 'Solicitud de Certificado PKI Baxter (TLS/SSL)';
+export const BAXTER_PKI_SERVICE_NAME = 'Baxter Hub PKI Certificate Request (TLS/SSL)';
 export const BAXTER_PKI_DEFAULT_HOST = '10.11.240.88';
 export const BAXTER_PKI_DEFAULT_USER = 'hub\\hernano30';
 export const BAXTER_PKI_DEFAULT_PORT = '5985';
@@ -136,7 +136,7 @@ def ensure_winrm():
         return winrm
     except ImportError:
         pass
-    print('[+] pywinrm no está en el jump host Linux. Instalando (Ubuntu PEP 668: --break-system-packages)...')
+    print('[+] pywinrm is not on the Linux jump host. Installing (Ubuntu PEP 668: --break-system-packages)...')
     attempts = [
         [sys.executable, '-m', 'pip', 'install', '--user', '--break-system-packages', 'pywinrm'],
         ['pip3', 'install', '--user', '--break-system-packages', 'pywinrm'],
@@ -158,7 +158,7 @@ def ensure_winrm():
                 return winrm
             except ImportError:
                 pass
-    raise SystemExit('[!] No se pudo instalar pywinrm. En baxtersrv300 ejecuta: pip3 install --user --break-system-packages pywinrm  (último error: %s)' % last)
+    raise SystemExit('[!] Could not install pywinrm. On baxtersrv300 run: pip3 install --user --break-system-packages pywinrm  (last error: %s)' % last)
 
 def decode(blob):
     if blob is None:
@@ -173,7 +173,7 @@ def fail_if_bad(result, step):
     if result.status_code:
         sys.stderr.write(out)
         sys.stderr.write(err)
-        raise SystemExit('[!] %s falló (código %s): %s' % (step, result.status_code, (err or out).strip() or 'sin detalle'))
+        raise SystemExit('[!] %s failed (code %s): %s' % (step, result.status_code, (err or out).strip() or 'no detail'))
     return result
 
 def open_session(winrm, endpoint, user, password, transport):
@@ -185,8 +185,8 @@ def open_session(winrm, endpoint, user, password, transport):
 
 def copy_ps1_in_chunks(session, script, remote_ps1):
     remote_b64 = remote_ps1 + '.b64'
-    print('[+] Copiando orquestador PKI al worker en bloques (evita powershell -EncodedCommand / The command line is too long).')
-    fail_if_bad(session.run_cmd('cmd.exe', ['/c', 'if exist "%s" del /f /q "%s" & if exist "%s" del /f /q "%s"' % (remote_ps1, remote_ps1, remote_b64, remote_b64)]), 'limpieza PS1 remoto')
+    print('[+] Copying PKI orchestrator to the Windows worker in chunks (avoids powershell -EncodedCommand / The command line is too long).')
+    fail_if_bad(session.run_cmd('cmd.exe', ['/c', 'if exist "%s" del /f /q "%s" & if exist "%s" del /f /q "%s"' % (remote_ps1, remote_ps1, remote_b64, remote_b64)]), 'remote PS1 cleanup')
     blob = base64.b64encode(script.encode('utf-8')).decode('ascii')
     chunk = 1800
     pos = 0
@@ -195,9 +195,9 @@ def copy_ps1_in_chunks(session, script, remote_ps1):
         piece = blob[pos:pos + chunk]
         n += 1
         ps = "[System.IO.File]::AppendAllText('%s', '%s', (New-Object System.Text.UTF8Encoding $false))" % (remote_b64, piece)
-        fail_if_bad(session.run_ps(ps), 'copia bloque WinRM %s' % n)
+        fail_if_bad(session.run_ps(ps), 'WinRM copy block %s' % n)
         pos += chunk
-    print('[+] Bloques WinRM escritos: %s (%s bytes b64). Decodificando a %s' % (n, pos, remote_ps1))
+    print('[+] WinRM blocks written: %s (%s b64 bytes). Decoding to %s' % (n, pos, remote_ps1))
     decode_ps = (
         "$b64Path='%s'; $ps1='%s'; "
         "$raw = Get-Content -LiteralPath $b64Path -Raw; "
@@ -206,7 +206,7 @@ def copy_ps1_in_chunks(session, script, remote_ps1):
         "Remove-Item -LiteralPath $b64Path -Force; "
         "Write-Output ('PS1_BYTES=' + (Get-Item -LiteralPath $ps1).Length)"
     ) % (remote_b64, remote_ps1)
-    decoded = fail_if_bad(session.run_ps(decode_ps), 'decode PS1 remoto')
+    decoded = fail_if_bad(session.run_ps(decode_ps), 'decode remote PS1')
     print('[+] ' + decode(decoded.std_out).strip())
 
 winrm = ensure_winrm()
@@ -216,8 +216,8 @@ user = os.environ['PKI_WIN_USER']
 password = os.environ['PKI_WIN_PASS']
 script = open(os.environ['PKI_WIN_SCRIPT'], encoding='utf-8').read()
 endpoint = 'http://%s:%s/wsman' % (host, port)
-print('[+] Conectando via WinRM (NTLM) a %s como %s...' % (endpoint, user))
-print('[+] Estrategia: invocar el Generate-BaxterHubCertificate.ps1 existente en el escritorio (no se genera ni se parchea).')
+print('[+] Connecting via WinRM (NTLM) to %s as %s...' % (endpoint, user))
+print('[+] Strategy: invoke the existing desktop Generate-BaxterHubCertificate.ps1 (do not generate or patch it).')
 
 session = None
 last_err = None
@@ -232,25 +232,25 @@ for transport in ('ntlm', 'basic'):
             session = s
             break
         last_err = err or ('status %s' % probe.status_code)
-        print('[!] Transporte %s no listo: %s' % (transport, last_err))
+        print('[!] Transport %s not ready: %s' % (transport, last_err))
     except Exception as exc:
         last_err = exc
-        print('[!] Transporte %s falló: %s' % (transport, exc))
+        print('[!] Transport %s failed: %s' % (transport, exc))
 
 if session is None:
-    raise SystemExit('[!] Error crítico en el Jump Host: WinRM hacia %s:%s falló (%s)' % (host, port, last_err))
+    raise SystemExit('[!] Jump host error: WinRM to %s:%s failed (%s)' % (host, port, last_err))
 
 remote_ps1 = 'C:\\\\Windows\\\\Temp\\\\baxter_pki_%s.ps1' % uuid.uuid4().hex[:10]
 copy_ps1_in_chunks(session, script, remote_ps1)
 
-print('[+] Invocando Generate-BaxterHubCertificate.ps1 via WinRM (powershell -File, no EncodedCommand). ADCS no imprime hasta terminar; esto puede tardar varios minutos.', flush=True)
+print('[+] Invoking Generate-BaxterHubCertificate.ps1 via WinRM (powershell -File, not EncodedCommand). ADCS is silent until it finishes; this can take several minutes.', flush=True)
 stop_beat = threading.Event()
 
 def beat():
     n = 0
     while not stop_beat.wait(15):
         n += 15
-        print('[~] WinRM sigue esperando Generate-BaxterHubCertificate.ps1 / ADCS (%ss)...' % n, flush=True)
+        print('[~] WinRM still waiting on Generate-BaxterHubCertificate.ps1 / ADCS (%ss)...' % n, flush=True)
 
 t = threading.Thread(target=beat, daemon=True)
 t.start()
@@ -265,7 +265,7 @@ finally:
     except Exception:
         pass
 if result is None:
-    raise SystemExit('[!] WinRM no devolvió resultado al ejecutar el orquestador PKI.')
+    raise SystemExit('[!] WinRM returned no result while running the PKI orchestrator.')
 sys.stdout.write(decode(result.std_out))
 sys.stderr.write(decode(result.std_err))
 sys.stdout.flush()
@@ -283,8 +283,8 @@ function buildLinuxWinrmJumpHostScript(
   const user = escapeBashSingleQuoted(p.winUsername);
   const pass = escapeBashSingleQuoted(p.winPassword);
   return `set -e
-echo "[+] Inicializando orquestador Linux en el Jump Host (pywinrm)."
-echo "[+] pwsh Invoke-Command/WSMan no está disponible en Ubuntu; se usa Python WinRM."
+echo "[+] Starting Linux orchestrator on the jump host (pywinrm)."
+echo "[+] pwsh Invoke-Command/WSMan is not available on Ubuntu; using Python WinRM."
 WIN_PS="$(mktemp /tmp/pki_win_XXXXXX.ps1)"
 trap 'rm -f "$WIN_PS"' EXIT
 cat > "$WIN_PS" <<'WINPS'
@@ -295,9 +295,9 @@ export PKI_WIN_PORT='${port}'
 export PKI_WIN_USER='${user}'
 export PKI_WIN_PASS='${pass}'
 export PKI_WIN_SCRIPT="$WIN_PS"
-echo "[+] Destino WinRM: $PKI_WIN_HOST:$PKI_WIN_PORT usuario $PKI_WIN_USER"
+echo "[+] WinRM target: $PKI_WIN_HOST:$PKI_WIN_PORT user $PKI_WIN_USER"
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "[!] python3 no está instalado en el jump host." >&2
+  echo "[!] python3 is not installed on the jump host." >&2
   exit 1
 fi
 export PYTHONUNBUFFERED=1
@@ -328,20 +328,20 @@ $pass = '${pass}'
 $winUser = '${winUser}'
 $winPass = '${winPass}'
 
-Write-Host "[+] El portal NO genera Generate-BaxterHubCertificate.ps1; se usa el que ya está en el escritorio."
+Write-Host "[+] Portal does not generate Generate-BaxterHubCertificate.ps1; using the copy already on the desktop."
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
   $candidate = Join-Path $scriptDir "Generate-BaxterHubCertificate.ps1"
   if (Test-Path -LiteralPath $candidate) { $scriptPath = $candidate }
 }
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
-  throw "No se encontró Generate-BaxterHubCertificate.ps1 en el escritorio. Ruta esperada: $scriptDir"
+  throw "Generate-BaxterHubCertificate.ps1 was not found on the desktop. Expected path: $scriptDir"
 }
-Write-Host ("[OK] Script existente (sin modificar): " + $scriptPath)
+Write-Host ("[OK] Existing script (not modified): " + $scriptPath)
 $outputDir = Split-Path -Parent $scriptPath
 if (-not $outputDir) { $outputDir = $scriptDir }
 
 function Invoke-BaxterDesktopCert {
-  Write-Host "[+] Ejecutando el script de escritorio existente (CSR + SubmitToCA)..."
+  Write-Host "[+] Running the existing desktop script (CSR + SubmitToCA)..."
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
   $subject = "CN=$fqdn, O=BaxterHub, C=US"
   $sanList = [System.Collections.Generic.List[string]]::new()
@@ -363,11 +363,11 @@ function Invoke-BaxterDesktopCert {
   }
   & $scriptPath @params
   if (-not $?) {
-    throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
+    throw "Generate-BaxterHubCertificate.ps1 exited with an error (code $LASTEXITCODE)."
   }
 }
 
-Write-Host "[+] WinRM es logon de red (0x800704dc). Se relanza el .ps1 existente via Scheduled Task (mismo token que RDP)."
+Write-Host "[+] WinRM is a network logon (0x800704dc). Re-running the existing .ps1 via Scheduled Task (same token as RDP)."
 
 $tag = "BaxterPki_" + (Get-Date -Format "yyyyMMddHHmmss") + "_" + [guid]::NewGuid().ToString("N").Substring(0, 8)
 $workDir = Join-Path $env:TEMP $tag
@@ -410,7 +410,7 @@ try {
   try {
     & $scriptPath @params
     if (-not $?) {
-      throw "Generate-BaxterHubCertificate.ps1 terminó con error (código $LASTEXITCODE)."
+      throw "Generate-BaxterHubCertificate.ps1 exited with an error (code $LASTEXITCODE)."
     }
   } finally {
     Stop-Transcript | Out-Null
@@ -443,16 +443,16 @@ try {
   Register-ScheduledTask -TaskName $taskName -Action $action -User $winUser -Password $winPass -RunLevel Highest -Settings $settings -Force | Out-Null
   Start-ScheduledTask -TaskName $taskName
   $ranViaTask = $true
-  Write-Host ("[OK] Scheduled Task " + $taskName + " iniciada.")
+  Write-Host ("[OK] Scheduled Task " + $taskName + " started.")
   $deadline = (Get-Date).AddSeconds(540)
   while (-not (Test-Path -LiteralPath $codePath) -and (Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 4
     $st = $null
     try { $st = [string](Get-ScheduledTask -TaskName $taskName).State } catch {}
-    Write-Host ("[+] Esperando logon batch / ADCS (task=" + $st + ")...")
+    Write-Host ("[+] Waiting for batch logon / ADCS (task=" + $st + ")...")
   }
 } catch {
-  Write-Host ("[!] Scheduled Task no se pudo registrar/arrancar: " + $_)
+  Write-Host ("[!] Scheduled Task could not be registered/started: " + $_)
   try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false } catch {}
 }
 
@@ -467,10 +467,10 @@ if ($ranViaTask) {
   try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false } catch {}
   try { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
   if ($code -ne 0) {
-    throw "Generate-BaxterHubCertificate.ps1 terminó con error en el logon batch (código $code)."
+    throw "Generate-BaxterHubCertificate.ps1 failed in the batch logon (code $code)."
   }
 } else {
-  Write-Host "[!] Fallback: sesion WinRM directa contra el .ps1 existente (sin modificarlo)."
+  Write-Host "[!] Fallback: direct WinRM session against the existing .ps1 (not modified)."
   try { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
   Invoke-BaxterDesktopCert
 }
@@ -479,9 +479,9 @@ $zip = Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "Package_*.zip" -E
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 if (-not $zip) {
-  throw "El script de escritorio no dejó Package_*.zip en $outputDir"
+  throw "The desktop script did not leave Package_*.zip in $outputDir"
 }
-Write-Host ("[OK] Paquete generado: " + $zip.FullName)
+Write-Host ("[OK] Package created: " + $zip.FullName)
 
 $base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($zip.FullName))
 Write-Output "ZIP_BASE64_START"
@@ -496,7 +496,7 @@ function buildWindowsVerifyScript(p: PkiVerifyParams): string {
   return `$ErrorActionPreference = "Stop"
 $scriptPath = '${scriptPath}'
 $scriptDir = '${scriptDir}'
-Write-Output "[+] Verificando el Generate-BaxterHubCertificate.ps1 existente en el escritorio (sin emitir certificado, sin generar, sin parchear)..."
+Write-Output "[+] Checking existing Generate-BaxterHubCertificate.ps1 on the desktop (no issue, no generate, no patch)..."
 $resolved = $scriptPath
 if (-not $resolved -or -not (Test-Path -LiteralPath $resolved)) {
   $candidate = Join-Path $scriptDir "Generate-BaxterHubCertificate.ps1"
@@ -509,7 +509,7 @@ if ($resolved -and (Test-Path -LiteralPath $resolved)) {
   Write-Output "CONEXION_WINRM_EXITOSA"
 } else {
   Write-Output ("SCRIPT_PKI_MISSING=" + $scriptDir)
-  Write-Output "ERROR_WINRM: Generate-BaxterHubCertificate.ps1 no está en el escritorio del PKI Worker"
+  Write-Output "ERROR_WINRM: Generate-BaxterHubCertificate.ps1 is not on the PKI worker desktop"
 }
 `;
 }

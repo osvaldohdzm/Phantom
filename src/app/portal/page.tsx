@@ -82,7 +82,7 @@ import {
   buildPkiWaitStageLine,
   detectPortalLiveJobKind,
   portalLiveJobCopy,
-  sanitizePkiRemoteLogLines,
+  buildPkiClientReport,
   type PortalLiveJobKind,
 } from '@/lib/portal/portal-live-job';
 
@@ -357,7 +357,7 @@ export default function PortalPage() {
       {
         id: 'baxter_pki_certificate_request',
         name: BAXTER_PKI_SERVICE_NAME,
-        desc: 'Certificado TLS/SSL interno de Baxter Hub. Formulario rápido: Common Name y SAN. El worker PKI existente emite el paquete ZIP.',
+        desc: 'Internal Baxter Hub TLS/SSL certificate. Quick form: Common Name and SAN. The existing PKI worker emits the ZIP package.',
         defaultUrgency: 'High',
       },
       ...BAXTER_HUB_CATALOG,
@@ -420,7 +420,7 @@ export default function PortalPage() {
   const isPkiServiceType = (t: string) => {
     if (!t) return false;
     const lower = t.toLowerCase();
-    return lower.includes('certificado') || lower.includes('pki') || lower.includes('certreq');
+    return lower.includes('certificado') || lower.includes('certificate') || lower.includes('pki') || lower.includes('certreq');
   };
 
   const generateBaxterPassword = () => {
@@ -586,17 +586,17 @@ export default function PortalPage() {
       // Inject default result for TK-9281 if not already present
       if (!parsedResults['TK-9281']) {
         parsedResults['TK-9281'] = {
-          output: `[✓] Solicitud de certificado procesada con éxito.\n` +
-                  `[+] Invocando Generate-BaxterHubCertificate.ps1 en C:\\Users\\hernano30\\Desktop\\Certificates Requests\n` +
-                  `[+] CN=${BAXTER_PKI_DEFAULT_FQDN} (SAN IP=${BAXTER_PKI_DEFAULT_SAN_IP}) — CSR + SubmitToCA\n` +
-                  `[+] Extrayendo y formateando Package_*.zip desde el escritorio del PKI Worker\n` +
-                  `[+] Paquete ZIP creado exitosamente. listo para descargar.`,
+          output: `[OK] Certificate request completed.\n` +
+                  `[+] Invoking Generate-BaxterHubCertificate.ps1 in C:\\Users\\hernano30\\Desktop\\Certificates Requests\n` +
+                  `[+] CN=${BAXTER_PKI_DEFAULT_FQDN} (SAN IP=${BAXTER_PKI_DEFAULT_SAN_IP}) - CSR + SubmitToCA\n` +
+                  `[+] Collecting Package_*.zip from the PKI worker desktop\n` +
+                  `[+] ZIP package ready to download.`,
           logs: [
             `[+] Automated PKI request initiated — Ticket TK-9281`,
             `[+] Target FQDN: ${BAXTER_PKI_DEFAULT_FQDN}`,
             `[+] Routing via agent: Baxter PKI SSH Agent (baxtersrv300) (10.11.254.245:22)`,
             `[+] Opening SSH session...`,
-            `[+] Autenticación SSH real exitosa.`,
+            `[+] SSH authentication succeeded.`,
             `[+] SSH authenticated. Dispatching Generate-BaxterHubCertificate.ps1...`,
             `[+] Certificate package extracted and formatted.`,
           ],
@@ -723,7 +723,7 @@ export default function PortalPage() {
       const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config'));
       localStorage.setItem('phantom_pki_config', JSON.stringify(pkiConfig));
       if (!pkiConfig.password.trim()) {
-        setTargetError('No hay contraseña WinRM para el PKI Worker Windows (10.11.240.88 / hub\\hernano30).');
+        setTargetError('WinRM password is missing for the Windows PKI worker (10.11.240.88 / hub\\hernano30).');
         return;
       }
     }
@@ -795,14 +795,14 @@ export default function PortalPage() {
       const serverName = targetIpOrHost.split('.')[0] || 'valuepack';
 
       const initLogs = isPkiRequest ? [
-        `[+] Solicitud PKI (TLS/SSL) iniciada — Ticket ${ticketId}`,
+        `[+] PKI TLS/SSL request started - Ticket ${ticketId}`,
         `[+] CN/FQDN: ${targetIpOrHost}`,
-        `[+] SAN IP: ${pkiIp.trim() || '(ninguna)'}`,
-        `[+] Plantilla ADCS: ${pkiTemplate}`,
-        `[+] Contraseña temporal del PFX: ${dynamicPassword}`,
-        `[+] Ruta: Portal → SSH ${agent.name} (${agent.host}:${agent.port}) → WinRM PKI Worker → Generate-BaxterHubCertificate.ps1`,
-        `[+] Esto NO es Nmap; el texto de abajo son pasos esperados mientras SSH espera a que ADCS termine.`,
-        `[+] Abriendo sesión SSH...`,
+        `[+] SAN IP: ${pkiIp.trim() || '(none)'}`,
+        `[+] ADCS template: ${pkiTemplate}`,
+        `[+] Temporary PFX password: ${dynamicPassword}`,
+        `[+] Path: Portal -> SSH jump (Ubuntu) ${agent.name} (${agent.host}:${agent.port}) -> WinRM Windows PKI worker -> Generate-BaxterHubCertificate.ps1`,
+        `[+] The Ubuntu jump host does not issue the cert. The Windows worker at the PKI host does.`,
+        `[+] Opening SSH session to the jump host...`,
       ] : [
         `[+] Automated Nmap scan initiated — Ticket ${ticketId}`,
         `[+] Target: ${targetIpOrHost}`,
@@ -821,6 +821,7 @@ export default function PortalPage() {
         ip: pkiIp.trim(),
         template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
         jumpHost: `${agent.host}:${agent.port}`,
+        jumpName: agent.name || 'baxtersrv300',
         winHost: resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')).host,
       };
       const progressInterval = setInterval(() => {
@@ -954,13 +955,13 @@ PFX PASSWORD: ${dynamicPassword}
             const zipContent = await zip.generateAsync({ type: "base64" });
             zipBase64 = zipContent;
             
-            stdout = `[+] [MOCK] Solicitud de certificado procesada con éxito.\n` +
-                     `[+] Invocando Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker\n` +
-                     `[+] CN=${targetIpOrHost} (SAN IP=${pkiIp || 'N/A'}) — CSR + SubmitToCA\n` +
-                     `[+] Plantilla ADCS: ${pkiTemplate}\n` +
-                     `[+] Extrayendo y formateando Package_*.zip\n` +
-                     `[+] Contraseña temporal del PFX generada: ${dynamicPassword}\n` +
-                     `[+] Paquete ZIP creado exitosamente. listo para descargar.`;
+            stdout = `[OK] [MOCK] Certificate request completed.\n` +
+                     `[+] Invoking Generate-BaxterHubCertificate.ps1 on the PKI worker desktop\n` +
+                     `[+] CN=${targetIpOrHost} (SAN IP=${pkiIp || 'N/A'}) - CSR + SubmitToCA\n` +
+                     `[+] ADCS template: ${pkiTemplate}\n` +
+                     `[+] Collecting Package_*.zip\n` +
+                     `[+] Temporary PFX password: ${dynamicPassword}\n` +
+                     `[+] ZIP package ready to download.`;
           } else {
             // Extract from real logs
             const startIdx = data.logs.findIndex((l: string) => l.includes('ZIP_BASE64_START'));
@@ -1014,8 +1015,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 --------------------------------------------------------------------------------
 [+] Output saved to metrics.json & summary.json. Audit complete.`;
         } else if (!isPkiRequest && data.logs) {
-          const startIdx = data.logs.findIndex((l: string) => l.includes('--- INICIO SALIDA TERMINAL ---'));
-          const endIdx = data.logs.findIndex((l: string) => l.includes('--- FIN SALIDA TERMINAL ---'));
+          const startIdx = data.logs.findIndex((l: string) => l.includes('--- INICIO SALIDA TERMINAL ---') || l.includes('--- REMOTE OUTPUT START ---'));
+          const endIdx = data.logs.findIndex((l: string) => l.includes('--- FIN SALIDA TERMINAL ---') || l.includes('--- REMOTE OUTPUT END ---'));
           if (startIdx !== -1 && endIdx !== -1) {
             stdout = data.logs.slice(startIdx + 1, endIdx).join('\n');
           } else {
@@ -1028,24 +1029,35 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         clearInterval(progressInterval);
         setScanProgress(100);
 
-        const pkiRemoteLines = isPkiRequest ? sanitizePkiRemoteLogLines(stdout.split('\n')) : [];
-        const completedLogs = isPkiRequest
-          ? [
-              ...initLogs,
-              `[+] SSH autenticado. Salida real del jump host / PKI Worker:`,
-              ...pkiRemoteLines.slice(0, 160),
-              zipBase64
-                ? `[OK] Package ZIP recibido. Contraseña PFX: ${dynamicPassword}`
-                : `[!] No se recibió Package_*.zip (ZIP_BASE64). Revisa el error de Generate-BaxterHubCertificate.ps1 arriba.`,
-            ]
-          : nmapCompletedLogs;
+        const pkiCfg = isPkiRequest ? resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')) : null;
+        const pkiReport = isPkiRequest
+          ? buildPkiClientReport({
+              issued: Boolean(zipBase64),
+              ticketId,
+              fqdn: targetIpOrHost,
+              sanIp: pkiIp.trim(),
+              template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
+              jumpName: agent.name || 'baxtersrv300',
+              jumpHost: `${agent.host}:${agent.port}`,
+              winHost: pkiCfg!.host,
+              winPort: String(pkiCfg!.port || BAXTER_PKI_DEFAULT_PORT),
+              pfxPassword: dynamicPassword,
+              remoteLines: [...(Array.isArray(data.logs) ? data.logs : []), ...stdout.split('\n')],
+            })
+          : '';
+        const completedLogs = isPkiRequest ? pkiReport.split('\n') : nmapCompletedLogs;
         setClientScanLogs(completedLogs);
 
         // Persist scan result keyed by ticket ID so client can revisit
         if (isPkiRequest && zipBase64) {
           setTicketResults((prev) => ({
             ...prev,
-            [ticketId]: { output: stdout, logs: completedLogs, zipBase64 },
+            [ticketId]: { output: pkiReport, logs: completedLogs, zipBase64 },
+          }));
+        } else if (isPkiRequest) {
+          setTicketResults((prev) => ({
+            ...prev,
+            [ticketId]: { output: pkiReport, logs: completedLogs },
           }));
         } else {
           setTicketResults((prev) => ({
@@ -1077,7 +1089,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
           ...initLogs,
           `[!] ERROR: ${err.message}`,
           isPkiRequest
-            ? `[!] Emisión PKI interrumpida (SSH/WinRM/ADCS). El ticket queda pendiente.`
+            ? `[!] PKI issuance stopped (SSH/WinRM/ADCS). Ticket left pending.`
             : `[!] Scan halted. Ticket marked as pending for manual processing.`,
         ];
         setClientScanLogs(errLogs);
@@ -1761,7 +1773,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   </CardTitle>
                   <CardDescription>
                     {isPkiServiceType(ticketType)
-                      ? 'Certificados internos de Baxter Hub (no el catálogo externo). Asterisco indica campo requerido.'
+                      ? 'Internal Baxter Hub certificates (not the external catalog). Asterisk marks a required field.'
                       : 'Select a service and submit your request. Results will appear in your request history.'}
                   </CardDescription>
                 </CardHeader>
@@ -1834,7 +1846,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 animate-fade-in">
                         <div className="xl:col-span-2 space-y-4">
                           <div className="rounded-lg border border-border/70 bg-background/80 px-3 py-2.5">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Solicitante</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Requester</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                               <div>
                                 <span className="text-[10px] text-muted-foreground">Requested for</span>
@@ -1845,7 +1857,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                 <p className="font-medium truncate">{user?.email || '—'}</p>
                               </div>
                               <div>
-                                <span className="text-[10px] text-muted-foreground">Alcance</span>
+                                <span className="text-[10px] text-muted-foreground">Scope</span>
                                 <p className="font-medium">Internal Hub</p>
                               </div>
                               <div>
@@ -1905,7 +1917,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             </div>
                             <div className="space-y-1.5 sm:col-span-2">
                               <label className="text-xs font-semibold text-foreground">
-                                SAN / Host IP <span className="text-[10px] font-normal text-muted-foreground">opcional</span>
+                                SAN / Host IP <span className="text-[10px] font-normal text-muted-foreground">optional</span>
                               </label>
                               <Input
                                 type="text"
@@ -1920,11 +1932,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           {pkiFormMode === 'complete' && (
                             <div className="space-y-3 rounded-lg border border-border/70 bg-background/60 p-3">
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                Detalle del certificado (Hub interno)
+                                Certificate details (Internal Hub)
                               </p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
-                                  <label className="text-xs font-semibold">Plantilla</label>
+                                  <label className="text-xs font-semibold">Template</label>
                                   <select
                                     value={pkiTemplate}
                                     onChange={(e) => setPkiTemplate(e.target.value)}
@@ -1979,12 +1991,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-[#00464F] text-white">Common Name</span>
                             ) : (
                               <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                                <CheckCircle className="size-3.5" /> Listo para enviar
+                                <CheckCircle className="size-3.5" /> Ready to submit
                               </p>
                             )}
                           </div>
                           <p className="text-[10px] text-muted-foreground leading-snug">
-                            Hub interno. No se piden CMDB, Vantive, adjuntos ni interno/externo.
+                            Internal Hub only. No CMDB, Vantive, attachments, or internal/external fields.
                           </p>
                           <div className={`flex items-center gap-2 p-2.5 rounded-xl border ${
                             isAutomatedExecution
@@ -1997,8 +2009,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               </span>
                               <span className="block text-[10px] text-muted-foreground leading-snug">
                                 {isAutomatedExecution
-                                  ? `PKI Worker · ${effectiveDefaultAgent?.name ?? 'agente'}`
-                                  : 'El equipo procesará la solicitud.'}
+                                  ? `Jump host (Ubuntu) · ${effectiveDefaultAgent?.name ?? 'agent'} -> Windows PKI worker`
+                                  : 'The team will process this request.'}
                               </span>
                             </div>
                           </div>
@@ -2565,7 +2577,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
                                    <Terminal className="size-3.5" />
-                                   {isPkiServiceType(t.type) ? 'PKI Worker & Generate-BaxterHubCertificate.ps1 logs' : isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
+                                   {isPkiServiceType(t.type) ? 'PKI issuance log' : isFlameServiceType(t.type) ? 'Flamethrower Output' : 'Nmap Output'} — <span className="font-mono text-zinc-200">{t.target}</span>
                                  </div>
                                  {isPkiServiceType(t.type) ? (
                                    result.zipBase64 ? (
@@ -2586,11 +2598,11 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                        }}
                                      >
                                        <Download className="size-3" />
-                                       Descargar Certificado ZIP
+                                       Download Certificate ZIP
                                      </button>
                                    ) : (
                                      <span className="text-[10px] font-bold text-amber-500 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                                       No se generaron archivos
+                                       No files generated
                                      </span>
                                    )
                                  ) : result.pdfUrl ? (
@@ -2631,14 +2643,14 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                                          WINDOWS ADCS PKI
                                        </span>
-                                       <span className="text-xs font-bold text-slate-200">Detalles del Certificado Generado</span>
+                                       <span className="text-xs font-bold text-slate-200">Issued certificate</span>
                                      </div>
                                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
                                        result.zipBase64
                                          ? 'text-emerald-400 bg-emerald-950 border-emerald-800'
                                          : 'text-rose-400 bg-rose-950 border-rose-800'
                                      }`}>
-                                       ESTADO: {result.zipBase64 ? 'EMITIDO' : 'ERROR'}
+                                       STATUS: {result.zipBase64 ? 'ISSUED' : 'ERROR'}
                                      </span>
                                    </div>
 
@@ -2652,7 +2664,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                        <div className="text-xs font-bold text-cyan-400 font-mono">{pkiIp || 'N/A'}</div>
                                      </div>
                                      <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800">
-                                       <div className="text-[9px] text-zinc-400 uppercase font-semibold">Plantilla (Template)</div>
+                                       <div className="text-[9px] text-zinc-400 uppercase font-semibold">Template</div>
                                        <div className="text-xs font-bold text-amber-400 font-mono">{pkiTemplate || BAXTER_PKI_DEFAULT_TEMPLATE}</div>
                                      </div>
                                    </div>
@@ -3462,16 +3474,16 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2 text-cyan-400">
                       <Server className="size-5 text-cyan-400" />
-                      Configuración de PKI Worker (Windows CA)
+                      PKI Worker settings (Windows CA)
                     </CardTitle>
                     <CardDescription>
-                      WinRM hacia el worker Windows. Las solicitudes TLS/SSL invocan el Generate-BaxterHubCertificate.ps1 existente en el escritorio (no se genera ni se parchea); el portal extrae y formatea el ZIP.
+                      WinRM to the Windows worker. TLS/SSL requests invoke the existing desktop Generate-BaxterHubCertificate.ps1 (not generated or patched). The portal collects and formats the ZIP.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground font-semibold">Dirección IP / Hostname del PKI Worker</label>
+                        <label className="text-xs text-muted-foreground font-semibold">PKI worker IP / hostname</label>
                         <Input
                           type="text"
                           value={pkiHost}
@@ -3481,7 +3493,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground font-semibold">Puerto WinRM</label>
+                        <label className="text-xs text-muted-foreground font-semibold">WinRM port</label>
                         <Input
                           type="text"
                           value={pkiPort}
@@ -3494,17 +3506,17 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground font-semibold">Dominio / Usuario (WinRM)</label>
+                        <label className="text-xs text-muted-foreground font-semibold">Domain / user (WinRM)</label>
                         <Input
                           type="text"
                           value={pkiUsername}
                           onChange={(e) => setPkiUsername(e.target.value)}
-                          placeholder="Ej. hub\hernano30"
+                          placeholder="e.g. hub\hernano30"
                           className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground font-semibold">Contraseña</label>
+                        <label className="text-xs text-muted-foreground font-semibold">Password</label>
                         <Input
                           type="password"
                           value={pkiPassword}
@@ -3517,7 +3529,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                     <div className="space-y-1.5">
                       <label className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5">
-                        Nombre de la Autoridad de Certificación (CA) <span className="text-[10px] text-zinc-500 font-normal">(Opcional)</span>
+                        Certification Authority (CA) name <span className="text-[10px] text-zinc-500 font-normal">(optional)</span>
                       </label>
                       <Input
                         type="text"
@@ -3527,12 +3539,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         className="text-xs font-mono bg-white dark:bg-zinc-950 border-input text-foreground focus-visible:ring-primary"
                       />
                       <span className="text-[10px] text-zinc-500 block">
-                        Si se deja vacío, se usa USDFHUBCAI.hub.baxter.com\Hub Issuing CA (certreq -config, sin selector GUI).
+                        If empty, USDFHUBCAI.hub.baxter.com\Hub Issuing CA is used (certreq -config, no GUI picker).
                       </span>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs text-muted-foreground font-semibold">Ruta del script en el escritorio del Worker</label>
+                      <label className="text-xs text-muted-foreground font-semibold">Desktop script path on the Windows worker</label>
                       <Input
                         type="text"
                         value={pkiScriptPath}
@@ -3558,7 +3570,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             scriptPath: pkiScriptPath,
                           };
                           localStorage.setItem('phantom_pki_config', JSON.stringify(config));
-                          alert('Configuración de PKI Worker guardada con éxito.');
+                          alert('PKI worker settings saved.');
                         }}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-1.5 cursor-pointer"
                       >
@@ -3571,10 +3583,10 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         onClick={async () => {
                           setIsTestingPki(true);
                           const startLogs = [
-                            `[+] [${new Date().toLocaleTimeString()}] Verificando especificaciones PKI (sin emitir certificado)...`,
-                            `[+] Destino: ${pkiHost}:${pkiPort}`,
-                            `[+] Usuario WinRM: ${pkiUsername}`,
-                            `[+] Script esperado: ${pkiScriptPath || BAXTER_PKI_SCRIPT_PATH}`,
+                            `[+] [${new Date().toLocaleTimeString()}] Checking PKI specs (no certificate will be issued)...`,
+                            `[+] Target: ${pkiHost}:${pkiPort}`,
+                            `[+] WinRM user: ${pkiUsername}`,
+                            `[+] Expected script: ${pkiScriptPath || BAXTER_PKI_SCRIPT_PATH}`,
                           ];
                           setPkiTestLogs(startLogs);
 
@@ -3582,8 +3594,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           if (!agent) {
                             setPkiTestLogs(prev => [
                               ...prev,
-                              `[!] ERROR: No hay un agente de ejecución SSH configurado para Phantom.`,
-                              `[!] Por favor, configura un agente SSH en la pestaña del Catálogo primero.`
+                              `[!] ERROR: No SSH execution agent is configured for Phantom.`,
+                              `[!] Configure an SSH agent in the Catalog tab first.`
                             ]);
                             setIsTestingPki(false);
                             return;
@@ -3591,21 +3603,21 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                           setPkiTestLogs(prev => [
                             ...prev,
-                            `[+] Agente de salto SSH seleccionado: ${agent.name} (${agent.host}:${agent.port})`,
-                            `[+] Comprobando conectividad de red por SSH...`
+                            `[+] SSH jump agent: ${agent.name} (${agent.host}:${agent.port})`,
+                            `[+] Checking network connectivity over SSH...`
                           ]);
 
                           if (agent.host === '127.0.0.1' || agent.host === 'localhost') {
                             setTimeout(() => {
                               setPkiTestLogs(prev => [
                                 ...prev,
-                                `[+] Autenticación SSH real con el agente simulada con éxito.`,
-                                `[+] Ejecutando prueba de puerto remota: nc -zv ${pkiHost} ${pkiPort}`,
+                                `[+] SSH authentication to the agent simulated successfully.`,
+                                `[+] Running remote port check: nc -zv ${pkiHost} ${pkiPort}`,
                                 `[✓] Connection to ${pkiHost} ${pkiPort} port [tcp/*] succeeded!`,
-                                `[+] Verificando especificaciones: Generate-BaxterHubCertificate.ps1 (sin emitir certificado)...`,
+                                `[+] Checking specs: Generate-BaxterHubCertificate.ps1 (no certificate will be issued)...`,
                                 `[✓] SCRIPT_PKI_OK=${pkiScriptPath || BAXTER_PKI_SCRIPT_PATH}`,
-                                `[✓] CONEXION_WINRM_EXITOSA: Autenticación con el dominio y usuario ${pkiUsername} completada correctamente.`,
-                                `[✓] Especificaciones PKI verificadas. El worker usará el script de escritorio para emitir certificados.`,
+                                `[✓] CONEXION_WINRM_EXITOSA: domain auth for ${pkiUsername} completed.`,
+                                `[✓] PKI specs verified. The worker will use the desktop script to issue certificates.`,
                               ]);
                               setIsTestingPki(false);
                             }, 1500);
@@ -3639,14 +3651,14 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             
                             const dataPort = await resPort.json();
                             if (!resPort.ok || dataPort.error) {
-                              throw new Error(dataPort.error || 'La comprobación del puerto WinRM falló');
+                              throw new Error(dataPort.error || 'WinRM port check failed');
                             }
 
                             setPkiTestLogs(prev => [
                               ...prev,
                               ...dataPort.logs.filter((l: string) => !l.startsWith('[+]') && !l.startsWith('[!]')),
-                              `[✓] Conexión TCP al puerto ${pkiPort} exitosa.`,
-                              `[+] Verificando WinRM y Generate-BaxterHubCertificate.ps1 en el escritorio (sin emitir certificado)...`
+                              `[✓] TCP connection to port ${pkiPort} succeeded.`,
+                              `[+] Checking WinRM and Generate-BaxterHubCertificate.ps1 on the desktop (no certificate will be issued)...`
                             ]);
                             
                             const base64TestScript = safeBtoa(psTestScript);
@@ -3677,7 +3689,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
 
                             const dataAuth = await resAuth.json();
                             if (!resAuth.ok || dataAuth.error) {
-                              throw new Error(dataAuth.error || 'La prueba de autenticación WinRM falló');
+                              throw new Error(dataAuth.error || 'WinRM authentication test failed');
                             }
 
                             const authLogs = dataAuth.logs || [];
@@ -3688,29 +3700,29 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                             if (hasSuccess) {
                               setPkiTestLogs(prev => [
                                   ...prev,
-                                  `[✓] CONEXION_WINRM_EXITOSA: Credenciales de ${pkiUsername} son válidas y el Worker respondió correctamente.`,
+                                  `[✓] CONEXION_WINRM_EXITOSA: credentials for ${pkiUsername} are valid and the worker responded.`,
                                   scriptOk
                                     ? `[✓] ${scriptOk.trim()}`
-                                    : `[✓] Generate-BaxterHubCertificate.ps1 localizado en el escritorio del worker.`,
-                                  `[✓] Especificaciones PKI verificadas. No se emitió certificado (worker es otra máquina).`
+                                    : `[✓] Generate-BaxterHubCertificate.ps1 found on the worker desktop.`,
+                                  `[✓] PKI specs verified. No certificate was issued (worker is a different machine).`
                                 ]);
                             } else if (errorLine) {
                               setPkiTestLogs(prev => [
                                 ...prev,
-                                `[!] ERROR DE AUTENTICACIÓN / WINRM:`,
+                                `[!] AUTH / WINRM ERROR:`,
                                 `    ${errorLine.substring(errorLine.indexOf('ERROR_WINRM:') + 12).trim()}`
                               ]);
                             } else {
                               setPkiTestLogs(prev => [
                                 ...prev,
-                                `[!] ERROR: El comando remoto devolvió logs incompletos o inesperados:`,
+                                `[!] ERROR: remote command returned incomplete or unexpected logs:`,
                                 ...authLogs.slice(-3)
                               ]);
                             }
                           } catch (err: any) {
                             setPkiTestLogs(prev => [
                               ...prev,
-                              `[!] ERROR DE CONEXIÓN: ${err.message || 'Error desconocido durante la prueba'}`
+                              `[!] CONNECTION ERROR: ${err.message || 'Unknown error during the test'}`
                             ]);
                           } finally {
                             setIsTestingPki(false);
@@ -3721,12 +3733,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         {isTestingPki ? (
                           <>
                             <Loader2 className="size-3 animate-spin" />
-                            Probando...
+                            Testing...
                           </>
                         ) : (
                           <>
                             <Play className="size-3" />
-                            Verificar script de escritorio
+                            Check desktop script
                           </>
                         )}
                       </Button>
@@ -3741,7 +3753,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                   <CardHeader className="pb-3 border-b border-border/40">
                     <CardTitle className="text-xs font-mono font-bold text-zinc-400 flex items-center gap-2">
                       <Terminal className="size-4 text-emerald-400" />
-                      Terminal de Diagnóstico WinRM
+                      WinRM diagnostic terminal
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="flex-1 p-0 flex flex-col font-mono text-[10.5px] leading-relaxed text-emerald-400 bg-black/60 overflow-hidden">
@@ -3753,7 +3765,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                           </div>
                         ))
                       ) : (
-                        <span className="text-zinc-500 italic">Listo para verificar especificaciones. Haz clic en 'Verificar script de escritorio' (no emite certificados).</span>
+                        <span className="text-zinc-500 italic">Ready to check specs. Click 'Check desktop script' (does not issue certificates).</span>
                       )}
                     </div>
                   </CardContent>
