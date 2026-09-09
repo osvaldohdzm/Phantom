@@ -6,9 +6,13 @@
  *   C:\Users\hernano30\Desktop\Certificates Requests\Generate-BaxterHubCertificate.ps1
  *
  * Jump host is Linux (baxtersrv300). PowerShell Core there has no WSMan, so
- * remoting uses Python pywinrm. WinRM NTLM is a network logon without a
- * Kerberos TGT, so the proven RDP invocation is replayed via Scheduled Task
- * (batch logon as hub\hernano30):
+ * remoting uses Python pywinrm. pywinrm run_ps() encodes the whole script as
+ * powershell.exe -EncodedCommand; Windows CreateProcess caps that near 8191
+ * chars ("The command line is too long"). The jump host therefore copies the
+ * orchestrator to a .ps1 in chunks and runs powershell -File.
+ *
+ * WinRM NTLM is a network logon without a Kerberos TGT, so the proven RDP
+ * invocation is replayed via Scheduled Task (batch logon as hub\hernano30):
  *
  *   & $scriptPath @{
  *     SubjectName, SubjectAlternativeNames, CertType=CSR,
@@ -124,7 +128,7 @@ export function escapeBashSingleQuoted(value: string): string {
   return String(value ?? '').replace(/'/g, `'\\''`);
 }
 
-const LINUX_WINRM_PYTHON = `import os, sys, subprocess, threading
+const LINUX_WINRM_PYTHON = `import os, sys, subprocess, threading, base64, uuid
 
 def ensure_winrm():
     try:
@@ -163,6 +167,48 @@ def decode(blob):
         return blob.decode('utf-8', 'replace')
     return str(blob)
 
+def fail_if_bad(result, step):
+    out = decode(result.std_out)
+    err = decode(result.std_err)
+    if result.status_code:
+        sys.stderr.write(out)
+        sys.stderr.write(err)
+        raise SystemExit('[!] %s falló (código %s): %s' % (step, result.status_code, (err or out).strip() or 'sin detalle'))
+    return result
+
+def open_session(winrm, endpoint, user, password, transport):
+    kwargs = dict(auth=(user, password), transport=transport, server_cert_validation='ignore')
+    try:
+        return winrm.Session(endpoint, read_timeout_sec=560, operation_timeout_sec=510, **kwargs)
+    except TypeError:
+        return winrm.Session(endpoint, **kwargs)
+
+def copy_ps1_in_chunks(session, script, remote_ps1):
+    remote_b64 = remote_ps1 + '.b64'
+    print('[+] Copiando orquestador PKI al worker en bloques (evita powershell -EncodedCommand / The command line is too long).')
+    fail_if_bad(session.run_cmd('cmd.exe', ['/c', 'if exist "%s" del /f /q "%s" & if exist "%s" del /f /q "%s"' % (remote_ps1, remote_ps1, remote_b64, remote_b64)]), 'limpieza PS1 remoto')
+    blob = base64.b64encode(script.encode('utf-8')).decode('ascii')
+    chunk = 1800
+    pos = 0
+    n = 0
+    while pos < len(blob):
+        piece = blob[pos:pos + chunk]
+        n += 1
+        ps = "[System.IO.File]::AppendAllText('%s', '%s', (New-Object System.Text.UTF8Encoding $false))" % (remote_b64, piece)
+        fail_if_bad(session.run_ps(ps), 'copia bloque WinRM %s' % n)
+        pos += chunk
+    print('[+] Bloques WinRM escritos: %s (%s bytes b64). Decodificando a %s' % (n, pos, remote_ps1))
+    decode_ps = (
+        "$b64Path='%s'; $ps1='%s'; "
+        "$raw = Get-Content -LiteralPath $b64Path -Raw; "
+        "$bytes = [Convert]::FromBase64String(($raw -replace '[^A-Za-z0-9+/=]','')); "
+        "[IO.File]::WriteAllBytes($ps1, $bytes); "
+        "Remove-Item -LiteralPath $b64Path -Force; "
+        "Write-Output ('PS1_BYTES=' + (Get-Item -LiteralPath $ps1).Length)"
+    ) % (remote_b64, remote_ps1)
+    decoded = fail_if_bad(session.run_ps(decode_ps), 'decode PS1 remoto')
+    print('[+] ' + decode(decoded.std_out).strip())
+
 winrm = ensure_winrm()
 host = os.environ['PKI_WIN_HOST']
 port = os.environ.get('PKI_WIN_PORT', '5985')
@@ -177,7 +223,7 @@ session = None
 last_err = None
 for transport in ('ntlm', 'basic'):
     try:
-        s = winrm.Session(endpoint, auth=(user, password), transport=transport, server_cert_validation='ignore')
+        s = open_session(winrm, endpoint, user, password, transport)
         probe = s.run_cmd('hostname')
         out = decode(probe.std_out).strip()
         err = decode(probe.std_err).strip()
@@ -194,7 +240,10 @@ for transport in ('ntlm', 'basic'):
 if session is None:
     raise SystemExit('[!] Error crítico en el Jump Host: WinRM hacia %s:%s falló (%s)' % (host, port, last_err))
 
-print('[+] Invocando Generate-BaxterHubCertificate.ps1 via WinRM. ADCS no imprime hasta terminar; esto puede tardar varios minutos.', flush=True)
+remote_ps1 = 'C:\\\\Windows\\\\Temp\\\\baxter_pki_%s.ps1' % uuid.uuid4().hex[:10]
+copy_ps1_in_chunks(session, script, remote_ps1)
+
+print('[+] Invocando Generate-BaxterHubCertificate.ps1 via WinRM (powershell -File, no EncodedCommand). ADCS no imprime hasta terminar; esto puede tardar varios minutos.', flush=True)
 stop_beat = threading.Event()
 
 def beat():
@@ -205,10 +254,18 @@ def beat():
 
 t = threading.Thread(target=beat, daemon=True)
 t.start()
+result = None
 try:
-    result = session.run_ps(script)
+    ps_exe = 'C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe'
+    result = session.run_cmd(ps_exe, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', remote_ps1])
 finally:
     stop_beat.set()
+    try:
+        session.run_cmd('cmd.exe', ['/c', 'if exist "%s" del /f /q "%s"' % (remote_ps1, remote_ps1)])
+    except Exception:
+        pass
+if result is None:
+    raise SystemExit('[!] WinRM no devolvió resultado al ejecutar el orquestador PKI.')
 sys.stdout.write(decode(result.std_out))
 sys.stderr.write(decode(result.std_err))
 sys.stdout.flush()

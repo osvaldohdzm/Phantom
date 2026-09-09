@@ -69,6 +69,11 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('PYTHONUNBUFFERED');
     expect(issueScript).toContain('WinRM sigue esperando');
     expect(issueScript).toContain('threading');
+    expect(issueScript).toContain('The command line is too long');
+    expect(issueScript).toContain('copy_ps1_in_chunks');
+    expect(issueScript).toContain("'-File'");
+    expect(issueScript).toContain('read_timeout_sec=560');
+    expect(issueScript).not.toContain('result = session.run_ps(script)');
     expect(issueScript).toContain('$params = @{');
     expect(issueScript).toContain('& $scriptPath @params');
     expect(issueScript).toContain('if (-not $?)');
