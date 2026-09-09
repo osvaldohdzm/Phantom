@@ -356,7 +356,7 @@ export default function PortalPage() {
       {
         id: 'baxter_pki_certificate_request',
         name: BAXTER_PKI_SERVICE_NAME,
-        desc: 'Solicita y genera un certificado SSL/TLS invocando Generate-BaxterHubCertificate.ps1 en el escritorio del PKI Worker; el portal extrae y formatea el paquete ZIP.',
+        desc: 'Solicita y genera un certificado SSL/TLS invocando el Generate-BaxterHubCertificate.ps1 que ya existe en el escritorio del PKI Worker (no se genera ni se parchea); el portal extrae y formatea el paquete ZIP.',
         defaultUrgency: 'High',
       },
       ...BAXTER_HUB_CATALOG,
@@ -3314,7 +3314,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       Configuración de PKI Worker (Windows CA)
                     </CardTitle>
                     <CardDescription>
-                      WinRM hacia el worker Windows. Las solicitudes TLS/SSL invocan Generate-BaxterHubCertificate.ps1 en el escritorio (no certreq inline); el portal extrae y formatea el ZIP.
+                      WinRM hacia el worker Windows. Las solicitudes TLS/SSL invocan el Generate-BaxterHubCertificate.ps1 existente en el escritorio (no se genera ni se parchea); el portal extrae y formatea el ZIP.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">

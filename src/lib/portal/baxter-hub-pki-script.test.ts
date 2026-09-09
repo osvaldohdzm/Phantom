@@ -76,9 +76,10 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain("Generate-BaxterHubCertificate.ps1");
     expect(issueScript).toContain('& $scriptPath @params');
     expect(issueScript).toContain('Register-ScheduledTask');
-    expect(issueScript).toContain('PKI_INF_NO_AD_POLICY');
     expect(issueScript).toContain('0x800704dc');
-    expect(issueScript).toContain("$scriptPath + '.bak'");
+    expect(issueScript).toContain('sin modificar');
+    expect(issueScript).not.toContain("$scriptPath + '.bak'");
+    expect(issueScript).not.toContain('PKI_INF_NO_AD_POLICY');
     expect(issueScript).not.toContain('pki_quiet');
     expect(issueScript).not.toContain('CNG');
     expect(issueScript).not.toMatch(/-SubjectAlternativeNames[\s\S]*-SubjectAlternativeNames/);
