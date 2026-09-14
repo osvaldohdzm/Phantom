@@ -21,7 +21,10 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Phantom SecOps",
+  title: {
+    default: "Phantom",
+    template: "%s · Phantom",
+  },
   description:
     "Plataforma de gestión de vulnerabilidades, ciclo de pentest y servicios de ciberseguridad con soporte de IA.",
 };
