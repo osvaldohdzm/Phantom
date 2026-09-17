@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildIntelligentNmapAuditScript,
+  buildTargetedServiceEnumerationScript,
+  buildVulnerabilityAssessmentScript,
   buildMockNmapAuditReport,
+  buildMockOpenPortDiscoveryReport,
+  buildMockVersionDetectionReport,
+  buildMockTargetedServiceEnumerationReport,
+  buildMockVulnerabilityAssessmentReport,
   evaluateSshAlgorithms,
 } from './nmap-audit-runner';
 
@@ -21,6 +27,23 @@ describe('nmap-audit-runner', () => {
     expect(script).toContain('[CMD] ${VULN_CMD}');
   });
 
+  it('generates targeted service enumeration script (stage 1 + 2 + 3)', () => {
+    const script = buildTargetedServiceEnumerationScript('10.13.128.200', 1500);
+    expect(script).toContain('[STAGE 1/3 - RAPID OPEN PORT DISCOVERY]');
+    expect(script).toContain('[STAGE 2/3 - SERVICE & VERSION DETECTION]');
+    expect(script).toContain('[STAGE 3/3 - INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT]');
+    expect(script).toContain('ssh2-enum-algos');
+    expect(script).not.toContain('STAGE 4');
+  });
+
+  it('generates vulnerability assessment script (stage 1 + 2 + 3 vuln)', () => {
+    const script = buildVulnerabilityAssessmentScript('10.13.128.200', 1500);
+    expect(script).toContain('[STAGE 1/3 - RAPID OPEN PORT DISCOVERY]');
+    expect(script).toContain('[STAGE 2/3 - SERVICE & VERSION DETECTION]');
+    expect(script).toContain('[STAGE 3/3 - CORE VULNERABILITY ASSESSMENT]');
+    expect(script).toContain('vulners,vuln');
+  });
+
   it('evaluates obsolete SSH ciphers and algorithms accurately', () => {
     const sampleOutput = `
       kex_algorithms: curve25519-sha256, diffie-hellman-group1-sha1
@@ -37,14 +60,25 @@ describe('nmap-audit-runner', () => {
     expect(res.recommendations.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('builds realistic mock report with command logs and warnings', () => {
-    const report = buildMockNmapAuditReport('127.0.0.1');
-    expect(report).toContain('[STAGE 1/4 - RAPID OPEN PORT DISCOVERY]');
-    expect(report).toContain('[CMD] nmap -Pn -n -F -T4 --min-rate 1500 --max-retries 1 --open 127.0.0.1');
-    expect(report).toContain('[STAGE 2/4 - SERVICE & VERSION DETECTION]');
-    expect(report).toContain('[STAGE 3/4 - INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT]');
-    expect(report).toContain('[!] OBSOLETE KEY EXCHANGE DETECTED');
-    expect(report).toContain('[!] OBSOLETE / WEAK CIPHER DETECTED');
-    expect(report).toContain('[STAGE 4/4 - CORE VULNERABILITY ASSESSMENT]');
+  it('builds realistic mock reports for all 4 scan modes', () => {
+    const discovery = buildMockNmapAuditReport('127.0.0.1', 'discovery');
+    expect(discovery).toContain('RAPID OPEN PORT DISCOVERY');
+    expect(discovery).toContain('OPEN PORT DISCOVERY COMPLETED');
+
+    const version = buildMockNmapAuditReport('127.0.0.1', 'version');
+    expect(version).toContain('PORT & SERVICE VERSION DETECTION');
+    expect(version).toContain('SERVICE VERSION DETECTION COMPLETED');
+
+    const enumReport = buildMockNmapAuditReport('127.0.0.1', 'enumeration');
+    expect(enumReport).toContain('TARGETED SERVICE ENUMERATION');
+    expect(enumReport).toContain('OBSOLETE KEY EXCHANGE DETECTED');
+
+    const vulnReport = buildMockNmapAuditReport('127.0.0.1', 'vuln');
+    expect(vulnReport).toContain('CORE VULNERABILITY ASSESSMENT');
+    expect(vulnReport).toContain('vulners:');
+
+    const full = buildMockNmapAuditReport('127.0.0.1');
+    expect(full).toContain('[STAGE 1/4 - RAPID OPEN PORT DISCOVERY]');
+    expect(full).toContain('[STAGE 4/4 - CORE VULNERABILITY ASSESSMENT]');
   });
 });

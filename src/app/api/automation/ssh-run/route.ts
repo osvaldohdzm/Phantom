@@ -70,8 +70,18 @@ export async function POST(request: Request) {
       logs.push(`[+] Running remote command: ${command}`);
       logs.push(`[+] --- REMOTE OUTPUT START ---`);
       
-      if (command.toLowerCase().includes('nmap') || command.includes('nmap_audit_')) {
-        const mockAudit = buildMockNmapAuditReport(host);
+      if (command.toLowerCase().includes('nmap') || command.includes('nmap_audit_') || command.includes('nmap_service_enum_') || command.includes('nmap_vuln_scan_')) {
+        let scanMode = 'full';
+        if (command.includes('--open') && !command.includes('-sV')) {
+          scanMode = 'discovery';
+        } else if (command.includes('-sV') && !command.includes('nmap_') && !command.includes('--script')) {
+          scanMode = 'version';
+        } else if (command.includes('nmap_service_enum_') || command.includes('ssh2-enum-algos')) {
+          scanMode = 'enumeration';
+        } else if (command.includes('nmap_vuln_scan_') || command.includes('vulners')) {
+          scanMode = 'vuln';
+        }
+        const mockAudit = buildMockNmapAuditReport(host, scanMode);
         mockAudit.split('\n').forEach((l) => logs.push(l));
       } else {
         logs.push(`uid=1001(${username}) gid=1001(${username}) groups=1001(${username})`);

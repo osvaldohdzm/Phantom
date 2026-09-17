@@ -108,6 +108,7 @@ export type PkiJumpHostParams = {
   serverName: string;
   pfxPassword: string;
   scriptPath: string;
+  requester?: string;
 };
 
 export type PkiVerifyParams = {
@@ -317,6 +318,7 @@ function buildWindowsIssueScript(p: PkiJumpHostParams): string {
   const pass = escapePsLiteral(p.pfxPassword);
   const winUser = escapePsLiteral(p.winUsername || BAXTER_PKI_DEFAULT_USER);
   const winPass = escapePsLiteral(p.winPassword || BAXTER_PKI_DEFAULT_PASSWORD);
+  const requester = escapePsLiteral(p.requester || '');
   return `$ErrorActionPreference = "Stop"
 $scriptPath = '${scriptPath}'
 $scriptDir = '${scriptDir}'
@@ -327,6 +329,7 @@ $caName = '${caName}'
 $pass = '${pass}'
 $winUser = '${winUser}'
 $winPass = '${winPass}'
+$requester = '${requester}'
 
 Write-Host "[+] Portal does not generate Generate-BaxterHubCertificate.ps1; using the copy already on the desktop."
 if (-not $scriptPath -or -not (Test-Path -LiteralPath $scriptPath)) {
@@ -361,6 +364,9 @@ function Invoke-BaxterDesktopCert {
   if ($caName -and $caName.Trim() -ne "") {
     $params.CAServer = $caName
   }
+  if ($requester -and $requester.Trim() -ne "") {
+    $params.Requester = $requester
+  }
   & $scriptPath @params
   if (-not $?) {
     throw "Generate-BaxterHubCertificate.ps1 exited with an error (code $LASTEXITCODE)."
@@ -385,6 +391,7 @@ $ip = "@@IP@@"
 $template = "@@TEMPLATE@@"
 $caName = "@@CANAME@@"
 $pass = "@@PASS@@"
+$requester = "@@REQUESTER@@"
 $outPath = "@@OUTPATH@@"
 $codePath = "@@CODEPATH@@"
 $outputDir = "@@OUTPUTDIR@@"
@@ -406,6 +413,7 @@ try {
     KeyLength               = 2048
   }
   if ($caName -and $caName.Trim() -ne "") { $params.CAServer = $caName }
+  if ($requester -and $requester.Trim() -ne "") { $params.Requester = $requester }
   Start-Transcript -Path $outPath -Force | Out-Null
   try {
     & $scriptPath @params
@@ -429,6 +437,7 @@ $runner = $runner.Replace('@@IP@@', $ip)
 $runner = $runner.Replace('@@TEMPLATE@@', $template)
 $runner = $runner.Replace('@@CANAME@@', $caName)
 $runner = $runner.Replace('@@PASS@@', $pass)
+$runner = $runner.Replace('@@REQUESTER@@', $requester)
 $runner = $runner.Replace('@@OUTPATH@@', $outPath)
 $runner = $runner.Replace('@@CODEPATH@@', $codePath)
 $runner = $runner.Replace('@@OUTPUTDIR@@', $outputDir)
@@ -481,6 +490,39 @@ $zip = Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "Package_*.zip" -E
 if (-not $zip) {
   throw "The desktop script did not leave Package_*.zip in $outputDir"
 }
+
+# Ensure INSTRUCTIONS.txt in $outputDir and inside the Package_*.zip has the dynamic requester
+if ($requester -and $requester.Trim() -ne "") {
+  try {
+    Get-ChildItem -LiteralPath $outputDir -Recurse -Filter "INSTRUCTIONS.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+      $c = Get-Content -LiteralPath $_.FullName -Raw
+      if ($c -match 'Requester\s*:') {
+        $c = $c -replace '(?m)^Requester\s*:.*$', "Requester   : $requester"
+        [System.IO.File]::WriteAllText($_.FullName, $c, [System.Text.Encoding]::UTF8)
+      }
+    }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $za = [System.IO.Compression.ZipFile]::Open($zip.FullName, [System.IO.Compression.ZipArchiveMode]::Update)
+    $entry = $za.GetEntry("INSTRUCTIONS.txt")
+    if ($entry) {
+      $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
+      $rawText = $sr.ReadToEnd()
+      $sr.Close()
+      if ($rawText -match 'Requester\s*:') {
+        $patchedText = $rawText -replace '(?m)^Requester\s*:.*$', "Requester   : $requester"
+        $entry.Delete()
+        $newEntry = $za.CreateEntry("INSTRUCTIONS.txt")
+        $sw = New-Object System.IO.StreamWriter($newEntry.Open(), [System.Text.Encoding]::UTF8)
+        $sw.Write($patchedText)
+        $sw.Close()
+      }
+    }
+    $za.Dispose()
+  } catch {
+    Write-Host ("[!] Warning during instructions patching: " + $_)
+  }
+}
+
 Write-Host ("[OK] Package created: " + $zip.FullName)
 
 $base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($zip.FullName))

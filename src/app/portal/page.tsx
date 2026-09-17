@@ -85,7 +85,11 @@ import {
   buildPkiClientReport,
   type PortalLiveJobKind,
 } from '@/lib/portal/portal-live-job';
-import { buildIntelligentNmapAuditScript } from '@/lib/portal/nmap-audit-runner';
+import {
+  buildIntelligentNmapAuditScript,
+  buildTargetedServiceEnumerationScript,
+  buildVulnerabilityAssessmentScript,
+} from '@/lib/portal/nmap-audit-runner';
 
 interface ClientTicket {
   id: string;
@@ -454,12 +458,18 @@ export default function PortalPage() {
       },
       {
         id: '3',
-        name: 'Intelligent Service Enumeration & Vulnerability Audit (Nmap NSE)',
-        desc: 'Multi-stage assessment: fast port discovery -> version detection -> targeted service enumeration scripts (SSH, HTTP, SMB) -> core vulnerability inspection.',
+        name: 'Targeted Service Enumeration (Nmap NSE)',
+        desc: 'Intelligent service-specific enumeration (SSH algorithms/ciphers, HTTP methods/headers, SMB security).',
         defaultUrgency: 'High',
       },
       {
         id: '4',
+        name: 'Common Vulnerabilities Basic Scan (Nmap NSE)',
+        desc: 'Target-restricted core vulnerability assessment using vulners and safe vuln scripts.',
+        defaultUrgency: 'High',
+      },
+      {
+        id: '5',
         name: 'DNS Security Audit (DNSRecon / Sublist3r)',
         desc: 'Subdomain enumeration and DNS configuration security audit.',
         defaultUrgency: 'Medium',
@@ -471,7 +481,7 @@ export default function PortalPage() {
         defaultUrgency: 'Medium',
       },
       {
-        id: '5',
+        id: '6',
         name: 'DDoS Stress Simulation (Flamethrower)',
         desc: 'Controlled denial-of-service simulation to validate WAF mitigation and DNS resilience with Flamethrower (DNS-OARC).',
         defaultUrgency: 'High',
@@ -946,12 +956,17 @@ export default function PortalPage() {
       if (ticketType.includes('Open Port Discovery') || ticketType.includes('Escaneo de Puertos Abiertos')) {
         nmapCmd = `nmap -Pn -n -F -T4 --min-rate 1500 --max-retries 1 --open ${targetIpOrHost}`;
       } else if (ticketType.includes('Port & Service Version Detection') || ticketType.includes('Escaneo de Puertos y Servicios')) {
-        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --min-rate 1500 --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
-      } else if (ticketType.includes('Intelligent Service Enumeration') || ticketType.includes('Escaneo Básico de Vulnerabilidades Comunes')) {
+        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --min-rate 1500 --max-retries 1 --host-timeout 60s ${targetIpOrHost}`;
+      } else if (ticketType.includes('Targeted Service Enumeration') || ticketType.includes('Intelligent Service Enumeration')) {
         runTimeout = 180;
-        const auditScript = buildIntelligentNmapAuditScript(targetIpOrHost, 1500);
+        const auditScript = buildTargetedServiceEnumerationScript(targetIpOrHost, 1500);
         const base64Audit = safeBtoa(auditScript);
-        nmapCmd = `TMP_FILE="/tmp/nmap_audit_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
+        nmapCmd = `TMP_FILE="/tmp/nmap_service_enum_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
+      } else if (ticketType.includes('Common Vulnerabilities') || ticketType.includes('Vulnerabilidades Comunes') || ticketType.includes('Vulnerability Assessment') || ticketType.includes('Vulnerability Audit')) {
+        runTimeout = 180;
+        const auditScript = buildVulnerabilityAssessmentScript(targetIpOrHost, 1500);
+        const base64Audit = safeBtoa(auditScript);
+        nmapCmd = `TMP_FILE="/tmp/nmap_vuln_scan_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
       } else if (isFlameServiceType(ticketType)) {
         const selectedRecs = Object.entries(flameRecordTypes).filter(([_, v]) => v).map(([k]) => k).join(',');
         let cmd = `flame ${targetIpOrHost} -P ${flameProtocol} -p ${flamePort} -c ${flameConcurrency} -Q ${flameQPS} ${flameQueryGen}`;
@@ -977,6 +992,7 @@ export default function PortalPage() {
           serverName,
           pfxPassword: dynamicPassword,
           scriptPath: pkiConfig.scriptPath || pkiScriptPath || BAXTER_PKI_SCRIPT_PATH,
+          requester: effectiveRequester,
         });
 
         const base64Script = safeBtoa(psScript);
@@ -2692,7 +2708,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                   <span className="text-[9px] px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold">RESULTS</span>
                                 )}
                               </div>
-                              <p className="text-xs text-muted-foreground font-mono">Target: <span className="text-foreground font-medium">{t.target}</span></p>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                <span className="font-mono">Target: <span className="text-foreground font-medium">{t.target}</span></span>
+                                {t.requester && (
+                                  <span>Requester: <span className="text-foreground font-medium">{t.requester}</span></span>
+                                )}
+                              </div>
                               {progress ? (
                                 <div className="pt-1 space-y-1 max-w-md">
                                   <div className="flex items-center justify-between text-[10px] text-muted-foreground">

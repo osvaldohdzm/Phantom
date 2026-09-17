@@ -30,6 +30,7 @@ const issueScript = buildPkiIssueJumpHostScript({
   serverName: escapePsLiteral('ri-vnc01'),
   pfxPassword: escapePsLiteral('Baxter2026!'),
   scriptPath: escapePsLiteral(BAXTER_PKI_SCRIPT_PATH),
+  requester: escapePsLiteral('Dr. John Doe (BioMed)'),
 });
 
 const verifyScript = buildPkiVerifyJumpHostScript({
@@ -75,6 +76,8 @@ describe('Baxter HUB PKI desktop-script strategy', () => {
     expect(issueScript).toContain('read_timeout_sec=560');
     expect(issueScript).not.toContain('result = session.run_ps(script)');
     expect(issueScript).toContain('$params = @{');
+    expect(issueScript).toContain('$params.Requester = $requester');
+    expect(issueScript).toContain('Dr. John Doe (BioMed)');
     expect(issueScript).toContain('& $scriptPath @params');
     expect(issueScript).toContain('if (-not $?)');
     expect(issueScript).toContain('ProviderType            = "CSP"');
