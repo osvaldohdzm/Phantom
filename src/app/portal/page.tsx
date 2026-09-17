@@ -588,6 +588,7 @@ export default function PortalPage() {
   const [requesterName, setRequesterName] = useState('Horacio Arellano / Nathan F. Walker (Digital Health)');
   const [requesterEmail, setRequesterEmail] = useState('phantom@baxter.com');
   const [isRequestOnBehalf, setIsRequestOnBehalf] = useState(true);
+  const [scanTimeoutSec, setScanTimeoutSec] = useState<number>(600);
 
   // SSH Automation flow settings
   const [sshHost, setSshHost] = useState('127.0.0.1');
@@ -916,54 +917,23 @@ export default function PortalPage() {
       ];
       setClientScanLogs(initLogs);
 
-      // Progress bar is estimated: ssh-run only returns when the remote command finishes.
-      let prog = 0;
-      let nextPkiStage = 0;
-      let lastPkiHeartbeatSec = 0;
-      const startedAt = Date.now();
-      const pkiStageCtx = {
-        fqdn: targetIpOrHost,
-        ip: pkiIp.trim(),
-        template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
-        jumpHost: `${agent.host}:${agent.port}`,
-        jumpName: agent.name || 'baxtersrv300',
-        winHost: resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')).host,
-      };
-      const progressInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-        setScanElapsedSec(elapsed);
-        const cap = isPkiRequest ? 92 : 88;
-        const step = isPkiRequest ? 2.2 : 8;
-        prog = Math.min(prog + Math.random() * step, cap);
-        setScanProgress(Math.floor(prog));
-        if (!isPkiRequest) return;
-        const stage = buildPkiWaitStageLine(nextPkiStage, pkiStageCtx);
-        if (stage) {
-          nextPkiStage += 1;
-          setClientScanLogs((prev) => [...prev, stage]);
-          return;
-        }
-        if (elapsed - lastPkiHeartbeatSec >= 12) {
-          lastPkiHeartbeatSec = elapsed;
-          setClientScanLogs((prev) => [...prev, buildPkiElapsedHeartbeat(elapsed)]);
-        }
-      }, isPkiRequest ? 3500 : 600);
-
-      // Determine command based on selected service type
+      // Determine command and execution timeout based on selected service type
       let nmapCmd = `nmap -F -sV --max-rtt-timeout 350ms --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
-      let runTimeout = 60;
+      let runTimeout = Math.max(scanTimeoutSec, 600);
 
       if (ticketType.includes('Open Port Discovery') || ticketType.includes('Escaneo de Puertos Abiertos')) {
         nmapCmd = `nmap -Pn -n -F -T4 --min-rate 1500 --max-retries 1 --open ${targetIpOrHost}`;
+        runTimeout = Math.max(scanTimeoutSec, 180);
       } else if (ticketType.includes('Port & Service Version Detection') || ticketType.includes('Escaneo de Puertos y Servicios')) {
-        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --min-rate 1500 --max-retries 1 --host-timeout 60s ${targetIpOrHost}`;
+        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --min-rate 1500 --max-retries 1 --host-timeout 90s ${targetIpOrHost}`;
+        runTimeout = Math.max(scanTimeoutSec, 300);
       } else if (ticketType.includes('Targeted Service Enumeration') || ticketType.includes('Intelligent Service Enumeration')) {
-        runTimeout = 180;
+        runTimeout = Math.max(scanTimeoutSec, 600);
         const auditScript = buildTargetedServiceEnumerationScript(targetIpOrHost, 1500);
         const base64Audit = safeBtoa(auditScript);
         nmapCmd = `TMP_FILE="/tmp/nmap_service_enum_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
       } else if (ticketType.includes('Common Vulnerabilities') || ticketType.includes('Vulnerabilidades Comunes') || ticketType.includes('Vulnerability Assessment') || ticketType.includes('Vulnerability Audit')) {
-        runTimeout = 180;
+        runTimeout = Math.max(scanTimeoutSec, 600);
         const auditScript = buildVulnerabilityAssessmentScript(targetIpOrHost, 1500);
         const base64Audit = safeBtoa(auditScript);
         nmapCmd = `TMP_FILE="/tmp/nmap_vuln_scan_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
@@ -976,7 +946,8 @@ export default function PortalPage() {
         if (flameDynamicQPSFlow.trim()) cmd += ` --qps-flow "${flameDynamicQPSFlow.trim()}"`;
         cmd += ` -o metrics.json`;
         nmapCmd = cmd;
-         } else if (isPkiRequest) {
+        runTimeout = 180;
+      } else if (isPkiRequest) {
         const pkiConfig = resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')); 
         runTimeout = BAXTER_PKI_SSH_TIMEOUT_SEC;
 
@@ -1006,6 +977,50 @@ export default function PortalPage() {
           exit \$STATUS;
         `;
       }
+
+      // Progress bar is estimated: ssh-run only returns when the remote command finishes.
+      let prog = 0;
+      let nextPkiStage = 0;
+      let lastPkiHeartbeatSec = 0;
+      let lastNmapHeartbeatSec = 0;
+      const startedAt = Date.now();
+      const pkiStageCtx = {
+        fqdn: targetIpOrHost,
+        ip: pkiIp.trim(),
+        template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
+        jumpHost: `${agent.host}:${agent.port}`,
+        jumpName: agent.name || 'baxtersrv300',
+        winHost: resolvePkiWorkerConfig(localStorage.getItem('phantom_pki_config')).host,
+      };
+      const progressInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        setScanElapsedSec(elapsed);
+        const cap = isPkiRequest ? 92 : 94;
+        const step = isPkiRequest ? 2.2 : 1.2;
+        prog = Math.min(prog + Math.random() * step, cap);
+        setScanProgress(Math.floor(prog));
+        if (isPkiRequest) {
+          const stage = buildPkiWaitStageLine(nextPkiStage, pkiStageCtx);
+          if (stage) {
+            nextPkiStage += 1;
+            setClientScanLogs((prev) => [...prev, stage]);
+            return;
+          }
+          if (elapsed - lastPkiHeartbeatSec >= 12) {
+            lastPkiHeartbeatSec = elapsed;
+            setClientScanLogs((prev) => [...prev, buildPkiElapsedHeartbeat(elapsed)]);
+          }
+        } else {
+          if (elapsed - lastNmapHeartbeatSec >= 15) {
+            lastNmapHeartbeatSec = elapsed;
+            const remaining = Math.max(runTimeout - elapsed, 0);
+            setClientScanLogs((prev) => [
+              ...prev,
+              `[*] Audit in progress on remote agent: ${agent.name} (${elapsed}s elapsed, max timeout: ${runTimeout}s, ~${remaining}s remaining)...`,
+            ]);
+          }
+        }
+      }, isPkiRequest ? 3500 : 1500);
 
       try {
         const response = await fetch('/api/automation/ssh-run', {
@@ -2080,24 +2095,43 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-                          Target Host / IP
-                        </label>
-                        <Input
-                          type="text"
-                          placeholder="e.g. 192.168.0.1 or example.com"
-                          value={ticketTarget}
-                          onChange={(e) => {
-                            setTicketTarget(e.target.value);
-                            if (targetError) setTargetError(null);
-                          }}
-                          required
-                          className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
-                        />
-                        {targetError && (
-                          <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
-                        )}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                            Target Host / IP
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. 192.168.0.1 or example.com"
+                            value={ticketTarget}
+                            onChange={(e) => {
+                              setTicketTarget(e.target.value);
+                              if (targetError) setTargetError(null);
+                            }}
+                            required
+                            className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
+                          />
+                          {targetError && (
+                            <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide flex items-center justify-between">
+                            <span>Scan Timeout</span>
+                            <span className="text-[10px] text-primary font-mono">{scanTimeoutSec}s</span>
+                          </label>
+                          <select
+                            value={scanTimeoutSec}
+                            onChange={(e) => setScanTimeoutSec(Number(e.target.value))}
+                            className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-xs font-mono text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                          >
+                            <option value={300}>5 min (300s) — Rapid</option>
+                            <option value={600}>10 min (600s) — Deep Scan (Recommended)</option>
+                            <option value={900}>15 min (900s) — Extended / Slow Network</option>
+                            <option value={1200}>20 min (1200s) — Exhaustive</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                     )}

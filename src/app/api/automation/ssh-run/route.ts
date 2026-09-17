@@ -16,7 +16,17 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { host, port = 22, username, password = '', authType = 'password', privateKey = '', command, timeout = 30 } = body;
-    const timeoutSec = Math.min(Math.max(Number(timeout) || 30, 5), 900);
+    const timeoutSec = Math.min(Math.max(Number(timeout) || 30, 5), 1800);
+
+    const cmdLower = (command || '').toLowerCase();
+    const isNmap = cmdLower.includes('nmap') || (command || '').includes('nmap_');
+    const isPki = (command || '').includes('Generate-BaxterHubCertificate') || (command || '').includes('pki_req_') || (command || '').includes('WinRM');
+    let timeoutReason = 'remote command did not complete within the requested time limit';
+    if (isNmap) {
+      timeoutReason = 'remote security scan/audit is still executing on target host; consider increasing timeout or inspecting network latency';
+    } else if (isPki) {
+      timeoutReason = 'WinRM/ADCS is still silent; this is not a network drop';
+    }
 
     if (!host || !command) {
       return NextResponse.json(
@@ -166,7 +176,7 @@ export async function POST(request: Request) {
           exp_continue
         }
         timeout {
-          send_user "\\n\\[!\\] ssh: remote command did not finish in ${timeoutSec} seconds (WinRM/ADCS is still silent; this is not a network drop).\\n"
+          send_user "\\n\\[!\\] ssh: remote command did not finish in ${timeoutSec} seconds (${timeoutReason}).\\n"
           exit 5
         }
         eof {
@@ -224,7 +234,7 @@ export async function POST(request: Request) {
     } catch (err: any) {
       if (err.killed || err.signal === 'SIGTERM') {
         return NextResponse.json(
-          { error: `ssh: remote command did not finish (process killed after ${timeoutSec} seconds).` },
+          { error: `ssh: remote command did not finish in ${timeoutSec} seconds (${timeoutReason}).` },
           { status: 400 }
         );
       }

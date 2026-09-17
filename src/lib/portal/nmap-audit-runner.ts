@@ -165,9 +165,9 @@ if echo "\${VERSION_RAW}" | grep -iq "ssh" || echo "\${OPEN_PORTS}" | grep -qE "
   echo "[*] Targeted Service: OpenSSH detected on port 22."
   SSH_NSE=$(get_service_nse "ssh" "ssh-auth-methods,ssh-brute,ssh-hostkey,ssh-publickey-acceptance,ssh-run,ssh2-enum-algos,sshv1")
   echo "[*] Service NSE Script Suite: \${SSH_NSE}"
-  SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" \${TARGET}"
+  SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${SSH_CMD}"
-  SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" "\${TARGET}" 2>&1)
+  SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1)
   echo "\${SSH_RAW}"
   
   echo ""
@@ -204,9 +204,9 @@ if echo "\${VERSION_RAW}" | grep -iqE "http|ssl/http|https" || echo "\${OPEN_POR
   SSL_SCRIPTS=$(get_service_nse "ssl-" "ssl-enum-ciphers,ssl-cert,ssl-date")
   WEB_NSE="\${HTTP_SCRIPTS},\${SSL_SCRIPTS}"
   echo "[*] Service NSE Script Suite: \${WEB_NSE}"
-  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" \${TARGET}"
+  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${HTTP_CMD}"
-  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" "\${TARGET}" 2>&1)
+  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1)
   echo "\${HTTP_RAW}"
   
   if echo "\${HTTP_RAW}" | grep -iE "SSLv2|SSLv3|TLSv1.0|TLSv1.1|RC4|3DES"; then
@@ -221,9 +221,9 @@ if echo "\${VERSION_RAW}" | grep -iqE "smb|microsoft-ds|netbios" || echo "\${OPE
   echo "[*] Targeted Service: SMB/NetBIOS detected on port 445/139."
   SMB_NSE=$(get_service_nse "smb" "smb-protocols,smb-security-mode,smb2-security-mode,smb2-capabilities,smb-enum-shares,smb-os-discovery,smb2-time")
   echo "[*] Service NSE Script Suite: \${SMB_NSE}"
-  SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" \${TARGET}"
+  SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${SMB_CMD}"
-  nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" "\${TARGET}" 2>&1
+  nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.4 FTP Targeted Enumeration
@@ -232,8 +232,9 @@ if echo "\${VERSION_RAW}" | grep -iq "ftp" || echo "\${OPEN_PORTS}" | grep -qE "
   echo "[*] Targeted Service: FTP detected on port 21."
   FTP_NSE=$(get_service_nse "ftp" "ftp-anon,ftp-bounce,ftp-syst,ftp-proftpd-backdoor,ftp-vsftpd-backdoor")
   echo "[*] Service NSE Script Suite: \${FTP_NSE}"
-  echo "[CMD] nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 21 --script "\${FTP_NSE}" "\${TARGET}" 2>&1
+  FTP_CMD="nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${FTP_CMD}"
+  nmap -Pn -n -p 21 --script "\${FTP_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.5 Database / MySQL Targeted Enumeration
@@ -242,8 +243,9 @@ if echo "\${VERSION_RAW}" | grep -iq "mysql" || echo "\${OPEN_PORTS}" | grep -qE
   echo "[*] Targeted Service: MySQL Database detected on port 3306."
   MYSQL_NSE=$(get_service_nse "mysql" "mysql-info,mysql-enum,mysql-databases,mysql-users,mysql-empty-password")
   echo "[*] Service NSE Script Suite: \${MYSQL_NSE}"
-  echo "[CMD] nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" "\${TARGET}" 2>&1
+  MYSQL_CMD="nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${MYSQL_CMD}"
+  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.6 Remote Desktop (RDP) Targeted Enumeration
@@ -252,16 +254,17 @@ if echo "\${VERSION_RAW}" | grep -iqE "rdp|ms-wbt-server" || echo "\${OPEN_PORTS
   echo "[*] Targeted Service: Microsoft Remote Desktop (RDP) detected on port 3389."
   RDP_NSE=$(get_service_nse "rdp" "rdp-enum-encryption,rdp-ntlm-info")
   echo "[*] Service NSE Script Suite: \${RDP_NSE}"
-  echo "[CMD] nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" "\${TARGET}" 2>&1
+  RDP_CMD="nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${RDP_CMD}"
+  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 echo ""
 
 # STAGE 4: BASIC VULNERABILITY AUDIT
 echo "[+] [STAGE 4/4 - CORE VULNERABILITY ASSESSMENT]"
-VULN_CMD="nmap -Pn -n -T4 --max-retries 1 -p \${OPEN_PORTS} --script \"vulners,vuln\" --host-timeout 60s \${TARGET}"
+VULN_CMD="nmap -Pn -n -T4 --max-retries 1 -p \${OPEN_PORTS} --script \"vulners,vuln\" --script-timeout 60s --host-timeout 240s \${TARGET}"
 echo "[CMD] \${VULN_CMD}"
-nmap -Pn -n -T4 --max-retries 1 -p "\${OPEN_PORTS}" --script "vulners,vuln" --host-timeout 60s "\${TARGET}" 2>&1
+nmap -Pn -n -T4 --max-retries 1 -p "\${OPEN_PORTS}" --script "vulners,vuln" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 
 echo ""
 echo "================================================================================"
@@ -336,9 +339,9 @@ if echo "\${VERSION_RAW}" | grep -iq "ssh" || echo "\${OPEN_PORTS}" | grep -qE "
   echo "[*] Targeted Service: OpenSSH detected on port 22."
   SSH_NSE=$(get_service_nse "ssh" "ssh-auth-methods,ssh-brute,ssh-hostkey,ssh-publickey-acceptance,ssh-run,ssh2-enum-algos,sshv1")
   echo "[*] Service NSE Script Suite: \${SSH_NSE}"
-  SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" \${TARGET}"
+  SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${SSH_CMD}"
-  SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" "\${TARGET}" 2>&1)
+  SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1)
   echo "\${SSH_RAW}"
   
   echo ""
@@ -375,9 +378,9 @@ if echo "\${VERSION_RAW}" | grep -iqE "http|ssl/http|https" || echo "\${OPEN_POR
   SSL_SCRIPTS=$(get_service_nse "ssl-" "ssl-enum-ciphers,ssl-cert,ssl-date")
   WEB_NSE="\${HTTP_SCRIPTS},\${SSL_SCRIPTS}"
   echo "[*] Service NSE Script Suite: \${WEB_NSE}"
-  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" \${TARGET}"
+  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${HTTP_CMD}"
-  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" "\${TARGET}" 2>&1)
+  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1)
   echo "\${HTTP_RAW}"
   
   if echo "\${HTTP_RAW}" | grep -iE "SSLv2|SSLv3|TLSv1.0|TLSv1.1|RC4|3DES"; then
@@ -392,9 +395,9 @@ if echo "\${VERSION_RAW}" | grep -iqE "smb|microsoft-ds|netbios" || echo "\${OPE
   echo "[*] Targeted Service: SMB/NetBIOS detected on port 445/139."
   SMB_NSE=$(get_service_nse "smb" "smb-protocols,smb-security-mode,smb2-security-mode,smb2-capabilities,smb-enum-shares,smb-os-discovery,smb2-time")
   echo "[*] Service NSE Script Suite: \${SMB_NSE}"
-  SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" \${TARGET}"
+  SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
   echo "[CMD] \${SMB_CMD}"
-  nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" "\${TARGET}" 2>&1
+  nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.4 FTP Targeted Enumeration
@@ -403,8 +406,9 @@ if echo "\${VERSION_RAW}" | grep -iq "ftp" || echo "\${OPEN_PORTS}" | grep -qE "
   echo "[*] Targeted Service: FTP detected on port 21."
   FTP_NSE=$(get_service_nse "ftp" "ftp-anon,ftp-bounce,ftp-syst,ftp-proftpd-backdoor,ftp-vsftpd-backdoor")
   echo "[*] Service NSE Script Suite: \${FTP_NSE}"
-  echo "[CMD] nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 21 --script "\${FTP_NSE}" "\${TARGET}" 2>&1
+  FTP_CMD="nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${FTP_CMD}"
+  nmap -Pn -n -p 21 --script "\${FTP_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.5 Database / MySQL Targeted Enumeration
@@ -413,8 +417,9 @@ if echo "\${VERSION_RAW}" | grep -iq "mysql" || echo "\${OPEN_PORTS}" | grep -qE
   echo "[*] Targeted Service: MySQL Database detected on port 3306."
   MYSQL_NSE=$(get_service_nse "mysql" "mysql-info,mysql-enum,mysql-databases,mysql-users,mysql-empty-password")
   echo "[*] Service NSE Script Suite: \${MYSQL_NSE}"
-  echo "[CMD] nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" "\${TARGET}" 2>&1
+  MYSQL_CMD="nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${MYSQL_CMD}"
+  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 # 3.6 Remote Desktop (RDP) Targeted Enumeration
@@ -423,8 +428,9 @@ if echo "\${VERSION_RAW}" | grep -iqE "rdp|ms-wbt-server" || echo "\${OPEN_PORTS
   echo "[*] Targeted Service: Microsoft Remote Desktop (RDP) detected on port 3389."
   RDP_NSE=$(get_service_nse "rdp" "rdp-enum-encryption,rdp-ntlm-info")
   echo "[*] Service NSE Script Suite: \${RDP_NSE}"
-  echo "[CMD] nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" \${TARGET}"
-  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" "\${TARGET}" 2>&1
+  RDP_CMD="nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" --script-timeout 60s --host-timeout 240s \${TARGET}"
+  echo "[CMD] \${RDP_CMD}"
+  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 fi
 
 echo ""
@@ -478,9 +484,9 @@ echo ""
 
 # STAGE 3: CORE VULNERABILITY ASSESSMENT
 echo "[+] [STAGE 3/3 - CORE VULNERABILITY ASSESSMENT]"
-VULN_CMD="nmap -Pn -n -T4 --max-retries 1 -p \${OPEN_PORTS} --script \"vulners,vuln\" --host-timeout 90s \${TARGET}"
+VULN_CMD="nmap -Pn -n -T4 --max-retries 1 -p \${OPEN_PORTS} --script \"vulners,vuln\" --script-timeout 60s --host-timeout 240s \${TARGET}"
 echo "[CMD] \${VULN_CMD}"
-nmap -Pn -n -T4 --max-retries 1 -p "\${OPEN_PORTS}" --script "vulners,vuln" --host-timeout 90s "\${TARGET}" 2>&1
+nmap -Pn -n -T4 --max-retries 1 -p "\${OPEN_PORTS}" --script "vulners,vuln" --script-timeout 60s --host-timeout 240s "\${TARGET}" 2>&1
 
 echo ""
 echo "================================================================================"
