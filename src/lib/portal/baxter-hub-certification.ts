@@ -50,6 +50,8 @@ export interface CertificationTicket {
   status: TicketStatus;
   createdAt: string;
   description: string;
+  requester?: string;
+  requesterEmail?: string;
   workflowId: string;
   currentStageKey: string | null;
   stages: CertificationStageInstance[];
@@ -66,13 +68,13 @@ export const BAXTER_HUB_CATALOG: ServiceCatalogItem[] = [
   {
     id: WEB_APP_HUB_CHECK_ID,
     name: 'Web Application Baxter HUB Check',
-    desc: 'Certificación por etapas para aplicaciones web del Baxter Innovation HUB: inventario, puertos, enumeración de rutas, DAST, pentest manual y sign-off.',
+    desc: 'Multi-stage certification for Baxter Innovation HUB web applications: inventory, port scanning, endpoint enumeration, DAST, manual pentest, and executive sign-off.',
     defaultUrgency: 'High',
   },
   {
     id: MEDICAL_DEVICE_HUB_CHECK_ID,
     name: 'Medical Device Baxter HUB Check',
-    desc: 'Certificación por etapas para dispositivos médicos del HUB: clasificación, segmentación, SBOM/firmware, pruebas de interfaz, riesgo clínico y sign-off.',
+    desc: 'Multi-stage certification for HUB medical devices: classification, network segmentation, SBOM/firmware validation, interface testing, clinical risk assessment, and executive sign-off.',
     defaultUrgency: 'High',
   },
 ];
@@ -81,70 +83,70 @@ const WEB_APP_STAGES: CertificationStageDefinition[] = [
   {
     key: 'intake_scoping',
     label: 'Intake & Scope Definition',
-    description: 'Registro de alcance, contactos, ambientes y reglas de engagement alineadas al Baxter Innovation HUB.',
+    description: 'Scope definition, key contacts, testing environments, and rules of engagement aligned with Baxter Innovation HUB.',
     mode: 'manual',
     standardRef: 'OWASP SAMM / ISO 27001 A.8',
   },
   {
     key: 'asset_discovery',
     label: 'Asset Discovery & Inventory',
-    description: 'Inventario de hosts, certificados, dependencias y superficie expuesta del activo.',
+    description: 'Inventory of target hosts, certificates, dependencies, and attack surface exposed by the asset.',
     mode: 'automated',
     standardRef: 'CIS Controls 1–2',
   },
   {
     key: 'port_scan',
     label: 'Network Port Scanning',
-    description: 'Descubrimiento de puertos y servicios TCP/UDP en alcance autorizado.',
+    description: 'Discovery of authorized TCP/UDP ports and network services in scope.',
     mode: 'automated',
     standardRef: 'NIST SP 800-115',
   },
   {
     key: 'route_enumeration',
     label: 'Web Route Enumeration',
-    description: 'Mapeo de rutas, endpoints API y recursos ocultos de la aplicación web.',
+    description: 'Mapping web routes, API endpoints, hidden endpoints, and application parameters.',
     mode: 'automated',
     standardRef: 'OWASP WSTG-INFO',
   },
   {
     key: 'auth_mapping',
     label: 'Authenticated Application Mapping',
-    description: 'Recorrido autenticado de roles, sesiones y flujos de negocio críticos.',
+    description: 'Authenticated mapping of roles, session controls, and business logic workflows.',
     mode: 'hybrid',
     standardRef: 'OWASP WSTG-ATHN/ATHZ',
   },
   {
     key: 'dast',
     label: 'Dynamic Application Security Testing (DAST)',
-    description: 'Escaneo dinámico de vulnerabilidades en runtime (inyección, XSS, misconfig, etc.).',
+    description: 'Dynamic runtime vulnerability scanning (injection, XSS, broken access, misconfigurations).',
     mode: 'automated',
     standardRef: 'OWASP ASVS L2 / WSTG',
   },
   {
     key: 'manual_pentest',
     label: 'Manual Penetration Testing',
-    description: 'Explotación controlada y validación manual de hallazgos de alto impacto.',
+    description: 'Controlled manual exploitation and in-depth validation of high-impact attack vectors.',
     mode: 'manual',
     standardRef: 'PTES / OWASP Testing Guide',
   },
   {
     key: 'vuln_triage',
     label: 'Vulnerability Triage & Risk Rating',
-    description: 'Clasificación CVSS/negocio, falsos positivos y plan de remediación priorizado.',
+    description: 'CVSS and business impact triage, false positive elimination, and prioritized remediation roadmap.',
     mode: 'manual',
     standardRef: 'CVSS 3.1 / Baxter risk matrix',
   },
   {
     key: 'remediation_retest',
     label: 'Remediation Validation / Retest',
-    description: 'Re-prueba de fixes y evidencia de cierre antes de la certificación.',
+    description: 'Verification of applied remediation fixes and evidence collection before final sign-off.',
     mode: 'hybrid',
     standardRef: 'ISO 27001 A.8.8',
   },
   {
     key: 'certification_signoff',
     label: 'Baxter HUB Certification Sign-off',
-    description: 'Emisión del dictamen de certificación HUB y paquete de evidencia para el cliente.',
+    description: 'Issuance of the Baxter HUB certification attestation and client evidence package.',
     mode: 'manual',
     standardRef: 'Baxter Innovation HUB gate',
   },
@@ -154,70 +156,70 @@ const MEDICAL_DEVICE_STAGES: CertificationStageDefinition[] = [
   {
     key: 'device_classification',
     label: 'Device Classification & Scope',
-    description: 'Clase del dispositivo, entorno clínico, interfaces y límites del engagement.',
+    description: 'Device classification, clinical operating environment, interfaces, and engagement boundaries.',
     mode: 'manual',
     standardRef: 'IEC 62304 / FDA Premarket Cybersecurity',
   },
   {
     key: 'architecture_dataflow',
     label: 'Architecture & Data-Flow Review',
-    description: 'Revisión de arquitectura, trust boundaries y flujos de PHI/datos clínicos.',
+    description: 'Architecture, trust boundaries, and patient health information (PHI)/clinical data flows review.',
     mode: 'manual',
     standardRef: 'IEC 62443-3-2',
   },
   {
     key: 'network_segmentation_scan',
     label: 'Network Segmentation & Port Scan',
-    description: 'Validación de segmentación y descubrimiento de superficie de red del dispositivo.',
+    description: 'Network segmentation validation and device exposure surface discovery.',
     mode: 'automated',
     standardRef: 'IEC 62443-3-3 / NIST 800-82',
   },
   {
     key: 'interface_protocol_testing',
     label: 'Interface & Protocol Security Testing',
-    description: 'Pruebas de interfaces clínicas (HL7/FHIR/DICOM), APIs y protocolos propietarios.',
+    description: 'Clinical interface testing (HL7/FHIR/DICOM), proprietary protocols, and API security.',
     mode: 'hybrid',
     standardRef: 'IEC 80001 / HL7 security',
   },
   {
     key: 'firmware_sbom_review',
     label: 'Firmware / SBOM Review',
-    description: 'Análisis de firmware, componentes de terceros y lista de materiales de software (SBOM).',
+    description: 'Firmware analysis, third-party libraries, and Software Bill of Materials (SBOM) review.',
     mode: 'manual',
     standardRef: 'NTIA SBOM / FDA guidance',
   },
   {
     key: 'auth_access_control',
     label: 'Authentication & Access Control Review',
-    description: 'Cuentas locales, roles clínicos, credenciales por defecto y endurecimiento.',
+    description: 'Local accounts, clinical role management, default credentials check, and device hardening.',
     mode: 'manual',
     standardRef: 'IEC 62443-4-2',
   },
   {
     key: 'vulnerability_assessment',
     label: 'Vulnerability Assessment',
-    description: 'Escaneo y correlación de CVEs aplicables a SO, stack y componentes del dispositivo.',
+    description: 'Scanning and correlating CVEs affecting operating systems, runtimes, and device components.',
     mode: 'automated',
     standardRef: 'NIST SP 800-40',
   },
   {
     key: 'medical_device_pentest',
     label: 'Medical Device Penetration Testing',
-    description: 'Pentest manual enfocado en seguridad del paciente, disponibilidad y abuso de interfaz.',
+    description: 'Manual penetration testing focused on patient safety, availability, and interface abuse.',
     mode: 'manual',
     standardRef: 'AAMI TIR57 / PTES',
   },
   {
     key: 'clinical_risk_assessment',
     label: 'Clinical Risk & Residual Risk Assessment',
-    description: 'Evaluación de riesgo clínico residual y controles compensatorios documentados.',
+    description: 'Residual clinical risk assessment and documented compensating security controls.',
     mode: 'manual',
     standardRef: 'ISO 14971 / AAMI TIR57',
   },
   {
     key: 'device_certification_signoff',
     label: 'Baxter HUB Device Certification Sign-off',
-    description: 'Dictamen de certificación del dispositivo médico en el Innovation HUB.',
+    description: 'Final medical device certification verdict in the Baxter Innovation HUB.',
     mode: 'manual',
     standardRef: 'Baxter Innovation HUB gate',
   },
@@ -323,6 +325,8 @@ export function buildCertificationTicket(input: {
   description: string;
   createdAt: string;
   actor?: string;
+  requester?: string;
+  requesterEmail?: string;
 }): CertificationTicket {
   const template = getTemplateForService(input.serviceId) ?? getTemplateForService(input.serviceName);
   if (!template) {
@@ -341,6 +345,8 @@ export function buildCertificationTicket(input: {
     status: 'EN PROGRESO',
     createdAt: input.createdAt,
     description: input.description,
+    requester: input.requester,
+    requesterEmail: input.requesterEmail,
     workflowId: template.id,
     currentStageKey: first?.key ?? null,
     stages,
@@ -348,7 +354,7 @@ export function buildCertificationTicket(input: {
       makeUpdate({
         at: input.createdAt,
         actor,
-        message: `Solicitud de certificación creada — etapa inicial: ${first?.label ?? 'N/A'}.`,
+        message: `Certification request created — initial stage: ${first?.label ?? 'N/A'}.`,
         stageKey: first?.key,
       }),
     ],
@@ -396,8 +402,8 @@ export function advanceCertificationStage(
       at,
       actor: opts.actor,
       message: opts.note?.trim()
-        ? `Etapa completada: ${completedStage.label}. ${opts.note.trim()}`
-        : `Etapa completada: ${completedStage.label}.`,
+        ? `Stage completed: ${completedStage.label}. ${opts.note.trim()}`
+        : `Stage completed: ${completedStage.label}.`,
       stageKey: completedStage.key,
     }),
   ];
@@ -407,7 +413,7 @@ export function advanceCertificationStage(
       makeUpdate({
         at,
         actor: opts.actor,
-        message: `Etapa en curso: ${next.label} (${next.mode}).`,
+        message: `Current stage: ${next.label} (${next.mode}).`,
         stageKey: next.key,
       }),
     );
@@ -416,7 +422,7 @@ export function advanceCertificationStage(
       makeUpdate({
         at,
         actor: opts.actor,
-        message: 'Certificación Baxter HUB completada. Dictamen listo para el cliente.',
+        message: 'Baxter HUB Certification completed. Attestation package ready for client.',
         stageKey: completedStage.key,
       }),
     );
@@ -455,13 +461,13 @@ export function createDummyBaxterHubTickets(): CertificationTicket[] {
     serviceName: 'Web Application Baxter HUB Check',
     target: 'innovation-hub.baxter.example',
     urgency: 'High',
-    description: 'Certificación web del portal de innovación Baxter HUB (ambiente QA).',
+    description: 'Web certification of the Baxter HUB Innovation portal (QA environment).',
     createdAt: '2026-08-12',
     actor: 'cliente@demo.local',
   });
 
   const webInProgress = advanceCertificationStages(web, 3, {
-    note: 'Avance automático de demo — evidencia registrada en Phantom',
+    note: 'Automated demo progress — verified evidence stored in Phantom',
     actor: 'analyst@Phantom.local',
     at: '2026-08-18',
   });
@@ -472,13 +478,13 @@ export function createDummyBaxterHubTickets(): CertificationTicket[] {
     serviceName: 'Medical Device Baxter HUB Check',
     target: 'infusion-pump-lab.hub.baxter.com',
     urgency: 'High',
-    description: 'Certificación de bomba de infusión en laboratorio del Innovation HUB.',
+    description: 'Infusion pump security certification in Innovation HUB laboratory.',
     createdAt: '2026-08-10',
     actor: 'cliente@demo.local',
   });
 
   const deviceFurther = advanceCertificationStages(device, 6, {
-    note: 'Validación de laboratorio HUB',
+    note: 'HUB laboratory security validation',
     actor: 'lead@Phantom.local',
     at: '2026-08-19',
   });

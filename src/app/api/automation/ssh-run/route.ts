@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import { writeAuditLog } from '@/lib/audit-logger';
+import { buildMockNmapAuditReport } from '@/lib/portal/nmap-audit-runner';
 
 
 const execAsync = promisify(exec);
@@ -69,14 +70,9 @@ export async function POST(request: Request) {
       logs.push(`[+] Running remote command: ${command}`);
       logs.push(`[+] --- REMOTE OUTPUT START ---`);
       
-      if (command.toLowerCase().includes('nmap')) {
-        logs.push(`Starting Nmap 7.94 ( https://nmap.org ) at ${new Date().toLocaleDateString()}`);
-        logs.push(`Nmap scan report for ${host} (${host})`);
-        logs.push(`Host is up (0.00045s latency).`);
-        logs.push(`PORT     STATE SERVICE VERSION`);
-        logs.push(`22/tcp   open  ssh     OpenSSH 8.9p1 (Ubuntu Linux)`);
-        logs.push(`80/tcp   open  http    nginx 1.18.0 (Ubuntu)`);
-        logs.push(`Nmap done: 1 IP address scanned in 1.45 seconds`);
+      if (command.toLowerCase().includes('nmap') || command.includes('nmap_audit_')) {
+        const mockAudit = buildMockNmapAuditReport(host);
+        mockAudit.split('\n').forEach((l) => logs.push(l));
       } else {
         logs.push(`uid=1001(${username}) gid=1001(${username}) groups=1001(${username})`);
         logs.push(`Linux localhost-dummy-node 5.15.0-generic x86_64 GNU/Linux`);

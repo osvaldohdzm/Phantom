@@ -113,6 +113,7 @@ export type PkiTicketReportInput = {
   fqdn: string;
   sanIp: string;
   template: string;
+  requester?: string;
   jumpName: string;
   jumpHost: string;
   winHost: string;
@@ -149,6 +150,7 @@ export function buildPkiClientReport(input: PkiTicketReportInput): string {
     '',
     'REQUEST:',
     `  Ticket: ${input.ticketId}`,
+    input.requester ? `  Requester: ${input.requester}` : '',
     `  Common Name: ${input.fqdn}`,
     `  SAN IP: ${input.sanIp?.trim() || '(none)'}`,
     `  Template: ${input.template}`,

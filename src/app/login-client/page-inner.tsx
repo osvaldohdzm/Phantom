@@ -69,16 +69,16 @@ export default function LoginClientPage() {
         <div className="space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-xs font-semibold">
             <ShieldCheck className="size-3.5" />
-            Portal de Clientes Autorizados
+            Authorized Client Security Portal
           </div>
           <h1 className="text-3xl md:text-4xl font-extrabold leading-tight tracking-tight text-white">
-            Monitorea y Solicita <br />
+            Monitor & Request <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
-              Evaluaciones de Seguridad
+              Security Assessments
             </span>
           </h1>
           <p className="text-zinc-400 text-sm leading-relaxed">
-            Bienvenido al portal exclusivo para clientes. Desde aquí podrás solicitar auditorías de seguridad, visualizar el estado de tus tickets de pentesting y ejecutar diagnósticos automáticos autorizados en tu infraestructura.
+            Welcome to the client security portal. Request security audits, monitor penetration testing tickets, and execute authorized automated diagnostics across your infrastructure.
           </p>
         </div>
 
@@ -87,9 +87,9 @@ export default function LoginClientPage() {
             <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 w-fit">
               <Activity className="size-5" />
             </div>
-            <h3 className="font-bold text-sm text-white">Pruebas DDoS</h3>
+            <h3 className="font-bold text-sm text-white">DDoS & Stress Testing</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Solicita simulaciones de estrés de red para validar las capacidades de mitigación y resiliencia de tus servidores.
+              Request traffic and load simulations to validate server mitigation capabilities and network resilience.
             </p>
           </div>
 
@@ -97,9 +97,9 @@ export default function LoginClientPage() {
             <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 w-fit">
               <Globe className="size-5" />
             </div>
-            <h3 className="font-bold text-sm text-white">Auditorías DNS y Web</h3>
+            <h3 className="font-bold text-sm text-white">DNS & Web Audits</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Revisa configuraciones, fugas de subdominios, registros huérfanos y cabeceras de seguridad en tus aplicaciones.
+              Audit DNS configurations, subdomain leakage, dangling records, and application security headers.
             </p>
           </div>
 
@@ -107,9 +107,9 @@ export default function LoginClientPage() {
             <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 w-fit">
               <Terminal className="size-5" />
             </div>
-            <h3 className="font-bold text-sm text-white">Flujos de Escaneo Auto-SSH</h3>
+            <h3 className="font-bold text-sm text-white">Automated SSH Audit Workflows</h3>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Define y programa flujos automáticos para conectar tu infraestructura vía SSH y ejecutar diagnósticos rápidos de vulnerabilidad (ej. Nmap).
+              Define and execute automated workflows to connect to your infrastructure via SSH and run rapid vulnerability audits (e.g. Nmap).
             </p>
           </div>
         </div>
@@ -122,8 +122,8 @@ export default function LoginClientPage() {
             <div className="flex justify-center">
               <BrandingLogo branding={branding} size="lg" fallback="Phantom Client" />
             </div>
-            <h2 className="text-xl font-bold text-white">Ingreso al Portal</h2>
-            <p className="text-xs text-zinc-500">Introduce tus credenciales de cliente para acceder</p>
+            <h2 className="text-xl font-bold text-white">Portal Sign In</h2>
+            <p className="text-xs text-zinc-500">Enter your client credentials to access the portal</p>
           </div>
 
           <form
@@ -132,7 +132,7 @@ export default function LoginClientPage() {
           >
             <div className="space-y-1.5">
               <label htmlFor="email" className="text-xs text-zinc-400 font-semibold">
-                Usuario / Correo
+                Username / Email
               </label>
               <Input
                 id="email"
@@ -142,12 +142,12 @@ export default function LoginClientPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="bg-zinc-950 border-zinc-800 focus:border-emerald-500 text-white placeholder-zinc-700 text-sm"
-                placeholder="ej. cliente_corp"
+                placeholder="e.g. client_corp"
               />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="password" className="text-xs text-zinc-400 font-semibold">
-                Contraseña
+                Password
               </label>
               <div className="relative">
                 <Input
@@ -182,7 +182,7 @@ export default function LoginClientPage() {
               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all py-2.5 rounded-xl shadow-lg hover:shadow-emerald-500/10 active:scale-[0.98]"
               disabled={submitting}
             >
-              {submitting ? 'Verificando...' : 'Iniciar Sesión'}
+              {submitting ? 'Authenticating...' : 'Sign In'}
             </Button>
           </form>
         </div>

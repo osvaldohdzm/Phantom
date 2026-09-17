@@ -85,6 +85,7 @@ import {
   buildPkiClientReport,
   type PortalLiveJobKind,
 } from '@/lib/portal/portal-live-job';
+import { buildIntelligentNmapAuditScript } from '@/lib/portal/nmap-audit-runner';
 
 interface ClientTicket {
   id: string;
@@ -94,6 +95,8 @@ interface ClientTicket {
   status: 'PENDIENTE' | 'EN PROGRESO' | 'APROBADO' | 'COMPLETADO';
   createdAt: string;
   description: string;
+  requester?: string;
+  requesterEmail?: string;
   /** Baxter HUB multi-stage certification (ServiceNow-style) */
   workflowId?: string;
   currentStageKey?: string | null;
@@ -118,6 +121,82 @@ interface AutomationFlowNode {
 
 const renderTerminalLine = (line: string, index: number) => {
   const trimmed = line.trim();
+
+  // High-priority alert: Obsolete, Insecure, or Critical cryptographic finding
+  if (
+    trimmed.includes('OBSOLETE') ||
+    trimmed.includes('INSECURE') ||
+    trimmed.includes('CRITICAL') ||
+    (trimmed.startsWith('[!]') && (trimmed.includes('CIPHER') || trimmed.includes('KEY EXCHANGE')))
+  ) {
+    return (
+      <div
+        key={index}
+        className="text-rose-200 font-bold bg-rose-950/70 px-2.5 py-1.5 rounded-md border border-rose-500/50 my-1 flex items-start gap-2 whitespace-pre-wrap shadow-sm"
+      >
+        <span className="bg-rose-600 text-white text-[9px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0">
+          ALERT
+        </span>
+        <span className="leading-snug">{line}</span>
+      </div>
+    );
+  }
+
+  // Warning & Recommendations: Weak cipher, MAC, or hardening advice
+  if (
+    trimmed.includes('RECOMMENDATION') ||
+    trimmed.includes('WEAK') ||
+    trimmed.includes('WARNING')
+  ) {
+    return (
+      <div
+        key={index}
+        className="text-amber-200 font-semibold bg-amber-950/60 px-2.5 py-1.5 rounded-md border border-amber-500/40 my-1 flex items-start gap-2 whitespace-pre-wrap shadow-sm"
+      >
+        <span className="bg-amber-600 text-black text-[9px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0">
+          WARN
+        </span>
+        <span className="leading-snug">{line}</span>
+      </div>
+    );
+  }
+
+  // Exact Command Line Transparency
+  if (trimmed.startsWith('[CMD]') || trimmed.includes('Executing command:') || trimmed.includes('Dispatching:')) {
+    return (
+      <div
+        key={index}
+        className="text-cyan-300 font-mono text-[11px] bg-zinc-900/90 px-2.5 py-1.5 rounded-md border border-cyan-500/40 my-1.5 flex items-center gap-2 whitespace-pre-wrap shadow-inner"
+      >
+        <span className="bg-cyan-600 text-white text-[9px] uppercase px-1.5 py-0.5 rounded font-bold tracking-wider shrink-0">
+          CMD
+        </span>
+        <span className="text-cyan-200 font-medium">{line}</span>
+      </div>
+    );
+  }
+
+  // Audit Stage or Section Separator
+  if (
+    trimmed.startsWith('[STAGE') ||
+    trimmed.startsWith('[+] [STAGE') ||
+    trimmed.includes('PHANTOM SEC-OPS') ||
+    trimmed.includes('PHANTOM AUDIT') ||
+    trimmed.startsWith('--- [')
+  ) {
+    return (
+      <div
+        key={index}
+        className="text-sky-200 font-bold bg-sky-950/70 px-2.5 py-1 rounded-md border border-sky-500/40 my-1.5 flex items-center gap-2 whitespace-pre-wrap"
+      >
+        <span className="bg-sky-500 text-black text-[9px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0">
+          STAGE
+        </span>
+        <span>{line}</span>
+      </div>
+    );
+  }
+
   if (
     trimmed.startsWith('[!]') ||
     trimmed.toLowerCase().includes('error') ||
@@ -363,20 +442,20 @@ export default function PortalPage() {
       ...BAXTER_HUB_CATALOG,
       {
         id: '1',
-        name: 'Escaneo de Puertos Abiertos (Nmap)',
-        desc: 'Descubrimiento ultrarrápido de puertos TCP abiertos mediante escaneo SYN ligero de Nmap.',
+        name: 'Open Port Discovery Scan (Nmap)',
+        desc: 'Ultra-fast TCP open port discovery via lightweight Nmap SYN / connect scan with adaptive rate.',
         defaultUrgency: 'Medium',
       },
       {
         id: '2',
-        name: 'Escaneo de Puertos y Servicios (Nmap)',
-        desc: 'Puertos abiertos con detección ligera de versiones de servicios (sV + version-light).',
+        name: 'Port & Service Version Detection (Nmap)',
+        desc: 'Open port scanning with service banner grabbing and version detection (sV + light probes).',
         defaultUrgency: 'Medium',
       },
       {
         id: '3',
-        name: 'Escaneo Básico de Vulnerabilidades Comunes (Nmap NSE)',
-        desc: 'Detección de puertos y servicios con scripts NSE predeterminados y seguros.',
+        name: 'Intelligent Service Enumeration & Vulnerability Audit (Nmap NSE)',
+        desc: 'Multi-stage assessment: fast port discovery -> version detection -> targeted service enumeration scripts (SSH, HTTP, SMB) -> core vulnerability inspection.',
         defaultUrgency: 'High',
       },
       {
@@ -496,6 +575,9 @@ export default function PortalPage() {
   const [ticketTarget, setTicketTarget] = useState(BAXTER_PKI_DEFAULT_FQDN);
   const [ticketUrgency, setTicketUrgency] = useState<'Low' | 'Medium' | 'High'>('Medium');
   const [ticketDesc, setTicketDesc] = useState('');
+  const [requesterName, setRequesterName] = useState('Horacio Arellano / Nathan F. Walker (Digital Health)');
+  const [requesterEmail, setRequesterEmail] = useState('phantom@baxter.com');
+  const [isRequestOnBehalf, setIsRequestOnBehalf] = useState(true);
 
   // SSH Automation flow settings
   const [sshHost, setSshHost] = useState('127.0.0.1');
@@ -508,7 +590,7 @@ export default function PortalPage() {
 
   // Flow nodes list (SOC can dynamically append new automation nodes)
   const [flowNodes, setFlowNodes] = useState<AutomationFlowNode[]>([
-    { id: 'node-1', name: 'Manual Trigger', type: 'trigger', desc: 'Ejecución Manual', status: 'ready' },
+    { id: 'node-1', name: 'Manual Trigger', type: 'trigger', desc: 'Manual Trigger', status: 'ready' },
     { id: 'node-2', name: 'SSH Connection', type: 'action', desc: 'Running Command', status: 'active' },
     { id: 'node-3', name: 'Format JSON', type: 'parser', desc: 'Parser output', status: 'ready' },
     { id: 'node-4', name: 'Slack Alert', type: 'notify', desc: 'Notify audit completed', status: 'ready' },
@@ -544,7 +626,8 @@ export default function PortalPage() {
             urgency: 'High',
             status: 'COMPLETADO',
             createdAt: '2026-07-29',
-            description: 'Certificado SSL/TLS corporativo para el portal de clientes.',
+            requester: 'Horacio Arellano / Nathan F. Walker (Digital Health)',
+            description: 'Enterprise SSL/TLS certificate for client portal.',
           },
           {
             id: 'TK-8910',
@@ -553,7 +636,8 @@ export default function PortalPage() {
             urgency: 'Medium',
             status: 'COMPLETADO',
             createdAt: '2026-07-10',
-            description: 'Revisión completa de registros DNS y subdominios.',
+            requester: 'Horacio Arellano / Nathan F. Walker (Digital Health)',
+            description: 'Comprehensive DNS records and subdomain configuration review.',
           },
           {
             id: 'TK-9022',
@@ -562,7 +646,8 @@ export default function PortalPage() {
             urgency: 'High',
             status: 'EN PROGRESO',
             createdAt: '2026-07-14',
-            description: 'Simulación de ataque de denegación de servicio distribuido para validar mitigación WAF.',
+            requester: 'Horacio Arellano / Nathan F. Walker (Digital Health)',
+            description: 'Distributed denial-of-service simulation to validate WAF mitigation.',
           },
         ]);
       }
@@ -739,9 +824,12 @@ export default function PortalPage() {
         resolveWorkflowId(selectedService?.id || ticketType) ||
         resolveWorkflowId(ticketType);
       if (!workflowId) {
-        setTargetError('No se encontró la plantilla de certificación Baxter HUB para este servicio.');
+        setTargetError('Baxter HUB certification template not found for this service.');
         return;
       }
+
+      const effectiveRequester = requesterName.trim() || (user?.nombre ? `${user.nombre}` : 'Horacio Arellano / Nathan F. Walker (Digital Health)');
+      const effectiveRequesterEmail = requesterEmail.trim() || user?.email || 'phantom@baxter.com';
 
       const certTicket = buildCertificationTicket({
         id: ticketId,
@@ -749,9 +837,11 @@ export default function PortalPage() {
         serviceName: ticketType,
         target: targetIpOrHost,
         urgency: ticketUrgency,
-        description: ticketDesc.trim() || 'Certificación Baxter Innovation HUB — solicitud de cliente.',
+        description: ticketDesc.trim() || 'Baxter Innovation HUB Certification — Client Request.',
         createdAt,
         actor: user?.email || 'client',
+        requester: effectiveRequester,
+        requesterEmail: effectiveRequesterEmail,
       });
 
       setTickets((prev) => [certTicket, ...prev]);
@@ -767,6 +857,9 @@ export default function PortalPage() {
       return;
     }
 
+    const effectiveRequester = requesterName.trim() || (user?.nombre ? `${user.nombre}` : 'Horacio Arellano / Nathan F. Walker (Digital Health)');
+    const effectiveRequesterEmail = requesterEmail.trim() || user?.email || 'phantom@baxter.com';
+
     const newTicket: ClientTicket = {
       id: ticketId,
       type: ticketType,
@@ -775,6 +868,8 @@ export default function PortalPage() {
       status: isAutomatedExecution ? 'EN PROGRESO' : 'PENDIENTE',
       createdAt,
       description: ticketDesc.trim() || 'No additional details provided.',
+      requester: effectiveRequester,
+      requesterEmail: effectiveRequesterEmail,
     };
 
     setTickets((prev) => [newTicket, ...prev]);
@@ -848,12 +943,15 @@ export default function PortalPage() {
       let nmapCmd = `nmap -F -sV --max-rtt-timeout 350ms --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
       let runTimeout = 60;
 
-      if (ticketType.includes('Escaneo de Puertos Abiertos')) {
-        nmapCmd = `nmap -Pn -n -F -T5 --min-rate 2000 --max-retries 0 --open ${targetIpOrHost}`;
-      } else if (ticketType.includes('Escaneo de Puertos y Servicios')) {
-        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --max-retries 1 --host-timeout 30s ${targetIpOrHost}`;
-      } else if (ticketType.includes('Escaneo Básico de Vulnerabilidades Comunes')) {
-        nmapCmd = `nmap -Pn -n -F -sV --script "default,safe,vulners" -T4 --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
+      if (ticketType.includes('Open Port Discovery') || ticketType.includes('Escaneo de Puertos Abiertos')) {
+        nmapCmd = `nmap -Pn -n -F -T4 --min-rate 1500 --max-retries 1 --open ${targetIpOrHost}`;
+      } else if (ticketType.includes('Port & Service Version Detection') || ticketType.includes('Escaneo de Puertos y Servicios')) {
+        nmapCmd = `nmap -Pn -n -F -sV --version-light -T4 --min-rate 1500 --max-retries 1 --host-timeout 45s ${targetIpOrHost}`;
+      } else if (ticketType.includes('Intelligent Service Enumeration') || ticketType.includes('Escaneo Básico de Vulnerabilidades Comunes')) {
+        runTimeout = 180;
+        const auditScript = buildIntelligentNmapAuditScript(targetIpOrHost, 1500);
+        const base64Audit = safeBtoa(auditScript);
+        nmapCmd = `TMP_FILE="/tmp/nmap_audit_$$.sh"; echo "${base64Audit}" | base64 -d > "$TMP_FILE"; bash "$TMP_FILE"; STATUS=$?; rm -f "$TMP_FILE"; exit $STATUS;`;
       } else if (isFlameServiceType(ticketType)) {
         const selectedRecs = Object.entries(flameRecordTypes).filter(([_, v]) => v).map(([k]) => k).join(',');
         let cmd = `flame ${targetIpOrHost} -P ${flameProtocol} -p ${flamePort} -c ${flameConcurrency} -Q ${flameQPS} ${flameQueryGen}`;
@@ -935,7 +1033,7 @@ export default function PortalPage() {
 Target FQDN : ${targetIpOrHost}
 Target IP   : ${pkiIp || 'N/A'}
 CA Server   : ${pkiCaName || BAXTER_PKI_DEFAULT_CA}
-Requester   : Horacio Arellano / Nathan F. Walker (Digital Health)
+Requester   : ${effectiveRequester}
 
 DELIVERABLE ASSETS INCLUDED:
 1. ${serverName}.cer            -> Standalone Leaf Certificate (DER/Base64).
@@ -1037,6 +1135,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
               fqdn: targetIpOrHost,
               sanIp: pkiIp.trim(),
               template: pkiTemplate.trim() || BAXTER_PKI_DEFAULT_TEMPLATE,
+              requester: effectiveRequester,
               jumpName: agent.name || 'baxtersrv300',
               jumpHost: `${agent.host}:${agent.port}`,
               winHost: pkiCfg!.host,
@@ -1455,7 +1554,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
       // ── Section: Scan Metadata Table ─────────────────────────────────────────
       let y = 50;
       doc.setFillColor(18, 20, 35);
-      doc.roundedRect(margin, y, contentW, 40, 3, 3, 'F');
+      doc.roundedRect(margin, y, contentW, 48, 3, 3, 'F');
 
       doc.setFontSize(8.5);
       doc.setFont('helvetica', 'bold');
@@ -1466,9 +1565,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         ['Ticket ID', ticket.id],
         ['Assessment Service', ticket.type],
         ['Target Host / Scope', ticket.target],
+        ['Requester', ticket.requester || requesterName || 'Horacio Arellano / Nathan F. Walker (Digital Health)'],
         ['Urgency Rating', ticket.urgency],
         ['Scan Status', 'COMPLETED'],
         ['Request Date', ticket.createdAt],
+        ['Classification', 'CONFIDENTIAL / RESTRICTED'],
+        ['Auditor Engine', 'Phantom Multi-Stage SecOps'],
       ];
 
       doc.setFont('helvetica', 'normal');
@@ -1477,7 +1579,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         const col = i % 3;
         const row = Math.floor(i / 3);
         const cx = margin + 6 + col * (contentW / 3);
-        const cy = y + 17 + row * 11.5;
+        const cy = y + 16 + row * 9.8;
         doc.setTextColor(180, 195, 225); // Increased contrast label
         doc.text(label.toUpperCase(), cx, cy);
         
@@ -1491,12 +1593,12 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         }
         
         doc.setFont('helvetica', 'bold');
-        doc.text(value, cx, cy + 4.5);
+        doc.text(value.length > 32 ? `${value.slice(0, 30)}…` : value, cx, cy + 4.2);
         doc.setFont('helvetica', 'normal');
       });
 
       // ── Section: Structured Ports Table (or Flamethrower DNS Assessment) ────
-      y += 52;
+      y += 58;
 
       if (isFlameServiceType(ticket.type)) {
         doc.setFontSize(9.5);
@@ -1750,7 +1852,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
               Client Security Portal
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Solicita servicios, sigue certificaciones Baxter HUB por etapas (tipo ServiceNow) y descarga reportes — todo en un solo lugar.
+              Request services, track multi-stage Baxter HUB certifications (ServiceNow-style), and download audit reports — all in one place.
             </p>
           </div>
 
@@ -1815,54 +1917,190 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                       })()}
                       {isBaxterHubCertificationService(ticketType) && (
                         <p className="text-[10px] text-sky-700 dark:text-sky-300 leading-snug border border-sky-500/20 bg-sky-500/5 rounded-md px-2 py-1.5">
-                          Flujo multi-etapa tipo ServiceNow: verás el progreso (intake → puertos → rutas → DAST → pentest → sign-off) en tu historial.
+                          Multi-stage ServiceNow-style workflow: track progress (intake → ports → routes → DAST → pentest → sign-off) in your history.
                         </p>
                       )}
                     </div>
 
                     {!isPkiServiceType(ticketType) && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
-                        Target Host / IP
-                      </label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. 192.168.0.1 or example.com"
-                        value={ticketTarget}
-                        onChange={(e) => {
-                          setTicketTarget(e.target.value);
-                          if (targetError) setTargetError(null);
-                        }}
-                        required
-                        className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
-                      />
-                      {targetError && (
-                        <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
-                      )}
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-border/80 bg-background/80 p-3.5 space-y-3 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                            <User className="size-3.5 text-primary" />
+                            Requester Information
+                          </label>
+                          <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRequestOnBehalf(false);
+                                if (user?.nombre) setRequesterName(user.nombre);
+                                if (user?.email) setRequesterEmail(user.email);
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                                !isRequestOnBehalf
+                                  ? 'bg-background text-foreground shadow-xs'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              Self
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRequestOnBehalf(true);
+                                setRequesterName('Horacio Arellano / Nathan F. Walker (Digital Health)');
+                                setRequesterEmail('phantom@baxter.com');
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                                isRequestOnBehalf
+                                  ? 'bg-background text-foreground shadow-xs'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              On Behalf Of
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground font-semibold">
+                              {isRequestOnBehalf ? 'Requested On Behalf Of (Name / Dept) *' : 'Requested By (Full Name) *'}
+                            </span>
+                            <Input
+                              type="text"
+                              value={requesterName}
+                              onChange={(e) => setRequesterName(e.target.value)}
+                              placeholder="Horacio Arellano / Nathan F. Walker (Digital Health)"
+                              className="h-8 text-xs font-medium"
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground font-semibold">Requester Contact / Email</span>
+                            <Input
+                              type="text"
+                              value={requesterEmail}
+                              onChange={(e) => setRequesterEmail(e.target.value)}
+                              placeholder="user@baxter.com"
+                              className="h-8 text-xs font-medium"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-border/50 text-[11px]">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground">Scope: </span>
+                            <span className="font-semibold text-foreground">Internal Hub Network</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground">Assessment: </span>
+                            <span className="font-mono text-[10px] text-foreground">Multi-Stage SecOps</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">
+                          Target Host / IP
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder="e.g. 192.168.0.1 or example.com"
+                          value={ticketTarget}
+                          onChange={(e) => {
+                            setTicketTarget(e.target.value);
+                            if (targetError) setTargetError(null);
+                          }}
+                          required
+                          className={`text-sm font-mono ${targetError ? 'border-rose-500 focus-visible:ring-rose-500 focus-visible:border-rose-500 bg-rose-500/5' : ''}`}
+                        />
+                        {targetError && (
+                          <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold animate-fade-in">{targetError}</p>
+                        )}
+                      </div>
                     </div>
                     )}
 
                     {isPkiServiceType(ticketType) && (
                       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 animate-fade-in">
                         <div className="xl:col-span-2 space-y-4">
-                          <div className="rounded-lg border border-border/70 bg-background/80 px-3 py-2.5">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Requester</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                          <div className="rounded-xl border border-border/80 bg-background/80 p-3.5 space-y-3 shadow-xs">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-semibold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+                                <User className="size-3.5 text-primary" />
+                                Requester Information
+                              </label>
+                              <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsRequestOnBehalf(false);
+                                    if (user?.nombre) setRequesterName(user.nombre);
+                                    if (user?.email) setRequesterEmail(user.email);
+                                  }}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                                    !isRequestOnBehalf
+                                      ? 'bg-background text-foreground shadow-xs'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  Self
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsRequestOnBehalf(true);
+                                    setRequesterName('Horacio Arellano / Nathan F. Walker (Digital Health)');
+                                    setRequesterEmail('phantom@baxter.com');
+                                  }}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                                    isRequestOnBehalf
+                                      ? 'bg-background text-foreground shadow-xs'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  On Behalf Of
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-muted-foreground font-semibold">
+                                  {isRequestOnBehalf ? 'Requested On Behalf Of (Name / Dept) *' : 'Requested By (Full Name) *'}
+                                </span>
+                                <Input
+                                  type="text"
+                                  value={requesterName}
+                                  onChange={(e) => setRequesterName(e.target.value)}
+                                  placeholder="Horacio Arellano / Nathan F. Walker (Digital Health)"
+                                  className="h-8 text-xs font-medium"
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-muted-foreground font-semibold">Requester Contact / Email</span>
+                                <Input
+                                  type="text"
+                                  value={requesterEmail}
+                                  onChange={(e) => setRequesterEmail(e.target.value)}
+                                  placeholder="user@baxter.com"
+                                  className="h-8 text-xs font-medium"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-border/50 text-[11px]">
                               <div>
-                                <span className="text-[10px] text-muted-foreground">Requested for</span>
-                                <p className="font-medium truncate">{user?.nombre || '—'}</p>
+                                <span className="text-[10px] text-muted-foreground">Scope: </span>
+                                <span className="font-semibold text-foreground">Internal Hub</span>
                               </div>
                               <div>
-                                <span className="text-[10px] text-muted-foreground">Email</span>
-                                <p className="font-medium truncate">{user?.email || '—'}</p>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-muted-foreground">Scope</span>
-                                <p className="font-medium">Internal Hub</p>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-muted-foreground">CA</span>
-                                <p className="font-mono text-xs truncate">Hub Issuing CA</p>
+                                <span className="text-[10px] text-muted-foreground">Issuing CA: </span>
+                                <span className="font-mono text-[10px] text-foreground">Hub Issuing CA</span>
                               </div>
                             </div>
                           </div>
@@ -1962,7 +2200,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold">Notes</label>
                                 <textarea
-                                  placeholder="Puertos, SANs extra o contexto del host interno..."
+                                  placeholder="Ports, additional SANs, or internal host context..."
                                   value={ticketDesc}
                                   onChange={(e) => setTicketDesc(e.target.value)}
                                   rows={3}
@@ -2468,7 +2706,7 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
                                     />
                                   </div>
                                   <span className="text-[10px] text-zinc-500">
-                                    Etapas {progress.completed}/{progress.total} · Submitted: {t.createdAt}
+                                    Stages {progress.completed}/{progress.total} · Submitted: {t.createdAt}
                                   </span>
                                 </div>
                               ) : (

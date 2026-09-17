@@ -162,8 +162,8 @@ def migrate_legacy_admin_login(db: Session) -> User | None:
 
 def seed_auth_data(db: Session) -> None:
     """Idempotente: tenants, usuarios semilla y membresías."""
-    tenant_main = _get_or_create_tenant(db, DEFAULT_TENANT_SLUG, "Phantom Interno")
-    tenant_demo = _get_or_create_tenant(db, DEMO_TENANT_SLUG, "Cliente Demo")
+    tenant_main = _get_or_create_tenant(db, DEFAULT_TENANT_SLUG, "Phantom SecOps")
+    tenant_demo = _get_or_create_tenant(db, DEMO_TENANT_SLUG, "Demo Client")
 
     migrate_legacy_admin_login(db)
     admin = _ensure_user(db, DEFAULT_ADMIN_LOGIN, DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_PASSWORD)
