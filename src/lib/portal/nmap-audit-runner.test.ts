@@ -22,7 +22,8 @@ describe('nmap-audit-runner', () => {
     expect(script).toContain('[STAGE 2/4 - SERVICE & VERSION DETECTION]');
     expect(script).toContain('[CMD] ${VERSION_CMD}');
     expect(script).toContain('[STAGE 3/4 - INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT]');
-    expect(script).toContain('ssh2-enum-algos,ssh-auth-methods,ssh-hostkey,sshv1');
+    expect(script).toContain('get_service_nse "ssh"');
+    expect(script).toContain('ssh2-enum-algos');
     expect(script).toContain('[STAGE 4/4 - CORE VULNERABILITY ASSESSMENT]');
     expect(script).toContain('[CMD] ${VULN_CMD}');
   });

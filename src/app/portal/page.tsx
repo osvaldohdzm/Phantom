@@ -1480,22 +1480,42 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
       }
 
       const parseNmapOutput = (text: string): NmapPort[] => {
-        const ports: NmapPort[] = [];
+        const map = new Map<string, NmapPort>();
         const lines = text.split('\n');
         for (const line of lines) {
           const trimmed = line.trim();
           const match = trimmed.match(/^(\d+)\/(tcp|udp)\s+(\S+)\s+(\S+)(?:\s+(.*))?$/);
           if (match) {
-            ports.push({
-              port: match[1],
-              protocol: match[2],
-              state: match[3],
-              service: match[4],
-              version: match[5] || '—',
-            });
+            const key = `${match[1]}/${match[2]}`;
+            const existing = map.get(key);
+            const port = match[1];
+            const protocol = match[2];
+            const state = match[3];
+            const service = match[4];
+            const version = match[5]?.trim() || '';
+
+            if (!existing) {
+              map.set(key, {
+                port,
+                protocol,
+                state,
+                service,
+                version: version || '—',
+              });
+            } else {
+              if (state.toLowerCase() === 'open') {
+                existing.state = 'open';
+              }
+              if (version && (!existing.version || existing.version === '—')) {
+                existing.version = version;
+              }
+              if (service && (existing.service === 'unknown' || !existing.service)) {
+                existing.service = service;
+              }
+            }
           }
         }
-        return ports;
+        return Array.from(map.values()).sort((a, b) => Number(a.port) - Number(b.port));
       };
 
       const tenantName = activeTenant?.nombre || 'Phantom';
@@ -1739,9 +1759,8 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
         y += 6;
       }
 
-      // ── Section: Isolated Terminal Console Block ─────────────────────────────
-      // Check page height limit to avoid orphan titles
-      if (y > pageH - 75) {
+      // ── Section: Isolated Terminal Console Block (Multi-Page Paginated) ──────
+      if (y > pageH - 55) {
         doc.addPage();
         y = margin + 10;
       }
@@ -1755,85 +1774,128 @@ AUTOMATIC FINDINGS & RESILIENCE AUDIT:
       doc.setLineWidth(0.3);
       doc.line(margin, y + 2, margin + contentW, y + 2);
 
-      y += 7;
-      doc.setFillColor(8, 10, 20);
+      y += 6;
+
       const outputLines = output ? doc.splitTextToSize(output, contentW - 10) : ['No terminal output logs recorded.'];
-      const lineH = 4.2;
-      const boxH = Math.min(outputLines.length * lineH + 10, pageH - y - 35);
-      doc.roundedRect(margin, y, contentW, boxH, 2, 2, 'F');
+      const lineH = 3.8;
+      const bottomLimit = pageH - 24; // Leave room for footer
 
       doc.setFont('courier', 'normal');
-      doc.setFontSize(6.8);
-      let lineY = y + 6.5;
-      for (const line of outputLines) {
-        if (lineY > y + boxH - 4) break;
-        if (line.startsWith('PORT') || line.startsWith('Nmap')) {
-          doc.setTextColor(cyberBlue[0], cyberBlue[1], cyberBlue[2]);
-        } else if (line.includes('open')) {
-          doc.setTextColor(100, 255, 120);
-        } else if (line.includes('closed')) {
-          doc.setTextColor(stateRed[0], stateRed[1], stateRed[2]);
-        } else {
-          doc.setTextColor(225, 245, 235); // Higher contrast console lines
+      doc.setFontSize(6.5);
+
+      let currentLineIdx = 0;
+      while (currentLineIdx < outputLines.length) {
+        const availableH = bottomLimit - y;
+        const maxLinesThisPage = Math.max(1, Math.floor((availableH - 8) / lineH));
+        const linesToDraw = outputLines.slice(currentLineIdx, currentLineIdx + maxLinesThisPage);
+        const thisBoxH = linesToDraw.length * lineH + 8;
+
+        // Draw dark terminal background box for this slice
+        doc.setFillColor(8, 10, 20);
+        doc.roundedRect(margin, y, contentW, thisBoxH, 2, 2, 'F');
+
+        let lineY = y + 5.5;
+        for (const line of linesToDraw) {
+          if (
+            line.includes('OBSOLETE') ||
+            line.includes('CRITICAL') ||
+            line.includes('ALERT') ||
+            (line.includes('closed') && !line.includes('reset') && !line.includes('closed tcp ports'))
+          ) {
+            doc.setTextColor(stateRed[0], stateRed[1], stateRed[2]);
+          } else if (line.includes('RECOMMENDATION') || line.includes('WEAK') || line.includes('WARN')) {
+            doc.setTextColor(stateOrange[0], stateOrange[1], stateOrange[2]);
+          } else if (line.startsWith('PORT') || line.startsWith('Nmap') || line.includes('[CMD]') || line.includes('[+]')) {
+            doc.setTextColor(cyberBlue[0], cyberBlue[1], cyberBlue[2]);
+          } else if (line.includes('open') || line.includes('[✓]')) {
+            doc.setTextColor(100, 255, 120);
+          } else {
+            doc.setTextColor(225, 245, 235);
+          }
+          doc.text(line, margin + 5, lineY);
+          lineY += lineH;
         }
-        doc.text(line, margin + 5, lineY);
-        lineY += lineH;
+
+        currentLineIdx += linesToDraw.length;
+        y += thisBoxH + 4;
+
+        if (currentLineIdx < outputLines.length) {
+          doc.addPage();
+          doc.setFillColor(10, 12, 22);
+          doc.rect(0, 0, pageW, 20, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(cyberBlue[0], cyberBlue[1], cyberBlue[2]);
+          doc.text(`${tenantName} SecOps Portal — Console Execution Log (Continued)`, margin, 12);
+          doc.setFontSize(7.5);
+          doc.setTextColor(120, 120, 160);
+          doc.text(`REF: ${ticket.id}`, pageW - margin, 12, { align: 'right' });
+          y = 26;
+          doc.setFont('courier', 'normal');
+          doc.setFontSize(6.5);
+        }
       }
 
       // ── Section: Findings Summary Table ──────────────────────────────────────
-      y += boxH + 10;
-      if (y < pageH - 45) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        doc.setTextColor(brandPrimary[0], brandPrimary[1], brandPrimary[2]);
-        doc.text('SUMMARY OF TARGET CLASSIFICATIONS', margin, y);
-        doc.line(margin, y + 2, margin + contentW, y + 2);
-
-        y += 8;
-        doc.setFillColor(18, 20, 35);
-        doc.rect(margin, y, contentW, 7, 'F');
-        doc.setTextColor(210, 210, 245); // Increased contrast header
-        doc.setFontSize(7.5);
-        doc.setFont('helvetica', 'bold');
-        doc.text('METRIC ANALYSIS', margin + 4, y + 4.8);
-        doc.text('EVALUATION VALUE', margin + 4 + contentW * 0.6, y + 4.8);
-
-        y += 7;
-        const summaryRows: [string, string][] = [
-          ['Active Open Host Ports', String(openPortsCount)],
-          ['Security Scan Mode', 'nmap -F -sV (Optimized Fast Mode + Version Detection)'],
-          ['Auditor Agent Type', 'Automated Secure SSH Node'],
-          ['Confidentiality Level', 'RESTRICTED / CONFIDENTIAL'],
-        ];
-
-        doc.setFont('helvetica', 'normal');
-        summaryRows.forEach(([k, v], i) => {
-          const bg = i % 2 === 0 ? [14, 16, 28] : [18, 20, 36];
-          doc.setFillColor(bg[0], bg[1], bg[2]);
-          doc.rect(margin, y, contentW, 6.8, 'F');
-          doc.setTextColor(240, 240, 255); // Increased contrast metric keys
-          doc.text(k, margin + 4, y + 4.5);
-          
-          if (i === 0 && openPortsCount > 0) {
-            doc.setTextColor(stateOrange[0], stateOrange[1], stateOrange[2]);
-            doc.setFont('helvetica', 'bold');
-          } else {
-            doc.setTextColor(220, 220, 240); // Increased contrast values
-          }
-          doc.text(v, margin + 4 + contentW * 0.6, y + 4.5);
-          doc.setFont('helvetica', 'normal');
-          y += 6.8;
-        });
+      y += 4;
+      if (y > pageH - 45) {
+        doc.addPage();
+        y = margin + 10;
       }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(brandPrimary[0], brandPrimary[1], brandPrimary[2]);
+      doc.text('SUMMARY OF TARGET CLASSIFICATIONS', margin, y);
+      doc.line(margin, y + 2, margin + contentW, y + 2);
 
-      // ── Footer (Dynamic) ────────────────────────────────────────────────────
-      doc.setFillColor(10, 12, 22);
-      doc.rect(0, pageH - 16, pageW, 16, 'F');
+      y += 8;
+      doc.setFillColor(18, 20, 35);
+      doc.rect(margin, y, contentW, 7, 'F');
+      doc.setTextColor(210, 210, 245);
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text('METRIC ANALYSIS', margin + 4, y + 4.8);
+      doc.text('EVALUATION VALUE', margin + 4 + contentW * 0.6, y + 4.8);
+
+      y += 7;
+      const summaryRows: [string, string][] = [
+        ['Active Open Host Ports', String(openPortsCount)],
+        ['Security Scan Mode', ticket.type || 'Nmap Multi-Stage SecOps Audit'],
+        ['Auditor Agent Type', 'Automated Secure SSH Node'],
+        ['Confidentiality Level', 'RESTRICTED / CONFIDENTIAL'],
+      ];
+
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 140);
-      doc.text(`CONFIDENTIAL — Generated for ${tenantName}. Unauthorized copying, editing, or distribution is prohibited.`, margin, pageH - 8.2);
-      doc.text(`Page 1 of 1  |  ${tenantName} Hub Platform`, pageW - margin, pageH - 8.2, { align: 'right' });
+      summaryRows.forEach(([k, v], i) => {
+        const bg = i % 2 === 0 ? [14, 16, 28] : [18, 20, 36];
+        doc.setFillColor(bg[0], bg[1], bg[2]);
+        doc.rect(margin, y, contentW, 6.8, 'F');
+        doc.setTextColor(240, 240, 255);
+        doc.text(k, margin + 4, y + 4.5);
+        
+        if (i === 0 && openPortsCount > 0) {
+          doc.setTextColor(stateOrange[0], stateOrange[1], stateOrange[2]);
+          doc.setFont('helvetica', 'bold');
+        } else {
+          doc.setTextColor(220, 220, 240);
+        }
+        doc.text(v, margin + 4 + contentW * 0.6, y + 4.5);
+        doc.setFont('helvetica', 'normal');
+        y += 6.8;
+      });
+
+      // ── Footer on all pages (Dynamic Page Count) ───────────────────────────
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFillColor(10, 12, 22);
+        doc.rect(0, pageH - 16, pageW, 16, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 100, 140);
+        doc.text(`CONFIDENTIAL — Generated for ${tenantName}. Unauthorized copying, editing, or distribution is prohibited.`, margin, pageH - 8.2);
+        doc.text(`Page ${p} of ${totalPages}  |  ${tenantName} Hub Platform`, pageW - margin, pageH - 8.2, { align: 'right' });
+      }
 
       const blob = doc.output('blob');
       return URL.createObjectURL(blob);

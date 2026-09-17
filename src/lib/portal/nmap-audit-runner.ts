@@ -142,13 +142,29 @@ VERSION_RAW=$(nmap -Pn -n -sV --version-light -T4 --max-retries 1 -p "\${OPEN_PO
 echo "\${VERSION_RAW}"
 echo ""
 
+# Helper: dynamically discover installed NSE scripts by service prefix
+get_service_nse() {
+  local prefix="$1"
+  local fallback="$2"
+  local resolved=""
+  if [ -d "/usr/share/nmap/scripts" ]; then
+    resolved=$(ls /usr/share/nmap/scripts/\${prefix}*.nse 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\\.nse$//' | paste -sd, -)
+  fi
+  if [ -n "\${resolved}" ]; then
+    echo "\${resolved}"
+  else
+    echo "\${fallback}"
+  fi
+}
+
 # STAGE 3: INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT
 echo "[+] [STAGE 3/4 - INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT]"
 
 # 3.1 SSH Targeted Enumeration
 if echo "\${VERSION_RAW}" | grep -iq "ssh" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)22(,|$)"; then
   echo "[*] Targeted Service: OpenSSH detected on port 22."
-  SSH_NSE="ssh2-enum-algos,ssh-auth-methods,ssh-hostkey,sshv1"
+  SSH_NSE=$(get_service_nse "ssh" "ssh-auth-methods,ssh-brute,ssh-hostkey,ssh-publickey-acceptance,ssh-run,ssh2-enum-algos,sshv1")
+  echo "[*] Service NSE Script Suite: \${SSH_NSE}"
   SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" \${TARGET}"
   echo "[CMD] \${SSH_CMD}"
   SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" "\${TARGET}" 2>&1)
@@ -184,10 +200,13 @@ if echo "\${VERSION_RAW}" | grep -iqE "http|ssl/http|https" || echo "\${OPEN_POR
   if [ -z "\${HTTP_PORTS}" ]; then HTTP_PORTS="80,443"; fi
   echo ""
   echo "[*] Targeted Service: HTTP/Web Service detected on port(s) \${HTTP_PORTS}."
-  HTTP_NSE="http-title,http-headers,http-methods,ssl-enum-ciphers,ssl-cert"
-  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${HTTP_NSE}\" \${TARGET}"
+  HTTP_SCRIPTS=$(get_service_nse "http-" "http-title,http-headers,http-methods,http-server-header,http-security-headers,http-auth,http-robots.txt,http-sitemap-generator,http-cors,http-vhosts")
+  SSL_SCRIPTS=$(get_service_nse "ssl-" "ssl-enum-ciphers,ssl-cert,ssl-date")
+  WEB_NSE="\${HTTP_SCRIPTS},\${SSL_SCRIPTS}"
+  echo "[*] Service NSE Script Suite: \${WEB_NSE}"
+  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" \${TARGET}"
   echo "[CMD] \${HTTP_CMD}"
-  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${HTTP_NSE}" "\${TARGET}" 2>&1)
+  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" "\${TARGET}" 2>&1)
   echo "\${HTTP_RAW}"
   
   if echo "\${HTTP_RAW}" | grep -iE "SSLv2|SSLv3|TLSv1.0|TLSv1.1|RC4|3DES"; then
@@ -200,10 +219,41 @@ fi
 if echo "\${VERSION_RAW}" | grep -iqE "smb|microsoft-ds|netbios" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)(445|139)(,|$)"; then
   echo ""
   echo "[*] Targeted Service: SMB/NetBIOS detected on port 445/139."
-  SMB_NSE="smb2-security-mode,smb2-capabilities,smb-protocols"
+  SMB_NSE=$(get_service_nse "smb" "smb-protocols,smb-security-mode,smb2-security-mode,smb2-capabilities,smb-enum-shares,smb-os-discovery,smb2-time")
+  echo "[*] Service NSE Script Suite: \${SMB_NSE}"
   SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" \${TARGET}"
   echo "[CMD] \${SMB_CMD}"
   nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.4 FTP Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iq "ftp" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)21(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: FTP detected on port 21."
+  FTP_NSE=$(get_service_nse "ftp" "ftp-anon,ftp-bounce,ftp-syst,ftp-proftpd-backdoor,ftp-vsftpd-backdoor")
+  echo "[*] Service NSE Script Suite: \${FTP_NSE}"
+  echo "[CMD] nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 21 --script "\${FTP_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.5 Database / MySQL Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iq "mysql" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)3306(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: MySQL Database detected on port 3306."
+  MYSQL_NSE=$(get_service_nse "mysql" "mysql-info,mysql-enum,mysql-databases,mysql-users,mysql-empty-password")
+  echo "[*] Service NSE Script Suite: \${MYSQL_NSE}"
+  echo "[CMD] nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.6 Remote Desktop (RDP) Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iqE "rdp|ms-wbt-server" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)3389(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: Microsoft Remote Desktop (RDP) detected on port 3389."
+  RDP_NSE=$(get_service_nse "rdp" "rdp-enum-encryption,rdp-ntlm-info")
+  echo "[*] Service NSE Script Suite: \${RDP_NSE}"
+  echo "[CMD] nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" "\${TARGET}" 2>&1
 fi
 echo ""
 
@@ -239,6 +289,21 @@ echo "Engine Mode    : Targeted Service-Specific NSE Enumerator & Cipher Auditor
 echo "================================================================================"
 echo ""
 
+# Helper: dynamically discover installed NSE scripts by service prefix
+get_service_nse() {
+  local prefix="$1"
+  local fallback="$2"
+  local resolved=""
+  if [ -d "/usr/share/nmap/scripts" ]; then
+    resolved=$(ls /usr/share/nmap/scripts/\${prefix}*.nse 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\\.nse$//' | paste -sd, -)
+  fi
+  if [ -n "\${resolved}" ]; then
+    echo "\${resolved}"
+  else
+    echo "\${fallback}"
+  fi
+}
+
 # STAGE 1: RAPID OPEN PORT DISCOVERY
 echo "[+] [STAGE 1/3 - RAPID OPEN PORT DISCOVERY]"
 DISCOVERY_CMD="nmap -Pn -n -F -T4 --min-rate \${MIN_RATE} --max-retries 1 --open \${TARGET}"
@@ -269,7 +334,8 @@ echo "[+] [STAGE 3/3 - INTELLIGENT SERVICE ENUMERATION & CIPHER AUDIT]"
 # 3.1 SSH Targeted Enumeration
 if echo "\${VERSION_RAW}" | grep -iq "ssh" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)22(,|$)"; then
   echo "[*] Targeted Service: OpenSSH detected on port 22."
-  SSH_NSE="ssh2-enum-algos,ssh-auth-methods,ssh-hostkey,sshv1"
+  SSH_NSE=$(get_service_nse "ssh" "ssh-auth-methods,ssh-brute,ssh-hostkey,ssh-publickey-acceptance,ssh-run,ssh2-enum-algos,sshv1")
+  echo "[*] Service NSE Script Suite: \${SSH_NSE}"
   SSH_CMD="nmap -Pn -n -p 22 --script \"\${SSH_NSE}\" \${TARGET}"
   echo "[CMD] \${SSH_CMD}"
   SSH_RAW=$(nmap -Pn -n -p 22 --script "\${SSH_NSE}" "\${TARGET}" 2>&1)
@@ -305,10 +371,13 @@ if echo "\${VERSION_RAW}" | grep -iqE "http|ssl/http|https" || echo "\${OPEN_POR
   if [ -z "\${HTTP_PORTS}" ]; then HTTP_PORTS="80,443"; fi
   echo ""
   echo "[*] Targeted Service: HTTP/Web Service detected on port(s) \${HTTP_PORTS}."
-  HTTP_NSE="http-title,http-headers,http-methods,ssl-enum-ciphers,ssl-cert"
-  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${HTTP_NSE}\" \${TARGET}"
+  HTTP_SCRIPTS=$(get_service_nse "http-" "http-title,http-headers,http-methods,http-server-header,http-security-headers,http-auth,http-robots.txt,http-sitemap-generator,http-cors,http-vhosts")
+  SSL_SCRIPTS=$(get_service_nse "ssl-" "ssl-enum-ciphers,ssl-cert,ssl-date")
+  WEB_NSE="\${HTTP_SCRIPTS},\${SSL_SCRIPTS}"
+  echo "[*] Service NSE Script Suite: \${WEB_NSE}"
+  HTTP_CMD="nmap -Pn -n -p \${HTTP_PORTS} --script \"\${WEB_NSE}\" \${TARGET}"
   echo "[CMD] \${HTTP_CMD}"
-  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${HTTP_NSE}" "\${TARGET}" 2>&1)
+  HTTP_RAW=$(nmap -Pn -n -p "\${HTTP_PORTS}" --script "\${WEB_NSE}" "\${TARGET}" 2>&1)
   echo "\${HTTP_RAW}"
   
   if echo "\${HTTP_RAW}" | grep -iE "SSLv2|SSLv3|TLSv1.0|TLSv1.1|RC4|3DES"; then
@@ -321,10 +390,41 @@ fi
 if echo "\${VERSION_RAW}" | grep -iqE "smb|microsoft-ds|netbios" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)(445|139)(,|$)"; then
   echo ""
   echo "[*] Targeted Service: SMB/NetBIOS detected on port 445/139."
-  SMB_NSE="smb2-security-mode,smb2-capabilities,smb-protocols"
+  SMB_NSE=$(get_service_nse "smb" "smb-protocols,smb-security-mode,smb2-security-mode,smb2-capabilities,smb-enum-shares,smb-os-discovery,smb2-time")
+  echo "[*] Service NSE Script Suite: \${SMB_NSE}"
   SMB_CMD="nmap -Pn -n -p 445,139 --script \"\${SMB_NSE}\" \${TARGET}"
   echo "[CMD] \${SMB_CMD}"
   nmap -Pn -n -p 445,139 --script "\${SMB_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.4 FTP Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iq "ftp" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)21(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: FTP detected on port 21."
+  FTP_NSE=$(get_service_nse "ftp" "ftp-anon,ftp-bounce,ftp-syst,ftp-proftpd-backdoor,ftp-vsftpd-backdoor")
+  echo "[*] Service NSE Script Suite: \${FTP_NSE}"
+  echo "[CMD] nmap -Pn -n -p 21 --script \"\${FTP_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 21 --script "\${FTP_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.5 Database / MySQL Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iq "mysql" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)3306(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: MySQL Database detected on port 3306."
+  MYSQL_NSE=$(get_service_nse "mysql" "mysql-info,mysql-enum,mysql-databases,mysql-users,mysql-empty-password")
+  echo "[*] Service NSE Script Suite: \${MYSQL_NSE}"
+  echo "[CMD] nmap -Pn -n -p 3306 --script \"\${MYSQL_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 3306 --script "\${MYSQL_NSE}" "\${TARGET}" 2>&1
+fi
+
+# 3.6 Remote Desktop (RDP) Targeted Enumeration
+if echo "\${VERSION_RAW}" | grep -iqE "rdp|ms-wbt-server" || echo "\${OPEN_PORTS}" | grep -qE "(^|,)3389(,|$)"; then
+  echo ""
+  echo "[*] Targeted Service: Microsoft Remote Desktop (RDP) detected on port 3389."
+  RDP_NSE=$(get_service_nse "rdp" "rdp-enum-encryption,rdp-ntlm-info")
+  echo "[*] Service NSE Script Suite: \${RDP_NSE}"
+  echo "[CMD] nmap -Pn -n -p 3389 --script \"\${RDP_NSE}\" \${TARGET}"
+  nmap -Pn -n -p 3389 --script "\${RDP_NSE}" "\${TARGET}" 2>&1
 fi
 
 echo ""
